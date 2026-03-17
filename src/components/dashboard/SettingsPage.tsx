@@ -59,7 +59,7 @@ export function SettingsPage() {
               Every real run should leave enough evidence to diagnose content gaps.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-4">
             <SettingField label="Screenshot" value="page.png" />
             <SettingField label="Session recording" value="playwright video file" />
             <SettingField label="Trace" value="trace.zip for replay and DOM inspection" />

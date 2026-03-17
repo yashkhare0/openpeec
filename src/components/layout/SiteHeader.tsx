@@ -95,7 +95,7 @@ export function SiteHeader({
       <div className="flex items-center gap-2">
         <Profile />
         <Button variant="outline" size="sm">
-          <Download className="mr-1.5 size-3.5" />
+          <Download className="mr-1.5 size-4" />
           Export
         </Button>
       </div>

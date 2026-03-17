@@ -4,7 +4,6 @@ import {
   Bot,
   FileText,
   Link2,
-  Search,
   Settings2,
 } from "lucide-react";
 
@@ -12,7 +11,6 @@ import { ModeToggle } from "@/components/ModeToggle";
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -20,17 +18,20 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarSeparator,
 } from "@/components/ui/sidebar";
 
 type PageKey = "overview" | "prompts" | "sources" | "models" | "settings";
 
-const pages: Array<{ key: PageKey; label: string; icon: typeof Activity }> = [
-  { key: "overview", label: "Overview", icon: Activity },
-  { key: "prompts", label: "Prompts", icon: FileText },
-  { key: "sources", label: "Sources", icon: Link2 },
-  { key: "models", label: "Models", icon: Bot },
-  { key: "settings", label: "Settings", icon: Settings2 },
+const mainPages: Array<{ key: PageKey; label: string; icon: typeof Activity }> =
+  [
+    { key: "overview", label: "Overview", icon: Activity },
+    { key: "prompts", label: "Prompts", icon: FileText },
+    { key: "sources", label: "Sources", icon: Link2 },
+    { key: "models", label: "Models", icon: Bot },
+  ];
+
+const secondaryItems = [
+  { key: "settings" as PageKey, label: "Settings", icon: Settings2 },
 ];
 
 export function AppSidebar({
@@ -46,20 +47,18 @@ export function AppSidebar({
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              size="lg"
-              className="data-[slot=sidebar-menu-button]:!p-1.5"
-            >
-              <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <span className="text-sm font-bold">O</span>
-              </div>
-              <div className="flex flex-col gap-0.5 leading-none">
-                <span className="text-xs text-muted-foreground">OpenPeec</span>
-                <span className="font-semibold">Visibility Lab</span>
-              </div>
-              <div className="ml-auto">
-                <ModeToggle />
-              </div>
+            <SidebarMenuButton asChild size="lg">
+              <a href="#">
+                <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                  <span className="text-sm font-bold">O</span>
+                </div>
+                <div className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-semibold">OpenPeec</span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    Visibility Lab
+                  </span>
+                </div>
+              </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -67,32 +66,17 @@ export function AppSidebar({
 
       <SidebarContent>
         <SidebarGroup>
+          <SidebarGroupLabel>Platform</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton className="text-muted-foreground">
-                  <Search className="size-4" />
-                  <span>Quick Actions</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarSeparator />
-
-        <SidebarGroup>
-          <SidebarGroupLabel>Pages</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {pages.map((item) => (
+              {mainPages.map((item) => (
                 <SidebarMenuItem key={item.key}>
                   <SidebarMenuButton
                     isActive={page === item.key}
                     onClick={() => startTransition(() => onPage(item.key))}
                     tooltip={item.label}
                   >
-                    <item.icon className="size-4" />
+                    <item.icon />
                     <span>{item.label}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -100,20 +84,29 @@ export function AppSidebar({
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-      </SidebarContent>
 
-      <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <div className="rounded-lg border bg-card p-3">
-              <p className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
-                Active client
-              </p>
-              <p className="mt-1 text-sm font-semibold">ChatGPT</p>
-            </div>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
+        <SidebarGroup className="mt-auto">
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {secondaryItems.map((item) => (
+                <SidebarMenuItem key={item.key}>
+                  <SidebarMenuButton
+                    isActive={page === item.key}
+                    onClick={() => startTransition(() => onPage(item.key))}
+                    tooltip={item.label}
+                  >
+                    <item.icon />
+                    <span>{item.label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+              <SidebarMenuItem>
+                <ModeToggle />
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
     </Sidebar>
   );
 }

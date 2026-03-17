@@ -50,12 +50,16 @@ export function OverviewPage({
 }) {
   if (!loading && !hasData) {
     return (
-      <EmptyState
-        title="No analytics runs yet"
-        description="Run the local ChatGPT monitor once and ingest the result to populate visibility, citation quality, and source coverage."
-        actionLabel="Review runner setup"
-        onAction={onOpenSettings}
-      />
+      <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+        <div className="px-4 lg:px-6">
+          <EmptyState
+            title="No analytics runs yet"
+            description="Run the local ChatGPT monitor once and ingest the result to populate visibility, citation quality, and source coverage."
+            actionLabel="Review runner setup"
+            onAction={onOpenSettings}
+          />
+        </div>
+      </div>
     );
   }
 

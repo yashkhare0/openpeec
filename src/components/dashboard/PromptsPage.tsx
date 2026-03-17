@@ -188,7 +188,7 @@ export function PromptsPage({
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="grid gap-4 px-4 xl:grid-cols-[1fr_340px] lg:px-6">
+      <div className="grid gap-4 px-4 xl:grid-cols-[1fr_360px] lg:px-6">
         {/* Main prompts table */}
         <Card>
           <CardHeader>
@@ -346,7 +346,7 @@ export function PromptsPage({
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-7 text-xs text-destructive hover:bg-destructive/10"
+                            className="h-7 text-xs text-destructive"
                             onClick={() =>
                               void onDeletePrompt({ id: row.id })
                                 .then(() => onNotice("Prompt deleted."))
@@ -455,7 +455,7 @@ export function PromptsPage({
                 <InlineEmpty text="Select a prompt run to inspect." />
               ) : (
                 <>
-                  <div className="rounded-md border p-3">
+                  <div className="rounded-lg border p-3">
                     <p className="font-medium">{runDetail.run.model}</p>
                     <p className="text-xs text-muted-foreground">
                       {titleCase(runDetail.run.status)} |{" "}
@@ -465,7 +465,7 @@ export function PromptsPage({
                   {runDetail.citations.slice(0, 5).map((c, i) => (
                     <div
                       key={`${c.domain}-${i}`}
-                      className="rounded-md border p-3"
+                      className="rounded-lg border p-3"
                     >
                       <p className="text-sm font-medium">{c.domain}</p>
                       <p className="text-xs text-muted-foreground">

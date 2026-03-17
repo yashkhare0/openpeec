@@ -36,14 +36,16 @@ export function ModelsPage({
 }) {
   if (rows.length === 0) {
     return (
-      <div className="px-4 py-4 md:py-6 lg:px-6">
-        <EmptyState
-          title="No model analytics yet"
-          description="Once real prompt runs are ingested, model-level visibility and citation comparisons will appear here."
-          actionLabel="Review runner setup"
-          onAction={onOpenSettings}
-          compact
-        />
+      <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+        <div className="px-4 lg:px-6">
+          <EmptyState
+            title="No model analytics yet"
+            description="Once real prompt runs are ingested, model-level visibility and citation comparisons will appear here."
+            actionLabel="Review runner setup"
+            onAction={onOpenSettings}
+            compact
+          />
+        </div>
       </div>
     );
   }

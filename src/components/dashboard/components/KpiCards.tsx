@@ -22,16 +22,16 @@ export function KpiCards({
               <KpiIcon tone={kpi.tone} />
             </div>
             <div className="mt-3 flex items-end justify-between gap-2">
-              <p className="text-2xl font-semibold tracking-tight">
+              <p className="text-2xl font-semibold tabular-nums">
                 {kpi.value}
               </p>
               <span
                 className={cn(
-                  "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium",
+                  "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
                   kpi.tone === "positive" &&
-                    "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400",
+                    "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
                   kpi.tone === "negative" &&
-                    "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400",
+                    "bg-rose-500/10 text-rose-700 dark:text-rose-300",
                   kpi.tone === "neutral" &&
                     "bg-muted text-muted-foreground"
                 )}
@@ -49,8 +49,8 @@ export function KpiCards({
 function KpiIcon({ tone }: { tone: Tone }) {
   const className = cn(
     "size-4",
-    tone === "positive" && "text-emerald-600 dark:text-emerald-400",
-    tone === "negative" && "text-red-600 dark:text-red-400",
+    tone === "positive" && "text-emerald-600 dark:text-emerald-300",
+    tone === "negative" && "text-rose-600 dark:text-rose-300",
     tone === "neutral" && "text-muted-foreground"
   );
   if (tone === "positive") return <TrendingUp className={className} />;

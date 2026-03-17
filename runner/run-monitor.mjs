@@ -115,6 +115,18 @@ function summarizeText(input, maxChars = 240) {
   return `${text.slice(0, maxChars - 1)}...`;
 }
 
+function cleanCitationTitle(input) {
+  return normalizeText(String(input ?? "").replace(/\s*\+\d+\s*$/g, ""));
+}
+
+function extractCitationBadgeCount(input) {
+  const match = String(input ?? "").match(/\+(\d+)\s*$/);
+  if (!match) {
+    return 0;
+  }
+  return Number(match[1]);
+}
+
 function detectAccessBlocker(title, responseText) {
   const haystack = `${normalizeText(title)} ${normalizeText(responseText)}`.toLowerCase();
   const patterns = [
@@ -319,7 +331,7 @@ async function extractResponseAndCitations(page, config) {
         return {
           index: index + 1,
           url: absoluteUrl,
-          title:
+          rawTitle:
             (anchor.textContent ?? anchor.getAttribute("aria-label") ?? "")
               .replace(/\s+/g, " ")
               .trim() || absoluteUrl,
@@ -348,6 +360,7 @@ async function extractResponseAndCitations(page, config) {
 
   const seen = new Set();
   const citations = [];
+  const sourceArtifacts = [];
   for (const item of payload.citations) {
     const url = normalizeText(item.url);
     if (!url || seen.has(url)) {
@@ -366,12 +379,17 @@ async function extractResponseAndCitations(page, config) {
       position: item.index,
       domain,
       url,
-      title: summarizeText(item.title, 140),
+      title: summarizeText(cleanCitationTitle(item.rawTitle || url), 140),
       snippet: summarizeText(item.snippet, 220),
       type: classifySourceType(domain),
     };
     citation.qualityScore = qualityScoreForCitation(citation);
     citations.push(citation);
+    sourceArtifacts.push({
+      ...citation,
+      rawTitle: summarizeText(item.rawTitle || url, 140),
+      badgeCount: extractCitationBadgeCount(item.rawTitle || ""),
+    });
   }
 
   return {
@@ -380,6 +398,7 @@ async function extractResponseAndCitations(page, config) {
     responseText: normalizeText(payload.responseText),
     responseHtml: payload.responseHtml,
     citations,
+    sourceArtifacts,
   };
 }
 
@@ -524,6 +543,7 @@ async function runMonitor(config, options) {
   let output = {};
   let responseText = "";
   let citations = [];
+  let sourceArtifacts = [];
   let responseSummary = "";
   let sourceCount = 0;
   let visibilityScore = 0;
@@ -694,9 +714,10 @@ async function runMonitor(config, options) {
     const extracted = await extractResponseAndCitations(page, normalizedConfig);
     responseText = extracted.responseText;
     citations = extracted.citations;
+    sourceArtifacts = extracted.sourceArtifacts ?? [];
     await writeText(pageHtmlPath, await page.content());
     await writeText(responseHtmlPath, extracted.responseHtml ?? "");
-    await writeJson(sourcesPath, citations);
+    await writeJson(sourcesPath, sourceArtifacts);
     output = {
       title: extracted.pageTitle,
       finalUrl: extracted.finalUrl,
@@ -749,6 +770,7 @@ async function runMonitor(config, options) {
     evidencePath = screenshotPath;
     output.screenshot = screenshotPath;
     output.citationsExtracted = citations.length;
+    output.sourcesRecorded = sourceArtifacts.length;
     output.artifacts = {
       runDir,
       screenshot: screenshotPath,
