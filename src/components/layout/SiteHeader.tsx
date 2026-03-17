@@ -1,4 +1,4 @@
-import { Download, RefreshCw } from "lucide-react";
+import { Download, GraduationCap, RefreshCw } from "lucide-react";
 
 import { Profile } from "@/components/Profile";
 import { Button } from "@/components/ui/button";
@@ -35,20 +35,22 @@ export function SiteHeader({
   modelFilter,
   onModelFilter,
   onRefresh,
+  onStartTutorial,
 }: {
   rangeDays: number;
   onRangeDays: (value: number) => void;
   modelFilter: string;
   onModelFilter: (value: string) => void;
   onRefresh: () => void;
+  onStartTutorial: () => void;
 }) {
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4">
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="mr-2 h-4" />
 
-      <div className="flex flex-1 items-center gap-2">
-        <div className="flex items-center gap-1.5 rounded-lg border bg-muted/50 px-2.5 py-1 text-sm font-medium">
+      <div data-tour="header-filters" className="flex flex-1 items-center gap-2">
+        <div data-tour="client-badge" className="flex items-center gap-1.5 rounded-lg border bg-muted/50 px-2.5 py-1 text-sm font-medium">
           <div className="size-2 rounded-full bg-primary" />
           ChatGPT
         </div>
@@ -93,8 +95,12 @@ export function SiteHeader({
       </div>
 
       <div className="flex items-center gap-2">
-        <Profile />
-        <Button variant="outline" size="sm">
+        <div data-tour="auth-area"><Profile /></div>
+        <Button data-tour="tutorial-btn" variant="outline" size="sm" onClick={onStartTutorial}>
+          <GraduationCap className="mr-1.5 size-4" />
+          Run Tutorial
+        </Button>
+        <Button data-tour="export-btn" variant="outline" size="sm">
           <Download className="mr-1.5 size-4" />
           Export
         </Button>

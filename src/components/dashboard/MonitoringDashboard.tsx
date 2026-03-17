@@ -10,6 +10,7 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { StatusBanner } from "./components/StatusBanner";
+import { ProductTour } from "./components/ProductTour";
 import { OverviewPage } from "./OverviewPage";
 import { PromptsPage } from "./PromptsPage";
 import { SourcesPage } from "./SourcesPage";
@@ -32,6 +33,7 @@ export function MonitoringDashboard() {
     null
   );
   const [notice, setNotice] = useState("");
+  const [tourOpen, setTourOpen] = useState(false);
   const search = useDeferredValue(promptSearch.trim().toLowerCase());
 
   const [newGroupName, setNewGroupName] = useState("");
@@ -177,6 +179,7 @@ export function MonitoringDashboard() {
             modelFilter={modelFilter}
             onModelFilter={setModelFilter}
             onRefresh={refreshAnalytics}
+            onStartTutorial={() => setTourOpen(true)}
           />
 
           <div className="flex flex-1 flex-col">
@@ -260,6 +263,12 @@ export function MonitoringDashboard() {
             )}
           </div>
         </SidebarInset>
+
+        <ProductTour
+          open={tourOpen}
+          onClose={() => setTourOpen(false)}
+          onNavigate={setPage}
+        />
       </SidebarProvider>
     </TooltipProvider>
   );

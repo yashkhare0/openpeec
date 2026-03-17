@@ -65,11 +65,11 @@ export function OverviewPage({
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="px-4 lg:px-6">
+      <div data-tour="kpi-cards" className="px-4 lg:px-6">
         <KpiCards kpis={kpis} />
       </div>
 
-      <div className="grid gap-4 px-4 xl:grid-cols-[1.4fr_1fr] lg:px-6">
+      <div data-tour="charts-area" className="grid gap-4 px-4 xl:grid-cols-[1.4fr_1fr] lg:px-6">
         <TrendChart trend={trend} />
         <CompetitorTable rows={overview?.modelComparison ?? []} />
       </div>

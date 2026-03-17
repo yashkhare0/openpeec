@@ -16,3 +16,4 @@ temp
 coverage/
 runner/artifacts/
 runner/last-run.json
+.gstack/
