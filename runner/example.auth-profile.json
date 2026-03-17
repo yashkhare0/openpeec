@@ -1,0 +1,7 @@
+{
+  "headers": {
+    "x-peec-runner": "local"
+  },
+  "cookies": [],
+  "storageStatePath": "runner/chatgpt.storage-state.json"
+}

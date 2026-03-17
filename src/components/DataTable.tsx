@@ -35,6 +35,8 @@ interface DataTableProps<TData, TValue> {
   visibility: VisibilityState;
   getRowId: (row: TData) => string;
   deleteBatch: (ids: string[]) => Promise<void>;
+  filterColumn?: string;
+  filterPlaceholder?: string;
 }
 
 export function DataTable<TData, TValue>({
@@ -43,6 +45,8 @@ export function DataTable<TData, TValue>({
   visibility,
   getRowId,
   deleteBatch,
+  filterColumn = "name",
+  filterPlaceholder = "Filter monitors...",
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -85,10 +89,12 @@ export function DataTable<TData, TValue>({
     <div className="w-full">
       <div className="flex items-center py-4">
         <Input
-          placeholder="Filter URLs..."
-          value={(table.getColumn("url")?.getFilterValue() as string) ?? ""}
+          placeholder={filterPlaceholder}
+          value={
+            (table.getColumn(filterColumn)?.getFilterValue() as string) ?? ""
+          }
           onChange={(event) =>
-            table.getColumn("url")?.setFilterValue(event.target.value)
+            table.getColumn(filterColumn)?.setFilterValue(event.target.value)
           }
           className="max-w-sm"
         />
@@ -162,7 +168,7 @@ export function DataTable<TData, TValue>({
                   colSpan={columns.length}
                   className="h-24 text-center"
                 >
-                  No crons registered.
+                  No monitors registered yet.
                 </TableCell>
               </TableRow>
             )}
@@ -176,7 +182,7 @@ export function DataTable<TData, TValue>({
             size="sm"
             onClick={() => void handleDeleteBatch()}
           >
-            Delete {table.getFilteredSelectedRowModel().rows.length} of{" "}
+            Delete {table.getFilteredSelectedRowModel().rows.length} selected of{" "}
             {table.getFilteredRowModel().rows.length}
           </Button>
         ) : (

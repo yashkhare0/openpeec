@@ -1,0 +1,173 @@
+# Local Monitoring Runner (Playwright)
+
+Use this runner to execute internal monitoring prompts against ChatGPT Web and capture response visibility and citation quality signals per run.
+
+This is an operator tool for recurring checks, not a generic browser automation script. Every run should answer:
+- Did ChatGPT return a usable response for this monitoring prompt?
+- Which sources were cited, and where did they appear?
+- Did citation quality or visibility degrade versus expected behavior?
+
+## Commands
+
+- `npm run runner:install-browsers`
+- `npm run runner:capture-session`
+- `npm run runner:monitor -- --config runner/example.monitor.json`
+- `npm run runner:monitor -- --config runner/example.monitor.json --output runner/last-run.json --ingest`
+- `npm run runner:prompt:example`
+
+## Operator Workflow
+
+1. Install browsers once with `runner:install-browsers`.
+2. Capture a real ChatGPT session with `runner:capture-session`. This opens a headed Edge session and saves storage state to `runner/chatgpt.storage-state.json`.
+3. Keep `runner/example.auth-profile.json` pointed at that file, or replace it with your own local path.
+4. Run a monitoring check with `runner:prompt:example`.
+5. Review `runner/last-run.json` and the evidence bundle in `runner/artifacts/<run-label>-<timestamp>/`.
+6. Inspect:
+`status`, `warnings`, `responseText`, `citations`, `visibilityScore`, `citationQualityScore`, `network.json`, `console.json`, `page.html`, `response.html`, `trace.zip`, and the recorded video.
+7. If you need ingestion, run with `--ingest` and set `VITE_CONVEX_URL`.
+
+## Prompt-Oriented Config Contract
+
+`runner/example.monitor.json`:
+
+```json
+{
+  "monitorId": "optional-monitor-id-for-legacy-ingest",
+  "promptId": "optional-prompt-id-for-analytics-ingest",
+  "runLabel": "chatgpt-citation-visibility-smoke",
+  "client": "chatgpt",
+  "platform": "web",
+  "model": "chatgpt-web",
+  "browser": {
+    "channel": "msedge",
+    "headless": false
+  },
+  "navigation": {
+    "url": "https://chatgpt.com/",
+    "waitUntil": "domcontentloaded",
+    "timeoutMs": 30000
+  },
+  "prompt": {
+    "text": "Prompt text to submit",
+    "inputSelector": "#prompt-textarea, [contenteditable='true'], textarea",
+    "submitSelector": "button[data-testid='send-button'], button[aria-label*='Send']",
+    "submitKey": "Enter",
+    "clearExisting": true
+  },
+  "extraction": {
+    "responseContainerSelector": "[data-message-author-role='assistant']:not([data-message-id*='request-placeholder']):last-of-type",
+    "responseTextSelector": "[data-message-author-role='assistant']:not([data-message-id*='request-placeholder']):last-of-type",
+    "citationLinkSelector": "a[href]",
+    "maxCitations": 20
+  },
+  "authProfile": {
+    "authType": "file|env|manual",
+    "localRef": "runner/example.auth-profile.json"
+  },
+  "assertions": {
+    "urlIncludes": "chatgpt.com",
+    "titleIncludes": "optional title substring",
+    "waitForSelector": "optional selector"
+  },
+  "timing": {
+    "responseTimeoutMs": 45000,
+    "settleDelayMs": 1500
+  },
+  "ingest": {
+    "target": "auto|analytics|monitoring"
+  }
+}
+```
+
+`authProfile.localRef` is a local-only metadata pointer. Secrets stay local.
+The default example profile expects `runner/chatgpt.storage-state.json`, which you create with `npm run runner:capture-session`.
+The live ChatGPT page uses a visible `#prompt-textarea` contenteditable and a hidden fallback `textarea`; keep the contenteditable first in your selector order.
+The live ChatGPT response stream also renders temporary `request-placeholder` assistant nodes; exclude those from extraction or you will scrape an empty streaming shell instead of the completed answer.
+If selectors fail, session is missing, or ChatGPT markup shifts, the run still returns structured output with warnings.
+
+## Result Contract
+
+The runner emits JSON:
+
+```json
+{
+  "schemaVersion": 2,
+  "monitorId": "string-or-null",
+  "promptId": "string-or-null",
+  "runLabel": "string",
+  "client": "chatgpt",
+  "platform": "web|desktop|ios|android",
+  "model": "string",
+  "status": "success|failed",
+  "startedAt": 0,
+  "finishedAt": 0,
+  "latencyMs": 0,
+  "summary": "string",
+  "deeplinkUsed": "https://...",
+  "evidencePath": "path-or-null",
+  "fallbackUsed": false,
+  "warnings": [],
+  "responseText": "string",
+  "responseSummary": "string",
+  "sourceCount": 0,
+  "citations": [
+    {
+      "position": 1,
+      "domain": "example.com",
+      "url": "https://example.com/article",
+      "title": "Citation title",
+      "snippet": "Nearby text snippet",
+      "type": "docs|ugc|editorial|social|corporate|other",
+      "qualityScore": 87
+    }
+  ],
+  "visibilityScore": 74.5,
+  "citationQualityScore": 68.2,
+  "averageCitationPosition": 2.4,
+  "output": {
+    "title": "Page title",
+    "finalUrl": "https://...",
+    "screenshot": "path",
+    "artifacts": {
+      "runDir": "path",
+      "screenshot": "path",
+      "trace": "path",
+      "video": "path",
+      "pageHtml": "path",
+      "responseHtml": "path",
+      "sources": "path",
+      "network": "path",
+      "console": "path"
+    }
+  },
+  "ingest": {
+    "ok": true,
+    "target": "analytics|monitoring"
+  }
+}
+```
+
+## Fallback Behavior
+
+If auth/session is missing or selectors shift:
+- the runner still emits structured output
+- `fallbackUsed` is set
+- `warnings` records the failure details
+- screenshot, trace, and DOM/network evidence are still captured when possible
+- explicit access blockers such as ChatGPT verification pages are marked as failed runs
+
+## Ingestion Behavior
+
+If `--ingest` is provided and `VITE_CONVEX_URL` is set:
+1. The runner first tries `api.analytics.ingestPromptRun` when `promptId` is present.
+2. If analytics ingestion is unavailable or fails, it can fall back to `api.monitoring.ingestMonitorRun` when `monitorId` is present.
+
+Optional hardening:
+- set `PEEC_RUN_INGEST_KEY` in Convex env and local shell to require signed ingestion.
+- when `--ingest` is requested, the runner exits non-zero if ingestion fails or is skipped.
+
+## Monitoring Interpretation Notes
+
+- A high `citationQualityScore` with low `sourceCount` often means narrow sourcing.
+- A drop in `visibilityScore` with stable `responseText` length usually indicates weaker citation density.
+- Treat `warnings` as operator action items, not noise.

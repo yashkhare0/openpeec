@@ -14,3 +14,5 @@ playground-temp
 temp
 .eslintcache
 coverage/
+runner/artifacts/
+runner/last-run.json
