@@ -1,8 +1,16 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { Crons } from "@convex-dev/crons";
 import { v } from "convex/values";
 
+import { components, internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
-import { mutation, MutationCtx, query, QueryCtx } from "./_generated/server";
+import {
+  internalMutation,
+  mutation,
+  MutationCtx,
+  query,
+  QueryCtx,
+} from "./_generated/server";
 
 const vRunStatus = v.union(
   v.literal("queued"),
@@ -29,11 +37,14 @@ const vCitationType = v.union(
 );
 
 type UserId = Id<"users">;
+type PromptDoc = Doc<"prompts">;
 type PromptRunDoc = Doc<"promptRuns">;
 type CitationDoc = Doc<"citations">;
 type TrackedEntityDoc = Doc<"trackedEntities">;
 type UserCtx = QueryCtx | MutationCtx;
 type PatchObject = Record<string, unknown>;
+
+const crons = new Crons(components.crons);
 
 function compactPatch<T extends PatchObject>(patch: T): PatchObject {
   return Object.fromEntries(
@@ -81,6 +92,10 @@ function average(values: number[]): number | undefined {
   }
   const sum = values.reduce((acc, value) => acc + value, 0);
   return sum / values.length;
+}
+
+function isTerminalRunStatus(status: PromptRunDoc["status"]): boolean {
+  return status === "success" || status === "failed";
 }
 
 function toPercent(value: number | undefined): number | undefined {
@@ -160,6 +175,77 @@ function normalizeCitationQualityScore(value: number | undefined): number | unde
 
 function inferOwnedFromKind(kind: TrackedEntityDoc["kind"]): boolean {
   return kind === "brand" || kind === "product" || kind === "feature";
+}
+
+async function assertPromptIdsOwned(
+  ctx: MutationCtx | QueryCtx,
+  userId: UserId,
+  promptIds: Id<"prompts">[]
+): Promise<PromptDoc[]> {
+  const uniquePromptIds = [...new Set(promptIds)];
+  if (!uniquePromptIds.length) {
+    throw new Error("Select at least one prompt");
+  }
+
+  const prompts = await Promise.all(
+    uniquePromptIds.map(async (promptId) => {
+      const prompt = await ctx.db.get(promptId);
+      if (prompt == null) {
+        throw new Error("Prompt not found");
+      }
+      if (prompt.userId !== userId) {
+        throw new Error("User not authorized for one or more prompts");
+      }
+      return prompt;
+    })
+  );
+
+  return prompts;
+}
+
+async function registerPromptJobCron(
+  ctx: MutationCtx,
+  jobId: Id<"promptJobs">,
+  schedule: string
+): Promise<string> {
+  return await crons.register(
+    ctx,
+    {
+      kind: "cron",
+      cronspec: schedule,
+    },
+    internal.analytics.triggerPromptJob,
+    { jobId }
+  );
+}
+
+async function deletePromptJobCron(ctx: MutationCtx, cronId: string | undefined) {
+  if (!cronId) {
+    return;
+  }
+  await crons.delete(ctx, { id: cronId });
+}
+
+async function enqueuePromptRunDocs(
+  ctx: MutationCtx,
+  userId: UserId,
+  prompts: PromptDoc[],
+  label: string
+): Promise<number> {
+  const startedAt = Date.now();
+  await Promise.all(
+    prompts.map((prompt) =>
+      ctx.db.insert("promptRuns", {
+        userId,
+        promptId: prompt._id,
+        model: prompt.targetModel,
+        status: "queued",
+        startedAt,
+        runLabel: label,
+      })
+    )
+  );
+  return prompts.length;
 }
 
 async function assertPromptOwnership(
@@ -388,8 +474,230 @@ export const deletePrompt = mutation({
         await ctx.db.delete(run._id);
       })
     );
+
+    const promptJobs = await ctx.db
+      .query("promptJobs")
+      .withIndex("userId", (q) => q.eq("userId", userId))
+      .collect();
+    await Promise.all(
+      promptJobs
+        .filter((job) => job.promptIds.includes(args.id))
+        .map(async (job) => {
+          const nextPromptIds = job.promptIds.filter((promptId) => promptId !== args.id);
+          if (nextPromptIds.length === 0) {
+            await deletePromptJobCron(ctx, job.cronId);
+            await ctx.db.delete(job._id);
+            return;
+          }
+          await ctx.db.patch(job._id, {
+            promptIds: nextPromptIds,
+            updatedAt: Date.now(),
+          });
+        })
+    );
+
     await ctx.db.delete(args.id);
     return args.id;
+  },
+});
+
+export const createPromptJob = mutation({
+  args: {
+    name: v.string(),
+    promptIds: v.array(v.id("prompts")),
+    schedule: v.optional(v.string()),
+    enabled: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const prompts = await assertPromptIdsOwned(ctx, userId, args.promptIds);
+    const now = Date.now();
+    const enabled = args.enabled ?? true;
+    const promptIds = prompts.map((prompt) => prompt._id);
+    const schedule = args.schedule?.trim() || undefined;
+
+    const jobId = await ctx.db.insert("promptJobs", {
+      userId,
+      name: args.name.trim(),
+      promptIds,
+      schedule,
+      enabled,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    if (schedule && enabled) {
+      const cronId = await registerPromptJobCron(ctx, jobId, schedule);
+      await ctx.db.patch(jobId, { cronId });
+    }
+
+    return jobId;
+  },
+});
+
+export const listPromptJobs = query({
+  handler: async (ctx) => {
+    const userId = await requireUserId(ctx);
+    const [jobs, prompts] = await Promise.all([
+      ctx.db.query("promptJobs").withIndex("userId", (q) => q.eq("userId", userId)).collect(),
+      ctx.db.query("prompts").withIndex("userId", (q) => q.eq("userId", userId)).collect(),
+    ]);
+    const promptById = new Map(prompts.map((prompt) => [prompt._id, prompt]));
+
+    return jobs
+      .map((job) => ({
+        ...job,
+        promptCount: job.promptIds.length,
+        prompts: job.promptIds
+          .map((promptId) => promptById.get(promptId))
+          .filter((prompt): prompt is PromptDoc => prompt !== undefined)
+          .map((prompt) => ({
+            id: prompt._id,
+            name: prompt.name,
+            model: prompt.targetModel,
+          })),
+      }))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  },
+});
+
+export const updatePromptJob = mutation({
+  args: {
+    id: v.id("promptJobs"),
+    name: v.optional(v.string()),
+    promptIds: v.optional(v.array(v.id("prompts"))),
+    schedule: v.optional(v.string()),
+    enabled: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const job = await ctx.db.get(args.id);
+    if (job == null) {
+      throw new Error("Execution plan not found");
+    }
+    if (job.userId !== userId) {
+      throw new Error("User not authorized to update this execution plan");
+    }
+
+    const prompts = args.promptIds
+      ? await assertPromptIdsOwned(ctx, userId, args.promptIds)
+      : await assertPromptIdsOwned(ctx, userId, job.promptIds);
+    const promptIds = prompts.map((prompt) => prompt._id);
+    const schedule =
+      args.schedule !== undefined ? args.schedule.trim() || undefined : job.schedule;
+    const enabled = args.enabled ?? job.enabled;
+
+    await deletePromptJobCron(ctx, job.cronId);
+    let cronId: string | undefined;
+    if (schedule && enabled) {
+      cronId = await registerPromptJobCron(ctx, args.id, schedule);
+    }
+
+    await ctx.db.patch(args.id, {
+      name: args.name?.trim() ?? job.name,
+      promptIds,
+      schedule,
+      enabled,
+      cronId,
+      updatedAt: Date.now(),
+    });
+    return args.id;
+  },
+});
+
+export const deletePromptJob = mutation({
+  args: { id: v.id("promptJobs") },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const job = await ctx.db.get(args.id);
+    if (job == null) {
+      throw new Error("Execution plan not found");
+    }
+    if (job.userId !== userId) {
+      throw new Error("User not authorized to delete this execution plan");
+    }
+
+    await deletePromptJobCron(ctx, job.cronId);
+    await ctx.db.delete(args.id);
+    return args.id;
+  },
+});
+
+export const triggerSelectedPromptsNow = mutation({
+  args: {
+    promptIds: v.array(v.id("prompts")),
+    label: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const prompts = await assertPromptIdsOwned(ctx, userId, args.promptIds);
+    const queuedCount = await enqueuePromptRunDocs(
+      ctx,
+      userId,
+      prompts,
+      args.label?.trim() || "Manual run"
+    );
+    return { queuedCount };
+  },
+});
+
+export const triggerPromptJobNow = mutation({
+  args: { id: v.id("promptJobs") },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const job = await ctx.db.get(args.id);
+    if (job == null) {
+      throw new Error("Execution plan not found");
+    }
+    if (job.userId !== userId) {
+      throw new Error("User not authorized to run this execution plan");
+    }
+
+    const prompts = await assertPromptIdsOwned(ctx, userId, job.promptIds);
+    const queuedCount = await enqueuePromptRunDocs(ctx, userId, prompts, job.name);
+    await ctx.db.patch(args.id, {
+      lastTriggeredAt: Date.now(),
+      lastQueuedCount: queuedCount,
+      updatedAt: Date.now(),
+    });
+    return { queuedCount };
+  },
+});
+
+export const triggerPromptJob = internalMutation({
+  args: { jobId: v.id("promptJobs") },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (job == null || !job.enabled) {
+      return { queuedCount: 0 };
+    }
+    const prompts = await Promise.all(
+      job.promptIds.map(async (promptId) => {
+        const prompt = await ctx.db.get(promptId);
+        return prompt;
+      })
+    );
+    const validPrompts = prompts.filter((prompt): prompt is PromptDoc => prompt !== null);
+    if (!validPrompts.length) {
+      await ctx.db.patch(args.jobId, {
+        lastTriggeredAt: Date.now(),
+        lastQueuedCount: 0,
+        updatedAt: Date.now(),
+      });
+      return { queuedCount: 0 };
+    }
+    const queuedCount = await enqueuePromptRunDocs(
+      ctx,
+      job.userId,
+      validPrompts,
+      job.name
+    );
+    await ctx.db.patch(args.jobId, {
+      lastTriggeredAt: Date.now(),
+      lastQueuedCount: queuedCount,
+      updatedAt: Date.now(),
+    });
+    return { queuedCount };
   },
 });
 
@@ -791,6 +1099,9 @@ export const listSources = query({
       if (args.model && run.model !== args.model) {
         return false;
       }
+      if (!isTerminalRunStatus(run.status)) {
+        return false;
+      }
       return true;
     });
 
@@ -889,8 +1200,10 @@ export const getOverview = query({
     const currentStart = referenceTime - rangeMs;
     const previousStart = referenceTime - rangeMs * 2;
 
-    const filteredRuns = runs.filter((run) =>
-      args.model ? run.model === args.model : true
+    const filteredRuns = runs.filter(
+      (run) =>
+        (args.model ? run.model === args.model : true) &&
+        isTerminalRunStatus(run.status)
     );
     const currentRuns = filteredRuns.filter(
       (run) => run.startedAt >= currentStart && run.startedAt <= referenceTime

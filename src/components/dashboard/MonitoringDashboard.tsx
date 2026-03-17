@@ -65,6 +65,10 @@ export function MonitoringDashboard() {
     api.analytics.listPrompts,
     live ? promptArgs : "skip"
   );
+  const promptJobs = useQuery(
+    api.analytics.listPromptJobs,
+    live ? {} : "skip"
+  );
   const runs = useQuery(
     api.analytics.listPromptRuns,
     live ? { limit: 200, model } : "skip"
@@ -86,6 +90,13 @@ export function MonitoringDashboard() {
   const createPrompt = useMutation(api.analytics.createPrompt);
   const updatePrompt = useMutation(api.analytics.updatePrompt);
   const deletePrompt = useMutation(api.analytics.deletePrompt);
+  const createPromptJob = useMutation(api.analytics.createPromptJob);
+  const updatePromptJob = useMutation(api.analytics.updatePromptJob);
+  const deletePromptJob = useMutation(api.analytics.deletePromptJob);
+  const triggerSelectedPromptsNow = useMutation(
+    api.analytics.triggerSelectedPromptsNow
+  );
+  const triggerPromptJobNow = useMutation(api.analytics.triggerPromptJobNow);
   const createTrackedEntity = useMutation(api.analytics.createTrackedEntity);
   const updateTrackedEntity = useMutation(api.analytics.updateTrackedEntity);
   const deleteTrackedEntity = useMutation(api.analytics.deleteTrackedEntity);
@@ -94,6 +105,7 @@ export function MonitoringDashboard() {
     live &&
     (overview === undefined ||
       prompts === undefined ||
+      promptJobs === undefined ||
       runs === undefined ||
       sources === undefined);
   const hasData = !!overview && overview.kpis.totalRuns > 0;
@@ -215,6 +227,7 @@ export function MonitoringDashboard() {
                 selectedGroup={selectedGroup}
                 onSelectGroup={setSelectedGroup}
                 rows={promptRows}
+                promptJobs={promptJobs ?? []}
                 search={promptSearch}
                 onSearch={setPromptSearch}
                 runDetail={runDetail}
@@ -236,6 +249,11 @@ export function MonitoringDashboard() {
                 onCreatePrompt={createPrompt}
                 onUpdatePrompt={updatePrompt}
                 onDeletePrompt={deletePrompt}
+                onCreatePromptJob={createPromptJob}
+                onUpdatePromptJob={updatePromptJob}
+                onDeletePromptJob={deletePromptJob}
+                onTriggerSelectedNow={triggerSelectedPromptsNow}
+                onTriggerPromptJobNow={triggerPromptJobNow}
                 onNotice={setNotice}
               />
             )}

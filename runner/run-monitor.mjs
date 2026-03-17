@@ -127,6 +127,35 @@ function extractCitationBadgeCount(input) {
   return Number(match[1]);
 }
 
+function canonicalizeCitationUrl(input) {
+  const text = normalizeText(input);
+  if (!text) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(text);
+    const removableParams = [
+      "utm_source",
+      "utm_medium",
+      "utm_campaign",
+      "utm_term",
+      "utm_content",
+      "gclid",
+      "fbclid",
+      "mc_cid",
+      "mc_eid",
+    ];
+    for (const name of removableParams) {
+      parsed.searchParams.delete(name);
+    }
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return text;
+  }
+}
+
 function detectAccessBlocker(title, responseText) {
   const haystack = `${normalizeText(title)} ${normalizeText(responseText)}`.toLowerCase();
   const patterns = [
@@ -362,7 +391,8 @@ async function extractResponseAndCitations(page, config) {
   const citations = [];
   const sourceArtifacts = [];
   for (const item of payload.citations) {
-    const url = normalizeText(item.url);
+    const originalUrl = normalizeText(item.url);
+    const url = canonicalizeCitationUrl(originalUrl);
     if (!url || seen.has(url)) {
       continue;
     }
@@ -387,6 +417,7 @@ async function extractResponseAndCitations(page, config) {
     citations.push(citation);
     sourceArtifacts.push({
       ...citation,
+      originalUrl,
       rawTitle: summarizeText(item.rawTitle || url, 140),
       badgeCount: extractCitationBadgeCount(item.rawTitle || ""),
     });

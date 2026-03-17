@@ -1,7 +1,10 @@
+import { useEffect, useMemo, useState } from "react";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { ArrowUpRightIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -55,11 +58,30 @@ function errorMessage(error: unknown): string {
   return "Action failed.";
 }
 
+function domainFromUrl(url: string | undefined): string {
+  if (!url) return "";
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+const typeTone: Record<string, string> = {
+  ugc: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300",
+  editorial: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
+  corporate: "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-300",
+  docs: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300",
+  social: "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-300",
+  other: "bg-muted text-muted-foreground",
+};
+
 export function PromptsPage({
   groups,
   selectedGroup,
   onSelectGroup,
   rows,
+  promptJobs,
   search,
   onSearch,
   runDetail,
@@ -81,6 +103,11 @@ export function PromptsPage({
   onCreatePrompt,
   onUpdatePrompt,
   onDeletePrompt,
+  onCreatePromptJob,
+  onUpdatePromptJob,
+  onDeletePromptJob,
+  onTriggerSelectedNow,
+  onTriggerPromptJobNow,
   onNotice,
 }: {
   groups: Array<{ _id: Id<"promptGroups">; name: string }>;
@@ -97,15 +124,51 @@ export function PromptsPage({
     latestRunId?: Id<"promptRuns">;
     active: boolean;
   }>;
+  promptJobs: Array<{
+    _id: Id<"promptJobs">;
+    name: string;
+    promptIds: Array<Id<"prompts">>;
+    promptCount: number;
+    schedule?: string;
+    enabled: boolean;
+    lastTriggeredAt?: number;
+    lastQueuedCount?: number;
+    prompts: Array<{
+      id: Id<"prompts">;
+      name: string;
+      model: string;
+    }>;
+  }>;
   search: string;
   onSearch: (value: string) => void;
   runDetail:
     | {
-        run: { status: string; startedAt: number; model: string };
+        run: {
+          status: string;
+          startedAt: number;
+          model: string;
+          responseSummary?: string;
+          sourceCount?: number;
+          visibilityScore?: number;
+          citationQualityScore?: number;
+        };
+        prompt?: {
+          name: string;
+          promptText: string;
+        } | null;
         citations: Array<{
           domain: string;
+          url: string;
+          title?: string;
+          snippet?: string;
+          type: string;
           position: number;
           qualityScore?: number;
+          isOwned?: boolean;
+          trackedEntity?: {
+            name: string;
+            slug: string;
+          } | null;
         }>;
       }
     | undefined;
@@ -140,8 +203,47 @@ export function PromptsPage({
     active?: boolean;
   }) => Promise<Id<"prompts">>;
   onDeletePrompt: (args: { id: Id<"prompts"> }) => Promise<Id<"prompts">>;
+  onCreatePromptJob: (args: {
+    name: string;
+    promptIds: Array<Id<"prompts">>;
+    schedule?: string;
+    enabled?: boolean;
+  }) => Promise<Id<"promptJobs">>;
+  onUpdatePromptJob: (args: {
+    id: Id<"promptJobs">;
+    name?: string;
+    promptIds?: Array<Id<"prompts">>;
+    schedule?: string;
+    enabled?: boolean;
+  }) => Promise<Id<"promptJobs">>;
+  onDeletePromptJob: (args: { id: Id<"promptJobs"> }) => Promise<Id<"promptJobs">>;
+  onTriggerSelectedNow: (args: {
+    promptIds: Array<Id<"prompts">>;
+    label?: string;
+  }) => Promise<{ queuedCount: number }>;
+  onTriggerPromptJobNow: (args: {
+    id: Id<"promptJobs">;
+  }) => Promise<{ queuedCount: number }>;
   onNotice: (text: string) => void;
 }) {
+  const [selectedPromptIds, setSelectedPromptIds] = useState<Array<Id<"prompts">>>([]);
+  const [jobName, setJobName] = useState("");
+  const [jobSchedule, setJobSchedule] = useState("0 9 * * 1-5");
+
+  useEffect(() => {
+    setSelectedPromptIds((current) =>
+      current.filter((id) => rows.some((row) => row.id === id))
+    );
+  }, [rows]);
+
+  const allVisibleSelected =
+    rows.length > 0 && rows.every((row) => selectedPromptIds.includes(row.id));
+  const selectedCount = selectedPromptIds.length;
+  const selectedRows = useMemo(
+    () => rows.filter((row) => selectedPromptIds.includes(row.id)),
+    [rows, selectedPromptIds]
+  );
+
   const createGroup = async () => {
     if (!newGroupName.trim()) return onNotice("Group name is required.");
     try {
@@ -181,6 +283,56 @@ export function PromptsPage({
     try {
       await onUpdateGroup({ id, name: next.trim() });
       onNotice("Prompt group updated.");
+    } catch (error) {
+      onNotice(errorMessage(error));
+    }
+  };
+
+  const togglePrompt = (id: Id<"prompts">, checked: boolean) => {
+    setSelectedPromptIds((current) =>
+      checked ? [...new Set([...current, id])] : current.filter((item) => item !== id)
+    );
+  };
+
+  const toggleAllVisible = (checked: boolean) => {
+    setSelectedPromptIds((current) => {
+      if (checked) {
+        return [...new Set([...current, ...rows.map((row) => row.id)])];
+      }
+      return current.filter((id) => !rows.some((row) => row.id === id));
+    });
+  };
+
+  const queueSelectedNow = async () => {
+    if (!selectedCount) {
+      onNotice("Select at least one prompt to queue.");
+      return;
+    }
+    try {
+      const result = await onTriggerSelectedNow({
+        promptIds: selectedPromptIds,
+        label: jobName.trim() || "Manual run",
+      });
+      onNotice(`${result.queuedCount} prompt runs queued.`);
+    } catch (error) {
+      onNotice(errorMessage(error));
+    }
+  };
+
+  const savePromptPlan = async () => {
+    if (!selectedCount) {
+      onNotice("Select at least one prompt to schedule.");
+      return;
+    }
+    try {
+      await onCreatePromptJob({
+        name: jobName.trim() || `Prompt batch (${selectedCount})`,
+        promptIds: selectedPromptIds,
+        schedule: jobSchedule.trim() || undefined,
+        enabled: true,
+      });
+      setJobName("");
+      onNotice("Execution plan saved.");
     } catch (error) {
       onNotice(errorMessage(error));
     }
@@ -266,6 +418,13 @@ export function PromptsPage({
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={allVisibleSelected}
+                        onCheckedChange={(checked) => toggleAllVisible(checked === true)}
+                        aria-label="Select all prompts"
+                      />
+                    </TableHead>
                     <TableHead>Prompt</TableHead>
                     <TableHead>Model</TableHead>
                     <TableHead className="text-right">Visibility</TableHead>
@@ -277,6 +436,15 @@ export function PromptsPage({
                 <TableBody>
                   {rows.map((row) => (
                     <TableRow key={String(row.id)}>
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedPromptIds.includes(row.id)}
+                          onCheckedChange={(checked) =>
+                            togglePrompt(row.id, checked === true)
+                          }
+                          aria-label={`Select ${row.name}`}
+                        />
+                      </TableCell>
                       <TableCell>
                         <div>
                           <p className="font-medium">{row.name}</p>
@@ -445,6 +613,155 @@ export function PromptsPage({
 
           <Card>
             <CardHeader>
+              <CardTitle>Execution Plans</CardTitle>
+              <CardDescription>
+                Queue selected prompts now or save a recurring batch.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="rounded-xl border bg-muted/20 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium">
+                      {selectedCount} prompt{selectedCount === 1 ? "" : "s"} selected
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedRows.length
+                        ? selectedRows.slice(0, 3).map((row) => row.name).join(", ")
+                        : "Select prompt rows to build a batch."}
+                      {selectedRows.length > 3 ? "…" : ""}
+                    </p>
+                  </div>
+                  <Badge variant="secondary">
+                    {selectedRows.length
+                      ? selectedRows.map((row) => row.model).join(" / ")
+                      : "No selection"}
+                  </Badge>
+                </div>
+                <div className="mt-3 grid gap-2">
+                  <Input
+                    value={jobName}
+                    onChange={(e) => setJobName(e.target.value)}
+                    placeholder="Batch name"
+                    className="h-8"
+                  />
+                  <Input
+                    value={jobSchedule}
+                    onChange={(e) => setJobSchedule(e.target.value)}
+                    placeholder="Cron schedule, e.g. 0 9 * * 1-5"
+                    className="h-8 font-mono text-xs"
+                  />
+                  <p className="text-[11px] leading-5 text-muted-foreground">
+                    Leave the cron field blank to save a manual batch only.
+                  </p>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => void queueSelectedNow()}>
+                    Queue now
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void savePromptPlan()}
+                  >
+                    Save plan
+                  </Button>
+                </div>
+              </div>
+
+              {promptJobs.length === 0 ? (
+                <InlineEmpty text="No saved execution plans yet." />
+              ) : (
+                <div className="space-y-2">
+                  {promptJobs.map((job) => (
+                    <div key={String(job._id)} className="rounded-xl border p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <p className="text-sm font-medium">{job.name}</p>
+                            <Badge variant={job.enabled ? "default" : "secondary"}>
+                              {job.enabled ? "Live" : "Paused"}
+                            </Badge>
+                            <Badge variant="outline">
+                              {job.schedule || "Manual"}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {job.promptCount} prompts
+                            {job.lastTriggeredAt
+                              ? ` | Last trigger ${formatFreshness(job.lastTriggeredAt)}`
+                              : " | Never triggered"}
+                            {job.lastQueuedCount
+                              ? ` | Queued ${job.lastQueuedCount}`
+                              : ""}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {job.prompts.map((prompt) => prompt.name).join(", ")}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            void onTriggerPromptJobNow({ id: job._id })
+                              .then((result) =>
+                                onNotice(`${result.queuedCount} prompt runs queued.`)
+                              )
+                              .catch((error: unknown) =>
+                                onNotice(errorMessage(error))
+                              )
+                          }
+                        >
+                          Run now
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            void onUpdatePromptJob({
+                              id: job._id,
+                              enabled: !job.enabled,
+                            })
+                              .then(() =>
+                                onNotice(
+                                  job.enabled
+                                    ? "Execution plan paused."
+                                    : "Execution plan resumed."
+                                )
+                              )
+                              .catch((error: unknown) =>
+                                onNotice(errorMessage(error))
+                              )
+                          }
+                        >
+                          {job.enabled ? "Pause" : "Resume"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive"
+                          onClick={() =>
+                            void onDeletePromptJob({ id: job._id })
+                              .then(() => onNotice("Execution plan deleted."))
+                              .catch((error: unknown) =>
+                                onNotice(errorMessage(error))
+                              )
+                          }
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>Run Detail</CardTitle>
               <CardDescription>
                 Inspect citations from the selected run.
@@ -455,27 +772,115 @@ export function PromptsPage({
                 <InlineEmpty text="Select a prompt run to inspect." />
               ) : (
                 <>
-                  <div className="rounded-lg border p-3">
-                    <p className="font-medium">{runDetail.run.model}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {titleCase(runDetail.run.status)} |{" "}
-                      {formatFreshness(runDetail.run.startedAt)}
-                    </p>
-                  </div>
-                  {runDetail.citations.slice(0, 5).map((c, i) => (
-                    <div
-                      key={`${c.domain}-${i}`}
-                      className="rounded-lg border p-3"
-                    >
-                      <p className="text-sm font-medium">{c.domain}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Position #{c.position}
-                        {c.qualityScore !== undefined
-                          ? ` | Quality ${Math.round(c.qualityScore)}`
-                          : ""}
-                      </p>
+                  <div className="rounded-xl border bg-muted/20 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="space-y-1">
+                        <p className="font-medium">
+                          {runDetail.prompt?.name ?? "Selected run"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {runDetail.run.model} | {titleCase(runDetail.run.status)} |{" "}
+                          {formatFreshness(runDetail.run.startedAt)}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        <Badge variant="secondary">
+                          {runDetail.run.sourceCount ?? runDetail.citations.length} sources
+                        </Badge>
+                        {runDetail.run.visibilityScore !== undefined && (
+                          <Badge variant="outline">
+                            Visibility {Math.round(runDetail.run.visibilityScore)}%
+                          </Badge>
+                        )}
+                        {runDetail.run.citationQualityScore !== undefined && (
+                          <Badge variant="outline">
+                            Citation {Math.round(runDetail.run.citationQualityScore)}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
-                  ))}
+                    {runDetail.prompt?.promptText ? (
+                      <div className="mt-3 rounded-lg border bg-background/80 p-3">
+                        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                          Prompt
+                        </p>
+                        <p className="mt-1 text-sm leading-6 text-foreground/90">
+                          {runDetail.prompt.promptText}
+                        </p>
+                      </div>
+                    ) : null}
+                    {runDetail.run.responseSummary ? (
+                      <div className="mt-3 rounded-lg border bg-background/80 p-3">
+                        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                          Response Summary
+                        </p>
+                        <p className="mt-1 text-sm leading-6 text-foreground/90">
+                          {runDetail.run.responseSummary}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                  {runDetail.citations.length === 0 ? (
+                    <InlineEmpty text="No citations were captured for this run." />
+                  ) : (
+                    <div className="space-y-2">
+                      {runDetail.citations.slice(0, 8).map((c, i) => (
+                        <div
+                          key={`${c.url}-${i}`}
+                          className="rounded-xl border bg-background p-3"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 space-y-1">
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline">#{c.position}</Badge>
+                                <p className="truncate text-sm font-medium">
+                                  {c.title || c.domain}
+                                </p>
+                              </div>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {domainFromUrl(c.url) || c.domain}
+                              </p>
+                            </div>
+                            <a
+                              href={c.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                            >
+                              Open
+                              <ArrowUpRightIcon className="size-3.5" />
+                            </a>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            <Badge
+                              variant="secondary"
+                              className={typeTone[c.type.toLowerCase()] ?? ""}
+                            >
+                              {titleCase(c.type)}
+                            </Badge>
+                            {c.qualityScore !== undefined && (
+                              <Badge variant="outline">
+                                Quality {Math.round(c.qualityScore)}
+                              </Badge>
+                            )}
+                            {c.isOwned ? (
+                              <Badge variant="outline">Owned</Badge>
+                            ) : null}
+                            {c.trackedEntity ? (
+                              <Badge variant="outline">
+                                {c.trackedEntity.name}
+                              </Badge>
+                            ) : null}
+                          </div>
+                          {c.snippet ? (
+                            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                              {c.snippet}
+                            </p>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
             </CardContent>

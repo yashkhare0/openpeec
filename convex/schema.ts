@@ -138,6 +138,21 @@ export default defineSchema({
     .index("userId_groupId", ["userId", "groupId"])
     .index("userId_active", ["userId", "active"]),
 
+  promptJobs: defineTable({
+    userId: v.id("users"),
+    name: v.string(),
+    promptIds: v.array(v.id("prompts")),
+    schedule: v.optional(v.string()),
+    enabled: v.boolean(),
+    cronId: v.optional(v.string()),
+    lastTriggeredAt: v.optional(v.float64()),
+    lastQueuedCount: v.optional(v.float64()),
+    createdAt: v.float64(),
+    updatedAt: v.float64(),
+  })
+    .index("userId", ["userId"])
+    .index("userId_enabled", ["userId", "enabled"]),
+
   trackedEntities: defineTable({
     userId: v.id("users"),
     name: v.string(),
