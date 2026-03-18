@@ -59,10 +59,13 @@ export function MonitoringDashboard() {
   const promptJobs = useQuery(api.analytics.listPromptJobs, {});
   const queueStatus = useQuery(api.analytics.getQueueStatus, {});
   const runs = useQuery(api.analytics.listPromptRuns, { limit: 200, model });
-  const [selectedPromptId, setSelectedPromptId] = useState<Id<"prompts"> | null>(
-    null
-  );
-  const sources = useQuery(api.analytics.listSources, { rangeDays, model, limit: 80 });
+  const [selectedPromptId, setSelectedPromptId] =
+    useState<Id<"prompts"> | null>(null);
+  const sources = useQuery(api.analytics.listSources, {
+    rangeDays,
+    model,
+    limit: 80,
+  });
   const promptAnalysis = useQuery(
     api.analytics.getPromptAnalysis,
     selectedPromptId ? { promptId: selectedPromptId, model, rangeDays } : "skip"
@@ -117,7 +120,10 @@ export function MonitoringDashboard() {
       setSelectedRunId(null);
       return;
     }
-    if (selectedPromptId && promptRows.some((row) => row.id === selectedPromptId)) {
+    if (
+      selectedPromptId &&
+      promptRows.some((row) => row.id === selectedPromptId)
+    ) {
       return;
     }
     setSelectedPromptId(null);
@@ -158,7 +164,8 @@ export function MonitoringDashboard() {
   );
   const selectedGroupName = useMemo(() => {
     if (selectedGroup === "all") return "All prompts";
-    return (promptGroups ?? []).find((group) => group._id === selectedGroup)?.name;
+    return (promptGroups ?? []).find((group) => group._id === selectedGroup)
+      ?.name;
   }, [promptGroups, selectedGroup]);
 
   const refreshAnalytics = () => {
@@ -185,7 +192,10 @@ export function MonitoringDashboard() {
     }
 
     const items: Array<{ label: string; onClick?: () => void }> = [
-      { label: "Prompts", onClick: promptView !== "list" ? () => openPrompt(null) : undefined },
+      {
+        label: "Prompts",
+        onClick: promptView !== "list" ? () => openPrompt(null) : undefined,
+      },
     ];
 
     if (promptView !== "list" && promptAnalysis?.prompt.name) {
@@ -227,9 +237,7 @@ export function MonitoringDashboard() {
             {/* Notices */}
             {(loading || notice) && (
               <div className="flex flex-col gap-2 px-4 pt-4 lg:px-6">
-                {loading && (
-                  <StatusBanner text="Loading analytics data..." />
-                )}
+                {loading && <StatusBanner text="Loading analytics data..." />}
                 {notice && <StatusBanner text={notice} />}
               </div>
             )}
@@ -317,9 +325,7 @@ export function MonitoringDashboard() {
                 onNotice={setNotice}
               />
             )}
-            {page === "models" && (
-              <ModelsPage rows={modelRows} />
-            )}
+            {page === "models" && <ModelsPage rows={modelRows} />}
           </div>
         </SidebarInset>
 
@@ -359,9 +365,7 @@ function mapModelRows(
       citation: item.citationQuality,
       position: item.averagePosition,
       runSuccess:
-        stats && stats.total
-          ? (stats.success / stats.total) * 100
-          : undefined,
+        stats && stats.total ? (stats.success / stats.total) * 100 : undefined,
     };
   });
 }

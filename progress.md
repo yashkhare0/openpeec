@@ -1,6 +1,7 @@
 # Progress
 
 ## 2026-03-17
+
 - Reviewed current repo state and prior exploratory/UI work.
 - Locked MVP direction around local-first monitoring with ChatGPT-first support.
 - Preparing parallel implementation across backend/runner and frontend integration.

@@ -1,7 +1,9 @@
 # Task Plan
 
 ## Goal
+
 Turn `openpeec` into a local-first internal monitoring product focused on:
+
 - response visibility trends
 - citation quality
 - source/domain coverage
@@ -9,6 +11,7 @@ Turn `openpeec` into a local-first internal monitoring product focused on:
 - deterministic local execution against ChatGPT-first web flows
 
 ## MVP Scope
+
 1. Keep the existing React + Convex app.
 2. Recenter the domain around:
    - prompt groups
@@ -23,6 +26,7 @@ Turn `openpeec` into a local-first internal monitoring product focused on:
 6. Replace the current dashboard with a reference-driven analytics shell.
 
 ## Out Of Scope
+
 - Multi-client execution parity beyond placeholders
 - Hosted execution infrastructure
 - Agentic browser navigation by default
@@ -30,6 +34,7 @@ Turn `openpeec` into a local-first internal monitoring product focused on:
 - Full competitive SEO product semantics
 
 ## Phases
+
 - [in_progress] Rewrite plan and information architecture around visibility/citation analytics
 - [pending] Rewrite backend/domain model for prompts, runs, citations, sources, and metrics
 - [pending] Enhance local runner to capture responses and source/citation data
@@ -37,11 +42,13 @@ Turn `openpeec` into a local-first internal monitoring product focused on:
 - [pending] Verify build/test/lint and summarize remaining gaps
 
 ## Decisions
+
 - Use Playwright-style deterministic automation over `browser-use`.
 - Use the reference UI as a structural and visual direction, not a literal product clone.
 - Treat auth profiles and deep-link/runtime settings as implementation details, not the main product story.
 - Make `response visibility / citation quality` the top-level north star instead of generic runner uptime.
 
 ## Errors Encountered
+
 - `npm install` failed because this repo is actually `pnpm`-managed and contains `link:` dependencies that npm 11 would not reify.
 - Initial runner implementation hard-pinned `npx playwright@1.53.1` internally and failed against the installed browser payload; fixed by switching to the direct Playwright API.

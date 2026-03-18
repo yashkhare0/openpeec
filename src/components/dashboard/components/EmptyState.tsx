@@ -25,11 +25,11 @@ export function EmptyState({
           compact ? "py-8" : "py-16"
         )}
       >
-        <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-muted">
-          <InboxIcon className="size-6 text-muted-foreground" />
+        <div className="bg-muted mb-4 flex size-12 items-center justify-center rounded-full">
+          <InboxIcon className="text-muted-foreground size-6" />
         </div>
         <h3 className="text-base font-semibold">{title}</h3>
-        <p className="mt-1 max-w-md text-sm text-muted-foreground">
+        <p className="text-muted-foreground mt-1 max-w-md text-sm">
           {description}
         </p>
         {actionLabel && onAction && (
@@ -44,7 +44,7 @@ export function EmptyState({
 
 export function InlineEmpty({ text }: { text: string }) {
   return (
-    <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+    <div className="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm">
       {text}
     </div>
   );

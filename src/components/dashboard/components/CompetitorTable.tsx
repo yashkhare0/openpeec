@@ -58,7 +58,7 @@ export function CompetitorTable({ rows }: { rows: ModelRow[] }) {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <div className="flex size-7 items-center justify-center rounded-md bg-muted text-xs font-bold">
+                      <div className="bg-muted flex size-7 items-center justify-center rounded-md text-xs font-bold">
                         {row.model.charAt(0).toUpperCase()}
                       </div>
                       <span className="font-medium">{row.model}</span>
@@ -80,9 +80,9 @@ export function CompetitorTable({ rows }: { rows: ModelRow[] }) {
                     <div className="flex items-center justify-end gap-2">
                       {row.citationQuality !== undefined ? (
                         <>
-                          <div className="h-1.5 w-12 overflow-hidden rounded-full bg-muted">
+                          <div className="bg-muted h-1.5 w-12 overflow-hidden rounded-full">
                             <div
-                              className="h-full rounded-full bg-primary"
+                              className="bg-primary h-full rounded-full"
                               style={{
                                 width: `${Math.min(100, row.citationQuality)}%`,
                               }}
@@ -119,7 +119,7 @@ export function CompetitorTable({ rows }: { rows: ModelRow[] }) {
 function DeltaIndicator({ value }: { value: number | undefined }) {
   if (value === undefined || Math.abs(value) < 0.1) {
     return (
-      <span className="inline-flex items-center text-xs text-muted-foreground">
+      <span className="text-muted-foreground inline-flex items-center text-xs">
         <Minus className="size-3" />
       </span>
     );
@@ -130,7 +130,7 @@ function DeltaIndicator({ value }: { value: number | undefined }) {
       className={cn(
         "inline-flex items-center gap-0.5 text-xs font-medium",
         isPositive
-           ? "text-emerald-600 dark:text-emerald-300"
+          ? "text-emerald-600 dark:text-emerald-300"
           : "text-rose-600 dark:text-rose-300"
       )}
     >

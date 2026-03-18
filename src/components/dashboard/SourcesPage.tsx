@@ -50,7 +50,8 @@ function errorMessage(error: unknown): string {
 const typeColors: Record<string, string> = {
   ugc: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300",
   editorial: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
-  corporate: "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-300",
+  corporate:
+    "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-300",
   docs: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300",
   news: "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-300",
 };
@@ -155,7 +156,7 @@ export function SourcesPage({
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="grid gap-4 px-4 xl:grid-cols-[1fr_360px] lg:px-6">
+      <div className="grid gap-4 px-4 lg:px-6 xl:grid-cols-[1fr_360px]">
         <Card>
           <CardHeader>
             <CardTitle>Sources</CardTitle>
@@ -183,7 +184,7 @@ export function SourcesPage({
                     <TableRow key={s.domain}>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <div className="flex size-6 items-center justify-center rounded bg-muted">
+                          <div className="bg-muted flex size-6 items-center justify-center rounded">
                             <img
                               src={`https://www.google.com/s2/favicons?domain=${s.domain}&sz=32`}
                               alt=""
@@ -230,25 +231,33 @@ export function SourcesPage({
                     </TableRow>
                   ))}
                   {sources.map((s) => (
-                    <TableRow key={`${s.domain}-detail`} className="bg-muted/20">
+                    <TableRow
+                      key={`${s.domain}-detail`}
+                      className="bg-muted/20"
+                    >
                       <TableCell colSpan={8}>
                         <div className="flex flex-col gap-2 py-1">
-                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                          <p className="text-muted-foreground text-xs tracking-[0.16em] uppercase">
                             Prompt and response lineage
                           </p>
-                          <p className="text-sm text-muted-foreground">
-                            {(s.promptNames ?? []).join(", ") || "No prompt lineage recorded."}
+                          <p className="text-muted-foreground text-sm">
+                            {(s.promptNames ?? []).join(", ") ||
+                              "No prompt lineage recorded."}
                           </p>
                           {s.latestResponses?.[0] ? (
-                            <p className="text-sm text-foreground/85">
-                              Latest: {s.latestResponses[0].promptName} referenced this source at
-                              {" "}#{s.latestResponses[0].position} in the response.
+                            <p className="text-foreground/85 text-sm">
+                              Latest: {s.latestResponses[0].promptName}{" "}
+                              referenced this source at #
+                              {s.latestResponses[0].position} in the response.
                             </p>
                           ) : null}
                           {(s.mentionedEntities ?? []).length ? (
                             <div className="flex flex-wrap gap-1.5">
                               {(s.mentionedEntities ?? []).map((entity) => (
-                                <Badge key={`${s.domain}-${entity}`} variant="outline">
+                                <Badge
+                                  key={`${s.domain}-${entity}`}
+                                  variant="outline"
+                                >
                                   {entity}
                                 </Badge>
                               ))}
@@ -274,7 +283,7 @@ export function SourcesPage({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid gap-2 rounded-lg border bg-muted/30 p-3">
+            <div className="bg-muted/30 grid gap-2 rounded-lg border p-3">
               <Input
                 value={newEntityName}
                 onChange={(e) => onNewEntityName(e.target.value)}
@@ -313,14 +322,11 @@ export function SourcesPage({
               <InlineEmpty text="No tracked entities yet." />
             ) : (
               entities.map((entity) => (
-                <div
-                  key={String(entity._id)}
-                  className="rounded-lg border p-3"
-                >
+                <div key={String(entity._id)} className="rounded-lg border p-3">
                   <div className="flex items-center justify-between gap-2">
                     <div>
                       <p className="text-sm font-medium">{entity.name}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-muted-foreground text-xs">
                         {titleCase(entity.kind)} |{" "}
                         {(entity.ownedDomains ?? []).join(", ") || "No domains"}
                       </p>
@@ -341,9 +347,7 @@ export function SourcesPage({
                       variant="ghost"
                       size="sm"
                       className="h-7 text-xs"
-                      onClick={() =>
-                        void renameEntity(entity._id, entity.name)
-                      }
+                      onClick={() => void renameEntity(entity._id, entity.name)}
                     >
                       Rename
                     </Button>
@@ -371,7 +375,7 @@ export function SourcesPage({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 text-xs text-destructive"
+                      className="text-destructive h-7 text-xs"
                       onClick={() =>
                         void onDeleteEntity({ id: entity._id })
                           .then(() => onNotice("Entity deleted."))

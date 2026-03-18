@@ -15,10 +15,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/components/ui/toggle-group";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { InlineEmpty } from "./EmptyState";
 
 type TrendPoint = {
@@ -55,7 +52,9 @@ export function TrendChart({ trend }: { trend: TrendPoint[] }) {
       <Card>
         <CardHeader>
           <CardTitle>Trend</CardTitle>
-          <CardDescription>Visibility, citations, and coverage over time.</CardDescription>
+          <CardDescription>
+            Visibility, citations, and coverage over time.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <InlineEmpty text="No trend data in this range." />

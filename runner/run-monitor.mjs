@@ -101,7 +101,9 @@ function clamp(value, min, max) {
 }
 
 function normalizeText(input) {
-  return String(input ?? "").replace(/\s+/g, " ").trim();
+  return String(input ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function summarizeText(input, maxChars = 240) {
@@ -157,7 +159,8 @@ function canonicalizeCitationUrl(input) {
 }
 
 function detectAccessBlocker(title, responseText) {
-  const haystack = `${normalizeText(title)} ${normalizeText(responseText)}`.toLowerCase();
+  const haystack =
+    `${normalizeText(title)} ${normalizeText(responseText)}`.toLowerCase();
   const patterns = [
     "just a moment",
     "security verification",
@@ -338,11 +341,10 @@ async function extractResponseAndCitations(page, config) {
       const responseContainer =
         document.querySelector(responseContainerSelector) ?? fallbackContainer;
 
-      const responseTextNode =
-        responseContainer.matches?.(responseTextSelector)
-          ? responseContainer
-          : responseContainer.querySelector?.(responseTextSelector) ??
-            responseContainer;
+      const responseTextNode = responseContainer.matches?.(responseTextSelector)
+        ? responseContainer
+        : (responseContainer.querySelector?.(responseTextSelector) ??
+          responseContainer);
 
       const responseText = (responseTextNode?.innerText ?? "").trim();
       const rawLinks = Array.from(
@@ -435,7 +437,8 @@ async function extractResponseAndCitations(page, config) {
 }
 
 function computeAnalytics(resultFields) {
-  const uniqueDomains = new Set(resultFields.citations.map((c) => c.domain)).size;
+  const uniqueDomains = new Set(resultFields.citations.map((c) => c.domain))
+    .size;
   const sourceCount = uniqueDomains;
   const avgCitationPosition = resultFields.citations.length
     ? Number(
@@ -592,7 +595,9 @@ export async function runMonitor(config, options = {}) {
   }
   ensureWebDeepLink(deepLinkUrl);
 
-  const authMaterial = await loadAuthProfileMaterial(normalizedConfig.authProfile);
+  const authMaterial = await loadAuthProfileMaterial(
+    normalizedConfig.authProfile
+  );
   const browser = await chromium.launch({
     channel: normalizedConfig.browser.channel ?? undefined,
     headless: options.headed ? false : normalizedConfig.browser.headless,
@@ -638,7 +643,11 @@ export async function runMonitor(config, options = {}) {
     }
 
     context = await browser.newContext(contextOptions);
-    await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
+    await context.tracing.start({
+      screenshots: true,
+      snapshots: true,
+      sources: true,
+    });
     if (authMaterial.cookies && Array.isArray(authMaterial.cookies)) {
       await context.addCookies(authMaterial.cookies);
     }
@@ -685,19 +694,24 @@ export async function runMonitor(config, options = {}) {
     }
 
     let promptSubmitted = Boolean(
-      normalizedConfig.prompt.text && normalizedConfig.navigation.promptQueryParam
+      normalizedConfig.prompt.text &&
+      normalizedConfig.navigation.promptQueryParam
     );
 
     if (!normalizedConfig.prompt.text) {
       warnings.push("No prompt text configured; running extraction-only mode.");
     } else if (!promptSubmitted) {
       try {
-        const input = page.locator(normalizedConfig.prompt.inputSelector).first();
+        const input = page
+          .locator(normalizedConfig.prompt.inputSelector)
+          .first();
         await input.waitFor({
           state: "visible",
           timeout: normalizedConfig.timing.responseTimeoutMs,
         });
-        await input.click({ timeout: normalizedConfig.timing.responseTimeoutMs });
+        await input.click({
+          timeout: normalizedConfig.timing.responseTimeoutMs,
+        });
 
         const existingInputText = normalizeText(
           await input
@@ -773,19 +787,24 @@ export async function runMonitor(config, options = {}) {
     output = {
       title: extracted.pageTitle,
       finalUrl: extracted.finalUrl,
-      responseContainerSelector: normalizedConfig.extraction.responseContainerSelector,
+      responseContainerSelector:
+        normalizedConfig.extraction.responseContainerSelector,
     };
 
     if (detectAccessBlocker(extracted.pageTitle, extracted.responseText)) {
       status = "failed";
       fallbackUsed = true;
       summary = "ChatGPT access was blocked before the prompt could run.";
-      warnings.push("Access blocker detected on chatgpt.com; metrics are not treated as a valid monitoring run.");
+      warnings.push(
+        "Access blocker detected on chatgpt.com; metrics are not treated as a valid monitoring run."
+      );
     }
 
     if (
       normalizedConfig.assertions.titleIncludes &&
-      !String(output.title ?? "").includes(normalizedConfig.assertions.titleIncludes)
+      !String(output.title ?? "").includes(
+        normalizedConfig.assertions.titleIncludes
+      )
     ) {
       throw new Error(
         `Title assertion failed: expected to include "${normalizedConfig.assertions.titleIncludes}", got "${output.title ?? ""}"`
@@ -794,7 +813,9 @@ export async function runMonitor(config, options = {}) {
 
     if (
       normalizedConfig.assertions.urlIncludes &&
-      !String(output.finalUrl ?? "").includes(normalizedConfig.assertions.urlIncludes)
+      !String(output.finalUrl ?? "").includes(
+        normalizedConfig.assertions.urlIncludes
+      )
     ) {
       throw new Error(
         `URL assertion failed: expected to include "${normalizedConfig.assertions.urlIncludes}", got "${output.finalUrl ?? ""}"`
@@ -827,14 +848,21 @@ export async function runMonitor(config, options = {}) {
     ) {
       status = "failed";
       fallbackUsed = true;
-      summary = "Prompt submission did not produce a usable assistant response.";
+      summary =
+        "Prompt submission did not produce a usable assistant response.";
       responseSummary = summary;
     }
 
-    if (status === "success" && normalizedConfig.prompt.text && !responseText && citations.length === 0) {
+    if (
+      status === "success" &&
+      normalizedConfig.prompt.text &&
+      !responseText &&
+      citations.length === 0
+    ) {
       status = "failed";
       fallbackUsed = true;
-      summary = "Prompt flow completed but no response/citations were extracted.";
+      summary =
+        "Prompt flow completed but no response/citations were extracted.";
       responseSummary = summary;
     }
 

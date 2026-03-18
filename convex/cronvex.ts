@@ -83,9 +83,7 @@ export type JobWithCron = {
 
 export const listJobs = query({
   handler: async (ctx) => {
-    const jobsWithCrons: JobWithCron[] = await ctx.db
-      .query("jobs")
-      .collect();
+    const jobsWithCrons: JobWithCron[] = await ctx.db.query("jobs").collect();
     await Promise.all(
       jobsWithCrons.map(async (jobWithCron) => {
         if (jobWithCron.cronId == null) {
@@ -201,9 +199,6 @@ export const log = internalMutation({
 
 export const tailLogs = query({
   handler: async (ctx) => {
-    return await ctx.db
-      .query("weblogs")
-      .order("desc")
-      .take(10);
+    return await ctx.db.query("weblogs").order("desc").take(10);
   },
 });

@@ -1,0 +1,10 @@
+.convex
+convex/_generated
+dist
+node_modules
+runner/artifacts
+.tmp-vite.log
+.tmp-vite.err.log
+package-lock.json
+pnpm-lock.yaml
+*.tsbuildinfo

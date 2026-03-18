@@ -21,6 +21,7 @@ This file provides persistent context for AI agents working on this project. It 
 **Voice & tone**: Confident but not arrogant. Data speaks for itself — the UI should present information clearly without editorializing. Error states and empty states should be helpful and constructive, never alarming. Labels and copy should be concise and specific.
 
 **Emotional goals** (all four apply, in priority order):
+
 1. **Confidence & Control** — "I know exactly what's happening with my brand visibility"
 2. **Calm & Clarity** — "Complex data made simple and easy to understand"
 3. **Urgency & Action** — "I can spot issues fast and act on them immediately"
@@ -31,6 +32,7 @@ This file provides persistent context for AI agents working on this project. It 
 **Visual tone**: Clean, modern, data-forward. Inspired by Linear.app (speed, polish, keyboard-first feel) and Notion (spacious, content-first, calm). The interface should feel like a precision instrument — every element earns its place.
 
 **Anti-references** — OpenPeec should NOT look like:
+
 - Cluttered enterprise software (no dense menus, tiny text, overwhelming grids)
 - Playful/consumer apps (no rounded bubbles, bright gradients, emoji-heavy UI)
 - Bare/brutalist designs (should not feel unpolished or raw)
@@ -57,25 +59,27 @@ This file provides persistent context for AI agents working on this project. It 
 ## Technical Conventions
 
 ### Stack
-| Layer | Technology |
-|-------|-----------|
-| Runtime | React 18 (SPA, no SSR) |
-| Bundler | Vite 6 + `@tailwindcss/vite` |
-| Styling | Tailwind CSS v4 (CSS-based config, oklch tokens) |
-| Components | shadcn/ui (radix-nova style, Radix primitives) |
-| Icons | Lucide React |
-| Charts | Recharts |
-| Data tables | TanStack React Table |
-| Drag-and-drop | dnd-kit |
-| Backend | Convex (real-time DB, serverless functions) |
-| Auth | `@convex-dev/auth` (GitHub, Google OAuth + email OTP via Resend) |
-| Font | Geist Variable (`@fontsource-variable/geist`) |
-| Validation | Zod |
-| Utility | `cn()` helper via clsx + tailwind-merge |
-| Package manager | pnpm |
-| Dev server port | 5999 |
+
+| Layer           | Technology                                                       |
+| --------------- | ---------------------------------------------------------------- |
+| Runtime         | React 18 (SPA, no SSR)                                           |
+| Bundler         | Vite 6 + `@tailwindcss/vite`                                     |
+| Styling         | Tailwind CSS v4 (CSS-based config, oklch tokens)                 |
+| Components      | shadcn/ui (radix-nova style, Radix primitives)                   |
+| Icons           | Lucide React                                                     |
+| Charts          | Recharts                                                         |
+| Data tables     | TanStack React Table                                             |
+| Drag-and-drop   | dnd-kit                                                          |
+| Backend         | Convex (real-time DB, serverless functions)                      |
+| Auth            | `@convex-dev/auth` (GitHub, Google OAuth + email OTP via Resend) |
+| Font            | Geist Variable (`@fontsource-variable/geist`)                    |
+| Validation      | Zod                                                              |
+| Utility         | `cn()` helper via clsx + tailwind-merge                          |
+| Package manager | pnpm                                                             |
+| Dev server port | 5999                                                             |
 
 ### File Structure
+
 ```
 src/
   App.tsx                    # Root component (ThemeProvider > TooltipProvider > Dashboard)
@@ -94,34 +98,37 @@ public/                      # Static assets (cronvex.svg logo, thumbnail.png)
 ```
 
 ### Import Aliases
+
 The `@` alias resolves to `./src`. Configured in both `tsconfig.json` (`paths`) and `vite.config.ts` (`resolve.alias`).
 
-| Alias | Path | Usage |
-|-------|------|-------|
-| `@/components/ui/*` | shadcn primitives | `import { Button } from "@/components/ui/button"` |
-| `@/components/*` | App components | `import { SiteHeader } from "@/components/layout/SiteHeader"` |
-| `@/lib/utils` | cn() utility | `import { cn } from "@/lib/utils"` |
-| `@/hooks/*` | Custom hooks | `import { useIsMobile } from "@/hooks/use-mobile"` |
+| Alias               | Path              | Usage                                                         |
+| ------------------- | ----------------- | ------------------------------------------------------------- |
+| `@/components/ui/*` | shadcn primitives | `import { Button } from "@/components/ui/button"`             |
+| `@/components/*`    | App components    | `import { SiteHeader } from "@/components/layout/SiteHeader"` |
+| `@/lib/utils`       | cn() utility      | `import { cn } from "@/lib/utils"`                            |
+| `@/hooks/*`         | Custom hooks      | `import { useIsMobile } from "@/hooks/use-mobile"`            |
 
 **Known CLI issue**: The shadcn CLI (with `radix-nova` style) generates imports using `@/components/lib/utils` and `@/components/hooks/use-mobile` instead of `@/lib/utils` and `@/hooks/use-mobile`. After running `npx shadcn add`, always check and fix these import paths.
 
 ### Spacing Scale (Tailwind defaults, commonly used)
-| Token | Value | Usage |
-|-------|-------|-------|
-| `gap-1` | 4px | Inline button groups |
-| `gap-2` | 8px | Small element spacing, icon + text |
-| `gap-4` | 16px | Standard grid/card gap, form fields |
-| `gap-6` | 24px | Page section spacing (md+) |
-| `px-4` | 16px | Page horizontal padding (mobile) |
-| `px-6` | 24px | Page horizontal padding (lg+) |
-| `py-4` | 16px | Page vertical padding (mobile) |
-| `py-6` | 24px | Page vertical padding (md+) |
-| `p-4` | 16px | Card content padding |
-| `h-7` | 28px | Small buttons |
-| `h-8` | 32px | Compact select/input controls |
-| `h-14` | 56px | Site header height |
+
+| Token   | Value | Usage                               |
+| ------- | ----- | ----------------------------------- |
+| `gap-1` | 4px   | Inline button groups                |
+| `gap-2` | 8px   | Small element spacing, icon + text  |
+| `gap-4` | 16px  | Standard grid/card gap, form fields |
+| `gap-6` | 24px  | Page section spacing (md+)          |
+| `px-4`  | 16px  | Page horizontal padding (mobile)    |
+| `px-6`  | 24px  | Page horizontal padding (lg+)       |
+| `py-4`  | 16px  | Page vertical padding (mobile)      |
+| `py-6`  | 24px  | Page vertical padding (md+)         |
+| `p-4`   | 16px  | Card content padding                |
+| `h-7`   | 28px  | Small buttons                       |
+| `h-8`   | 32px  | Compact select/input controls       |
+| `h-14`  | 56px  | Site header height                  |
 
 ### Component Patterns
+
 - **Page layout**: `<div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">` with `px-4 lg:px-6` on content sections
 - **Card grids**: CSS Grid with responsive columns (`xl:grid-cols-[1.4fr_1fr]`, etc.) and `gap-4`
 - **KPI cards**: 4-column grid, uppercase `text-xs tracking-wider` label, `text-2xl font-semibold tabular-nums` value, delta badge
@@ -132,7 +139,9 @@ The `@` alias resolves to `./src`. Configured in both `tsconfig.json` (`paths`) 
 - **Drawers**: Right-side on desktop, bottom sheet on mobile (via `useIsMobile` hook)
 
 ### Color Tokens (key values)
+
 Light mode primary colors are achromatic (pure black/white/gray). Dark mode inverts. Status semantics:
+
 - **Success**: `emerald-500/10` bg, `emerald-700` text (light), `emerald-300` text (dark)
 - **Error**: `rose-500/10` bg, `rose-700` text (light), `rose-300` text (dark)
 - **Warning**: `amber-50` bg, `amber-700` text (light), `amber-950` bg, `amber-300` text (dark)

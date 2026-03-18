@@ -1,4 +1,12 @@
-import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  XAxis,
+  YAxis,
+} from "recharts";
 import type { Id } from "../../../convex/_generated/dataModel";
 
 import { Badge } from "@/components/ui/badge";
@@ -140,10 +148,12 @@ export function PromptDetailPage({
       sources: response.sourceCount,
     }));
 
-  const sourceSeries = promptAnalysis.sourceBreakdown.slice(0, 8).map((source) => ({
-    label: source.domain,
-    citations: source.citationCount,
-  }));
+  const sourceSeries = promptAnalysis.sourceBreakdown
+    .slice(0, 8)
+    .map((source) => ({
+      label: source.domain,
+      citations: source.citationCount,
+    }));
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -151,16 +161,20 @@ export function PromptDetailPage({
         <Button variant="outline" size="sm" onClick={onBack}>
           Back to prompts
         </Button>
-        {selectedGroupName ? <Badge variant="outline">{selectedGroupName}</Badge> : null}
+        {selectedGroupName ? (
+          <Badge variant="outline">{selectedGroupName}</Badge>
+        ) : null}
         <Badge variant="secondary">{promptAnalysis.prompt.targetModel}</Badge>
       </div>
 
-      <div className="grid gap-4 px-4 xl:grid-cols-[minmax(0,1.1fr)_380px] lg:px-6">
+      <div className="grid gap-4 px-4 lg:px-6 xl:grid-cols-[minmax(0,1.1fr)_380px]">
         <div className="flex flex-col gap-4">
           <Card>
             <CardHeader>
               <CardTitle>{promptAnalysis.prompt.name}</CardTitle>
-              <CardDescription>{promptAnalysis.prompt.promptText}</CardDescription>
+              <CardDescription>
+                {promptAnalysis.prompt.promptText}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid gap-3 md:grid-cols-4">
@@ -193,19 +207,32 @@ export function PromptDetailPage({
               <CardHeader>
                 <CardTitle>Response Variance</CardTitle>
                 <CardDescription>
-                  Visibility, citation quality, and source count across captured responses.
+                  Visibility, citation quality, and source count across captured
+                  responses.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 {responseSeries.length === 0 ? (
                   <InlineEmpty text="No response history yet." />
                 ) : (
-                  <ChartContainer config={responseChartConfig} className="h-[280px] w-full">
-                    <LineChart data={responseSeries} margin={{ left: 8, right: 16, top: 12 }}>
+                  <ChartContainer
+                    config={responseChartConfig}
+                    className="h-[280px] w-full"
+                  >
+                    <LineChart
+                      data={responseSeries}
+                      margin={{ left: 8, right: 16, top: 12 }}
+                    >
                       <CartesianGrid vertical={false} />
-                      <XAxis dataKey="label" tickLine={false} axisLine={false} />
+                      <XAxis
+                        dataKey="label"
+                        tickLine={false}
+                        axisLine={false}
+                      />
                       <YAxis tickLine={false} axisLine={false} width={32} />
-                      <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+                      <ChartTooltip
+                        content={<ChartTooltipContent indicator="line" />}
+                      />
                       <Line
                         type="monotone"
                         dataKey="visibility"
@@ -244,8 +271,14 @@ export function PromptDetailPage({
                 {sourceSeries.length === 0 ? (
                   <InlineEmpty text="No source breakdown yet." />
                 ) : (
-                  <ChartContainer config={sourceChartConfig} className="h-[280px] w-full">
-                    <BarChart data={sourceSeries} margin={{ left: 8, right: 16, top: 12 }}>
+                  <ChartContainer
+                    config={sourceChartConfig}
+                    className="h-[280px] w-full"
+                  >
+                    <BarChart
+                      data={sourceSeries}
+                      margin={{ left: 8, right: 16, top: 12 }}
+                    >
                       <CartesianGrid vertical={false} />
                       <XAxis
                         dataKey="label"
@@ -257,8 +290,14 @@ export function PromptDetailPage({
                         height={70}
                       />
                       <YAxis tickLine={false} axisLine={false} width={32} />
-                      <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
-                      <Bar dataKey="citations" fill="var(--color-citations)" radius={8} />
+                      <ChartTooltip
+                        content={<ChartTooltipContent indicator="dot" />}
+                      />
+                      <Bar
+                        dataKey="citations"
+                        fill="var(--color-citations)"
+                        radius={8}
+                      />
                     </BarChart>
                   </ChartContainer>
                 )}
@@ -270,7 +309,8 @@ export function PromptDetailPage({
             <CardHeader>
               <CardTitle>Responses</CardTitle>
               <CardDescription>
-                Open a response to inspect evidence, citations, and entity mentions.
+                Open a response to inspect evidence, citations, and entity
+                mentions.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -282,27 +322,33 @@ export function PromptDetailPage({
                     key={String(response.id)}
                     type="button"
                     onClick={() => onOpenRun(response.id)}
-                    className={`w-full rounded-xl border p-4 text-left transition-colors hover:border-foreground/30 hover:bg-muted/20 ${
-                      selectedRunId === response.id ? "border-primary bg-muted/30" : ""
+                    className={`hover:border-foreground/30 hover:bg-muted/20 w-full rounded-xl border p-4 text-left transition-colors ${
+                      selectedRunId === response.id
+                        ? "border-primary bg-muted/30"
+                        : ""
                     }`}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant="secondary">{titleCase(response.status)}</Badge>
+                          <Badge variant="secondary">
+                            {titleCase(response.status)}
+                          </Badge>
                           <Badge variant="outline">{response.model}</Badge>
-                          <span className="text-xs text-muted-foreground">
+                          <span className="text-muted-foreground text-xs">
                             {formatFreshness(response.startedAt)}
                           </span>
                         </div>
-                        <p className="line-clamp-2 text-sm text-foreground/90">
+                        <p className="text-foreground/90 line-clamp-2 text-sm">
                           {response.responseSummary ||
                             response.responseTextPreview ||
                             "No response summary available."}
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-1.5">
-                        <Badge variant="outline">{response.sourceCount} sources</Badge>
+                        <Badge variant="outline">
+                          {response.sourceCount} sources
+                        </Badge>
                         {response.visibilityScore !== undefined ? (
                           <Badge variant="outline">
                             Visibility {formatPercent(response.visibilityScore)}
@@ -310,19 +356,26 @@ export function PromptDetailPage({
                         ) : null}
                         {response.citationQualityScore !== undefined ? (
                           <Badge variant="outline">
-                            Citation {formatScore(response.citationQualityScore)}
+                            Citation{" "}
+                            {formatScore(response.citationQualityScore)}
                           </Badge>
                         ) : null}
                       </div>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-1.5">
                       {response.sourceDomains.slice(0, 4).map((domain) => (
-                        <Badge key={`${response.id}-${domain}`} variant="outline">
+                        <Badge
+                          key={`${response.id}-${domain}`}
+                          variant="outline"
+                        >
                           {domain}
                         </Badge>
                       ))}
                       {response.mentionNames.slice(0, 4).map((name) => (
-                        <Badge key={`${response.id}-${name}`} variant="secondary">
+                        <Badge
+                          key={`${response.id}-${name}`}
+                          variant="secondary"
+                        >
                           {name}
                         </Badge>
                       ))}
@@ -356,12 +409,15 @@ export function PromptDetailPage({
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-medium">{source.domain}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {titleCase(source.type)} | {source.responseCount} responses
+                        <p className="text-muted-foreground text-xs">
+                          {titleCase(source.type)} | {source.responseCount}{" "}
+                          responses
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-1.5">
-                        <Badge variant="outline">{source.citationCount} citations</Badge>
+                        <Badge variant="outline">
+                          {source.citationCount} citations
+                        </Badge>
                         <Badge variant="outline">
                           Owned {formatPercent(source.ownedShare)}
                         </Badge>
@@ -389,7 +445,8 @@ export function PromptDetailPage({
             <CardHeader>
               <CardTitle>Brands and Entities</CardTitle>
               <CardDescription>
-                What brands or tracked entities are actually surfacing in these answers.
+                What brands or tracked entities are actually surfacing in these
+                answers.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -397,19 +454,28 @@ export function PromptDetailPage({
                 <InlineEmpty text="No tracked entities matched this prompt's responses yet." />
               ) : (
                 promptAnalysis.entityBreakdown.slice(0, 8).map((entity) => (
-                  <div key={String(entity.entityId)} className="rounded-xl border p-3">
+                  <div
+                    key={String(entity.entityId)}
+                    className="rounded-xl border p-3"
+                  >
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="font-medium">{entity.name}</p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-muted-foreground text-xs">
                           {titleCase(entity.kind)}
                         </p>
                       </div>
-                      <Badge variant="outline">{entity.responseCount} responses</Badge>
+                      <Badge variant="outline">
+                        {entity.responseCount} responses
+                      </Badge>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-1.5">
-                      <Badge variant="secondary">{entity.mentionCount} mentions</Badge>
-                      <Badge variant="secondary">{entity.citationCount} linked citations</Badge>
+                      <Badge variant="secondary">
+                        {entity.mentionCount} mentions
+                      </Badge>
+                      <Badge variant="secondary">
+                        {entity.citationCount} linked citations
+                      </Badge>
                     </div>
                   </div>
                 ))
@@ -432,12 +498,12 @@ function MetricTile({
   detail: string;
 }) {
   return (
-    <div className="rounded-xl border bg-muted/20 p-3">
-      <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+    <div className="bg-muted/20 rounded-xl border p-3">
+      <p className="text-muted-foreground text-[11px] font-medium tracking-[0.16em] uppercase">
         {label}
       </p>
       <p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+      <p className="text-muted-foreground mt-1 text-xs">{detail}</p>
     </div>
   );
 }

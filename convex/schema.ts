@@ -80,14 +80,14 @@ export default defineSchema({
       v.literal("ios"),
       v.literal("android")
     ),
-      status: v.union(
-        v.literal("queued"),
-        v.literal("running"),
-        v.literal("success"),
-        v.literal("failed")
-      ),
-      queuedAt: v.optional(v.float64()),
-      startedAt: v.float64(),
+    status: v.union(
+      v.literal("queued"),
+      v.literal("running"),
+      v.literal("success"),
+      v.literal("failed")
+    ),
+    queuedAt: v.optional(v.float64()),
+    startedAt: v.float64(),
     finishedAt: v.optional(v.float64()),
     latencyMs: v.optional(v.float64()),
     summary: v.optional(v.string()),

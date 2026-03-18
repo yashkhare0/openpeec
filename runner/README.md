@@ -3,6 +3,7 @@
 Use this runner to execute internal monitoring prompts against ChatGPT Web and capture response visibility and citation quality signals per run.
 
 This is an operator tool for recurring checks, not a generic browser automation script. Every run should answer:
+
 - Did ChatGPT return a usable response for this monitoring prompt?
 - Which sources were cited, and where did they appear?
 - Did citation quality or visibility degrade versus expected behavior?
@@ -25,7 +26,7 @@ This is an operator tool for recurring checks, not a generic browser automation 
 4. Run a monitoring check with `pnpm runner:prompt:example`, or queue prompts from the dashboard and process them with `pnpm runner:queue` or `pnpm runner:queue:once`.
 5. Review `runner/last-run.json` and the evidence bundle in `runner/artifacts/<run-label>-<timestamp>/`.
 6. Inspect:
-`status`, `warnings`, `responseText`, `citations`, `visibilityScore`, `citationQualityScore`, `network.json`, `console.json`, `page.html`, `response.html`, `trace.zip`, and the recorded video.
+   `status`, `warnings`, `responseText`, `citations`, `visibilityScore`, `citationQualityScore`, `network.json`, `console.json`, `page.html`, `response.html`, `trace.zip`, and the recorded video.
 7. If you need ingestion, run with `--ingest` and set `VITE_CONVEX_URL`.
 
 ## Prompt-Oriented Config Contract
@@ -154,6 +155,7 @@ The runner emits JSON:
 ## Fallback Behavior
 
 If auth/session is missing or selectors shift:
+
 - the runner still emits structured output
 - `fallbackUsed` is set
 - `warnings` records the failure details
@@ -164,15 +166,18 @@ If auth/session is missing or selectors shift:
 ## Ingestion Behavior
 
 If `--ingest` is provided and `VITE_CONVEX_URL` is set:
+
 1. The runner first tries `api.analytics.ingestPromptRun` when `promptId` is present.
 2. If analytics ingestion is unavailable or fails, it can fall back to `api.monitoring.ingestMonitorRun` when `monitorId` is present.
 
 For queued prompt execution:
+
 1. The dashboard creates `promptRuns` with `status: "queued"`.
 2. `pnpm runner:queue` claims the next queued run, launches Playwright locally, and patches that same record to `running`, then `success` or `failed`.
 3. Citations, warnings, screenshot/video/trace paths, and the final deep link are written back onto the original queued run so the dashboard can inspect the evidence.
 
 Optional hardening:
+
 - set `PEEC_RUN_INGEST_KEY` in Convex env and local shell to require signed ingestion.
 - when `--ingest` is requested, the runner exits non-zero if ingestion fails or is skipped.
 

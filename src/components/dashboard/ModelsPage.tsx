@@ -72,7 +72,7 @@ export function ModelsPage({
                   <TableRow key={row.model}>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <div className="flex size-7 items-center justify-center rounded-md bg-muted text-xs font-bold">
+                        <div className="bg-muted flex size-7 items-center justify-center rounded-md text-xs font-bold">
                           {row.model.charAt(0).toUpperCase()}
                         </div>
                         <span className="font-medium">{row.model}</span>
@@ -84,9 +84,9 @@ export function ModelsPage({
                     <TableCell className="text-right">
                       {row.citation !== undefined ? (
                         <div className="flex items-center justify-end gap-2">
-                          <div className="h-1.5 w-12 overflow-hidden rounded-full bg-muted">
+                          <div className="bg-muted h-1.5 w-12 overflow-hidden rounded-full">
                             <div
-                              className="h-full rounded-full bg-primary"
+                              className="bg-primary h-full rounded-full"
                               style={{
                                 width: `${Math.min(100, row.citation)}%`,
                               }}

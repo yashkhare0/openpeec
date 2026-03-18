@@ -8,21 +8,31 @@ module.exports = {
   ],
   ignorePatterns: [
     "dist",
+    "node_modules",
+    "runner/artifacts",
     "convex/_generated",
     ".eslintrc.cjs",
     "tailwind.config.js",
-    "vite.config.ts",
-    "src/components/data-table.tsx",
-    // There are currently ESLint errors in shadcn/ui
-    "src/components/ui",
   ],
   parser: "@typescript-eslint/parser",
   parserOptions: {
-    project: true,
+    project: [
+      "./tsconfig.json",
+      "./tsconfig.node.json",
+      "./tsconfig.e2e.json",
+      "./convex/tsconfig.json",
+    ],
     tsconfigRootDir: __dirname,
-    EXPERIMENTAL_useProjectService: true,
   },
   plugins: ["react-refresh"],
+  overrides: [
+    {
+      files: ["src/components/ui/**/*.{ts,tsx}"],
+      rules: {
+        "react-refresh/only-export-components": "off",
+      },
+    },
+  ],
   rules: {
     "react-refresh/only-export-components": [
       "warn",

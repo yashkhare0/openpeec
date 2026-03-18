@@ -54,8 +54,12 @@ async function main() {
   await page.goto(args.url, { waitUntil: "domcontentloaded", timeout: 45000 });
 
   console.log("");
-  console.log("Complete the ChatGPT login and any verification steps in the opened browser.");
-  console.log("When you can open chatgpt.com and see the actual app, return here and press Enter.");
+  console.log(
+    "Complete the ChatGPT login and any verification steps in the opened browser."
+  );
+  console.log(
+    "When you can open chatgpt.com and see the actual app, return here and press Enter."
+  );
   console.log("");
 
   const rl = readline.createInterface({

@@ -40,7 +40,7 @@ export function SourceMixChart({ sourceMix }: { sourceMix: MixItem[] }) {
         ) : (
           <div className="space-y-4">
             {/* Stacked bar preview */}
-            <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted">
+            <div className="bg-muted flex h-3 w-full overflow-hidden rounded-full">
               {sourceMix.map((item) => (
                 <div
                   key={item.type}
@@ -61,7 +61,7 @@ export function SourceMixChart({ sourceMix }: { sourceMix: MixItem[] }) {
                       <div
                         className={`size-2.5 rounded-full ${typeColors[item.type.toLowerCase()] ?? "bg-primary"}`}
                       />
-                      <span className="text-sm text-muted-foreground">
+                      <span className="text-muted-foreground text-sm">
                         {titleCase(item.type)}
                       </span>
                     </div>
@@ -69,10 +69,7 @@ export function SourceMixChart({ sourceMix }: { sourceMix: MixItem[] }) {
                       {Math.round(item.share)}%
                     </span>
                   </div>
-                  <Progress
-                    value={Math.min(item.share, 100)}
-                    className="h-2"
-                  />
+                  <Progress value={Math.min(item.share, 100)} className="h-2" />
                 </div>
               ))}
             </div>

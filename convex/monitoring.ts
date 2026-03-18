@@ -94,10 +94,7 @@ export const createMonitor = mutation({
 
 export const listMonitors = query({
   handler: async (ctx) => {
-    return await ctx.db
-      .query("monitors")
-      .order("desc")
-      .collect();
+    return await ctx.db.query("monitors").order("desc").collect();
   },
 });
 
@@ -194,10 +191,7 @@ export const listAuthProfiles = query({
         .order("desc")
         .collect();
     }
-    return await ctx.db
-      .query("authProfiles")
-      .order("desc")
-      .collect();
+    return await ctx.db.query("authProfiles").order("desc").collect();
   },
 });
 
@@ -288,7 +282,9 @@ export const listDeepLinkTemplates = query({
       .collect();
 
     if (args.client) {
-      templates = templates.filter((template) => template.client === args.client);
+      templates = templates.filter(
+        (template) => template.client === args.client
+      );
     }
     if (args.platform) {
       templates = templates.filter(
@@ -439,7 +435,9 @@ export const listMonitorRuns = query({
     if (args.monitorId) {
       return await ctx.db
         .query("monitorRuns")
-        .withIndex("monitorId_startedAt", (q) => q.eq("monitorId", args.monitorId!))
+        .withIndex("monitorId_startedAt", (q) =>
+          q.eq("monitorId", args.monitorId!)
+        )
         .order("desc")
         .take(limit);
     }

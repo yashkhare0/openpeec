@@ -16,15 +16,13 @@ export function KpiCards({
         <Card key={kpi.label}>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
                 {kpi.label}
               </p>
               <KpiIcon tone={kpi.tone} />
             </div>
             <div className="mt-3 flex items-end justify-between gap-2">
-              <p className="text-2xl font-semibold tabular-nums">
-                {kpi.value}
-              </p>
+              <p className="text-2xl font-semibold tabular-nums">{kpi.value}</p>
               <span
                 className={cn(
                   "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
@@ -32,8 +30,7 @@ export function KpiCards({
                     "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
                   kpi.tone === "negative" &&
                     "bg-rose-500/10 text-rose-700 dark:text-rose-300",
-                  kpi.tone === "neutral" &&
-                    "bg-muted text-muted-foreground"
+                  kpi.tone === "neutral" && "bg-muted text-muted-foreground"
                 )}
               >
                 {kpi.delta}

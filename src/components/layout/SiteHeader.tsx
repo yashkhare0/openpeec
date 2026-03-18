@@ -54,16 +54,12 @@ export function SiteHeader({
   breadcrumbs?: Array<{ label: string; onClick?: () => void }>;
 }) {
   return (
-    <header className="flex min-h-14 shrink-0 items-center gap-2 border-b bg-background px-4 py-2">
+    <header className="bg-background flex min-h-14 shrink-0 items-center gap-2 border-b px-4 py-2">
       <SidebarTrigger className="-ml-1 self-start sm:self-center" />
       <Separator orientation="vertical" className="mr-2 hidden h-4 sm:block" />
 
       <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 space-y-1">
-          <div data-tour="client-badge" className="inline-flex items-center gap-1.5 rounded-lg border bg-muted/50 px-2.5 py-1 text-sm font-medium">
-            <div className="size-2 rounded-full bg-primary" />
-            ChatGPT
-          </div>
           {breadcrumbs?.length ? (
             <Breadcrumb>
               <BreadcrumbList>
@@ -91,7 +87,10 @@ export function SiteHeader({
           ) : null}
         </div>
 
-        <div data-tour="header-filters" className="flex flex-wrap items-center gap-2">
+        <div
+          data-tour="header-filters"
+          className="flex flex-wrap items-center gap-2"
+        >
           <Select
             value={rangeDays.toString()}
             onValueChange={(v) => onRangeDays(Number(v))}
@@ -129,7 +128,12 @@ export function SiteHeader({
           >
             <RefreshCw className="size-4" />
           </Button>
-          <Button data-tour="tutorial-btn" variant="outline" size="sm" onClick={onStartTutorial}>
+          <Button
+            data-tour="tutorial-btn"
+            variant="outline"
+            size="sm"
+            onClick={onStartTutorial}
+          >
             <GraduationCap className="mr-1.5 size-4" />
             Run Tutorial
           </Button>

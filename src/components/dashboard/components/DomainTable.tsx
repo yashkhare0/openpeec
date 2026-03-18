@@ -38,8 +38,7 @@ function formatPercent(value: number | undefined): string {
 
 const typeColors: Record<string, string> = {
   ugc: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300",
-  editorial:
-    "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
+  editorial: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
   corporate:
     "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-300",
   docs: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300",
@@ -51,9 +50,7 @@ export function DomainTable({ sources }: { sources: SourceRow[] }) {
     <Card>
       <CardHeader>
         <CardTitle>Top Domains</CardTitle>
-        <CardDescription>
-          Citation quality and usage by domain.
-        </CardDescription>
+        <CardDescription>Citation quality and usage by domain.</CardDescription>
       </CardHeader>
       <CardContent>
         {sources.length === 0 ? (
@@ -77,7 +74,7 @@ export function DomainTable({ sources }: { sources: SourceRow[] }) {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <div className="flex size-6 items-center justify-center rounded bg-muted">
+                      <div className="bg-muted flex size-6 items-center justify-center rounded">
                         <img
                           src={`https://www.google.com/s2/favicons?domain=${source.domain}&sz=32`}
                           alt=""
@@ -94,9 +91,7 @@ export function DomainTable({ sources }: { sources: SourceRow[] }) {
                   <TableCell>
                     <Badge
                       variant="secondary"
-                      className={
-                        typeColors[source.type.toLowerCase()] ?? ""
-                      }
+                      className={typeColors[source.type.toLowerCase()] ?? ""}
                     >
                       {titleCase(source.type)}
                     </Badge>

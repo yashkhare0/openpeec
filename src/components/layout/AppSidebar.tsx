@@ -1,10 +1,5 @@
 import { startTransition } from "react";
-import {
-  Activity,
-  Bot,
-  FileText,
-  Link2,
-} from "lucide-react";
+import { Activity, Bot, FileText, Link2 } from "lucide-react";
 
 import { ModeToggle } from "@/components/ModeToggle";
 import {
@@ -43,12 +38,12 @@ export function AppSidebar({
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" tooltip="OpenPeec">
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <div className="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-lg">
                 <span className="text-sm font-bold">O</span>
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">OpenPeec</span>
-                <span className="truncate text-xs text-muted-foreground">
+                <span className="text-muted-foreground truncate text-xs">
                   Visibility Lab
                 </span>
               </div>

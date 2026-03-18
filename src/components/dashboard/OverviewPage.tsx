@@ -98,7 +98,7 @@ export function OverviewPage({
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="grid gap-4 px-4 xl:grid-cols-[minmax(0,1.12fr)_380px] lg:px-6">
+      <div className="grid gap-4 px-4 lg:px-6 xl:grid-cols-[minmax(0,1.12fr)_380px]">
         <div className="flex flex-col gap-4">
           <Card>
             <CardHeader>
@@ -113,13 +113,17 @@ export function OverviewPage({
             </CardContent>
           </Card>
 
-          <div data-tour="charts-area" className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.92fr)]">
+          <div
+            data-tour="charts-area"
+            className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.92fr)]"
+          >
             <TrendChart trend={trend} />
             <Card>
               <CardHeader>
                 <CardTitle>Prompt Response Variance</CardTitle>
                 <CardDescription>
-                  Which prompts are changing most across their captured responses.
+                  Which prompts are changing most across their captured
+                  responses.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -142,13 +146,16 @@ export function OverviewPage({
                             <div className="space-y-1">
                               <div className="flex items-center gap-2">
                                 <p className="font-medium">{row.name}</p>
-                                <Badge variant="outline">{row.latestStatus}</Badge>
+                                <Badge variant="outline">
+                                  {row.latestStatus}
+                                </Badge>
                               </div>
-                              <p className="line-clamp-2 text-xs text-muted-foreground">
-                                {row.latestResponseSummary || "No completed response yet."}
+                              <p className="text-muted-foreground line-clamp-2 text-xs">
+                                {row.latestResponseSummary ||
+                                  "No completed response yet."}
                               </p>
                               {row.topEntity ? (
-                                <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                                <p className="text-muted-foreground text-[11px] tracking-[0.16em] uppercase">
                                   Top brand/entity: {row.topEntity}
                                 </p>
                               ) : null}
@@ -187,11 +194,14 @@ export function OverviewPage({
                 ) : (
                   <div className="space-y-3">
                     {sources.slice(0, 6).map((source) => (
-                      <div key={source.domain} className="rounded-xl border bg-muted/20 p-3">
+                      <div
+                        key={source.domain}
+                        className="bg-muted/20 rounded-xl border p-3"
+                      >
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <p className="font-medium">{source.domain}</p>
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-muted-foreground text-xs">
                               Used in {source.promptCount ?? 0} prompts
                             </p>
                           </div>
@@ -199,13 +209,13 @@ export function OverviewPage({
                         </div>
                         {source.latestResponses?.[0] ? (
                           <div className="mt-3 space-y-1">
-                            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                            <p className="text-muted-foreground text-xs tracking-[0.16em] uppercase">
                               Latest prompt
                             </p>
-                            <p className="text-sm text-foreground/90">
+                            <p className="text-foreground/90 text-sm">
                               {source.latestResponses[0].promptName}
                             </p>
-                            <p className="line-clamp-2 text-sm text-muted-foreground">
+                            <p className="text-muted-foreground line-clamp-2 text-sm">
                               {source.latestResponses[0].responseSummary}
                             </p>
                           </div>
@@ -233,12 +243,16 @@ export function OverviewPage({
               ) : (
                 <div className="space-y-3">
                   {overview?.entityLeaderboard.slice(0, 8).map((entity) => (
-                    <div key={entity.entityId} className="rounded-xl border bg-muted/20 p-3">
+                    <div
+                      key={entity.entityId}
+                      className="bg-muted/20 rounded-xl border p-3"
+                    >
                       <div className="flex items-center justify-between gap-2">
                         <div>
                           <p className="font-medium">{entity.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {entity.kind} across {entity.responseCount} responses
+                          <p className="text-muted-foreground text-xs">
+                            {entity.kind} across {entity.responseCount}{" "}
+                            responses
                           </p>
                         </div>
                         <Badge variant="secondary">
@@ -266,7 +280,8 @@ export function OverviewPage({
             <CardHeader>
               <CardTitle>Coverage Signals</CardTitle>
               <CardDescription>
-                Read the overview as prompt quality, source quality, and brand presence.
+                Read the overview as prompt quality, source quality, and brand
+                presence.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -298,9 +313,11 @@ function SignalTile({
   description: string;
 }) {
   return (
-    <div className="rounded-xl border bg-muted/20 p-3">
+    <div className="bg-muted/20 rounded-xl border p-3">
       <p className="text-sm font-medium">{title}</p>
-      <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
+      <p className="text-muted-foreground mt-1 text-sm leading-6">
+        {description}
+      </p>
     </div>
   );
 }

@@ -58,7 +58,8 @@ function errorMessage(error: unknown): string {
 }
 
 const statusTone: Record<string, string> = {
-  success: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300",
+  success:
+    "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300",
   failed: "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-300",
   running: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
   queued: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300",
@@ -187,7 +188,9 @@ export function PromptsPage({
     schedule?: string;
     enabled?: boolean;
   }) => Promise<Id<"promptJobs">>;
-  onDeletePromptJob: (args: { id: Id<"promptJobs"> }) => Promise<Id<"promptJobs">>;
+  onDeletePromptJob: (args: {
+    id: Id<"promptJobs">;
+  }) => Promise<Id<"promptJobs">>;
   onTriggerSelectedNow: (args: {
     promptIds: Array<Id<"prompts">>;
     label?: string;
@@ -197,7 +200,9 @@ export function PromptsPage({
   }) => Promise<{ queuedCount: number }>;
   onNotice: (text: string) => void;
 }) {
-  const [selectedPromptIds, setSelectedPromptIds] = useState<Array<Id<"prompts">>>([]);
+  const [selectedPromptIds, setSelectedPromptIds] = useState<
+    Array<Id<"prompts">>
+  >([]);
   const [jobName, setJobName] = useState("");
   const [jobSchedule, setJobSchedule] = useState("0 9 * * 1-5");
 
@@ -258,7 +263,9 @@ export function PromptsPage({
 
   const togglePrompt = (id: Id<"prompts">, checked: boolean) => {
     setSelectedPromptIds((current) =>
-      checked ? [...new Set([...current, id])] : current.filter((item) => item !== id)
+      checked
+        ? [...new Set([...current, id])]
+        : current.filter((item) => item !== id)
     );
   };
 
@@ -308,15 +315,15 @@ export function PromptsPage({
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="grid gap-4 px-4 xl:grid-cols-[minmax(0,1.15fr)_360px] lg:px-6">
+      <div className="grid gap-4 px-4 lg:px-6 xl:grid-cols-[minmax(0,1.15fr)_360px]">
         <Card>
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <CardTitle>Prompts</CardTitle>
                 <CardDescription>
-                  Select a prompt to inspect its response history, source mix, and
-                  brand/entity mentions.
+                  Select a prompt to inspect its response history, source mix,
+                  and brand/entity mentions.
                 </CardDescription>
               </div>
               <Input
@@ -328,7 +335,7 @@ export function PromptsPage({
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-2 rounded-xl border bg-muted/30 p-3 md:grid-cols-[1fr_1.6fr_120px_150px_auto]">
+            <div className="bg-muted/30 grid gap-2 rounded-xl border p-3 md:grid-cols-[1fr_1.6fr_120px_150px_auto]">
               <Input
                 value={newPromptName}
                 onChange={(e) => onNewPromptName(e.target.value)}
@@ -385,7 +392,9 @@ export function PromptsPage({
                     <TableHead className="w-10">
                       <Checkbox
                         checked={allVisibleSelected}
-                        onCheckedChange={(checked) => toggleAllVisible(checked === true)}
+                        onCheckedChange={(checked) =>
+                          toggleAllVisible(checked === true)
+                        }
                         aria-label="Select all prompts"
                       />
                     </TableHead>
@@ -422,9 +431,11 @@ export function PromptsPage({
                             <p className="font-medium">{row.name}</p>
                             <Badge variant="secondary">{row.model}</Badge>
                             <Badge variant="outline">{row.group}</Badge>
-                            {!row.active ? <Badge variant="outline">Paused</Badge> : null}
+                            {!row.active ? (
+                              <Badge variant="outline">Paused</Badge>
+                            ) : null}
                           </div>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-muted-foreground text-xs">
                             {row.responseCount} responses captured
                           </p>
                         </div>
@@ -434,7 +445,9 @@ export function PromptsPage({
                           <div className="flex flex-wrap gap-1.5">
                             <Badge
                               variant="secondary"
-                              className={statusTone[row.latestStatus ?? ""] ?? ""}
+                              className={
+                                statusTone[row.latestStatus ?? ""] ?? ""
+                              }
                             >
                               {titleCase(row.latestStatus ?? "not_run")}
                             </Badge>
@@ -444,10 +457,11 @@ export function PromptsPage({
                               </Badge>
                             ) : null}
                           </div>
-                          <p className="line-clamp-2 text-xs text-muted-foreground">
-                            {row.latestResponseSummary || "No completed response yet."}
+                          <p className="text-muted-foreground line-clamp-2 text-xs">
+                            {row.latestResponseSummary ||
+                              "No completed response yet."}
                           </p>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-muted-foreground text-xs">
                             {row.latestRunAt
                               ? `Last response ${formatFreshness(row.latestRunAt)}`
                               : "No response yet"}
@@ -464,7 +478,7 @@ export function PromptsPage({
                               {row.latestSourceCount ?? 0} in latest
                             </Badge>
                           </div>
-                          <p className="line-clamp-2 text-xs text-muted-foreground">
+                          <p className="text-muted-foreground line-clamp-2 text-xs">
                             {row.topSources.length
                               ? row.topSources.join(", ")
                               : "No sources extracted yet."}
@@ -475,7 +489,10 @@ export function PromptsPage({
                         <div className="flex flex-wrap gap-1.5">
                           {row.topEntities.length ? (
                             row.topEntities.slice(0, 3).map((entity) => (
-                              <Badge key={`${row.id}-${entity}`} variant="outline">
+                              <Badge
+                                key={`${row.id}-${entity}`}
+                                variant="outline"
+                              >
                                 {entity}
                               </Badge>
                             ))
@@ -487,7 +504,7 @@ export function PromptsPage({
                       <TableCell className="text-right">
                         <div className="space-y-1 tabular-nums">
                           <p>{formatPercent(row.responseDrift)}</p>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-muted-foreground text-xs">
                             source {formatPercent(row.sourceVariance)}
                           </p>
                         </div>
@@ -507,11 +524,20 @@ export function PromptsPage({
                             size="sm"
                             className="h-7 text-xs"
                             onClick={() =>
-                              void onUpdatePrompt({ id: row.id, active: !row.active })
+                              void onUpdatePrompt({
+                                id: row.id,
+                                active: !row.active,
+                              })
                                 .then(() =>
-                                  onNotice(row.active ? "Prompt paused." : "Prompt resumed.")
+                                  onNotice(
+                                    row.active
+                                      ? "Prompt paused."
+                                      : "Prompt resumed."
+                                  )
                                 )
-                                .catch((e: unknown) => onNotice(errorMessage(e)))
+                                .catch((e: unknown) =>
+                                  onNotice(errorMessage(e))
+                                )
                             }
                           >
                             {row.active ? "Pause" : "Resume"}
@@ -519,14 +545,17 @@ export function PromptsPage({
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-7 text-xs text-destructive"
+                            className="text-destructive h-7 text-xs"
                             onClick={() =>
                               void onDeletePrompt({ id: row.id })
                                 .then(() => {
-                                  if (selectedPromptId === row.id) onSelectPrompt(null);
+                                  if (selectedPromptId === row.id)
+                                    onSelectPrompt(null);
                                   onNotice("Prompt deleted.");
                                 })
-                                .catch((e: unknown) => onNotice(errorMessage(e)))
+                                .catch((e: unknown) =>
+                                  onNotice(errorMessage(e))
+                                )
                             }
                           >
                             Delete
@@ -599,7 +628,7 @@ export function PromptsPage({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 text-xs text-destructive"
+                    className="text-destructive h-7 text-xs"
                     onClick={() =>
                       void onDeleteGroup({ id: g._id })
                         .then(() => onNotice("Group deleted."))
@@ -621,15 +650,19 @@ export function PromptsPage({
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="rounded-xl border bg-muted/20 p-3">
+              <div className="bg-muted/20 rounded-xl border p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-sm font-medium">
-                      {selectedCount} prompt{selectedCount === 1 ? "" : "s"} selected
+                      {selectedCount} prompt{selectedCount === 1 ? "" : "s"}{" "}
+                      selected
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-muted-foreground text-xs">
                       {selectedRows.length
-                        ? selectedRows.slice(0, 3).map((row) => row.name).join(", ")
+                        ? selectedRows
+                            .slice(0, 3)
+                            .map((row) => row.name)
+                            .join(", ")
                         : "Select prompt rows to build a batch."}
                       {selectedRows.length > 3 ? "..." : ""}
                     </p>
@@ -642,8 +675,12 @@ export function PromptsPage({
                 </div>
                 <div className="mt-3 grid gap-2">
                   <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline">{queueSummary.queuedCount} queued</Badge>
-                    <Badge variant="outline">{queueSummary.runningCount} running</Badge>
+                    <Badge variant="outline">
+                      {queueSummary.queuedCount} queued
+                    </Badge>
+                    <Badge variant="outline">
+                      {queueSummary.runningCount} running
+                    </Badge>
                     <Badge variant="secondary">
                       {queueSummary.latestCompletedAt
                         ? `Last completion ${formatFreshness(queueSummary.latestCompletedAt)}`
@@ -662,7 +699,7 @@ export function PromptsPage({
                     placeholder="Cron schedule, e.g. 0 9 * * 1-5"
                     className="h-8 font-mono text-xs"
                   />
-                  <p className="text-[11px] leading-5 text-muted-foreground">
+                  <p className="text-muted-foreground text-[11px] leading-5">
                     Leave the cron field blank to save a manual batch only. Run{" "}
                     <span className="font-mono">pnpm runner:queue</span> locally
                     to process queued prompts.
@@ -672,7 +709,11 @@ export function PromptsPage({
                   <Button size="sm" onClick={() => void queueSelectedNow()}>
                     Queue now
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => void savePromptPlan()}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void savePromptPlan()}
+                  >
                     Save plan
                   </Button>
                 </div>
@@ -683,23 +724,32 @@ export function PromptsPage({
               ) : (
                 <div className="space-y-2">
                   {promptJobs.map((job) => (
-                    <div key={String(job._id)} className="rounded-xl border p-3">
+                    <div
+                      key={String(job._id)}
+                      className="rounded-xl border p-3"
+                    >
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <p className="text-sm font-medium">{job.name}</p>
-                          <Badge variant={job.enabled ? "default" : "secondary"}>
+                          <Badge
+                            variant={job.enabled ? "default" : "secondary"}
+                          >
                             {job.enabled ? "Live" : "Paused"}
                           </Badge>
-                          <Badge variant="outline">{job.schedule || "Manual"}</Badge>
+                          <Badge variant="outline">
+                            {job.schedule || "Manual"}
+                          </Badge>
                         </div>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-muted-foreground text-xs">
                           {job.promptCount} prompts
                           {job.lastTriggeredAt
                             ? ` | Last trigger ${formatFreshness(job.lastTriggeredAt)}`
                             : " | Never triggered"}
-                          {job.lastQueuedCount ? ` | Queued ${job.lastQueuedCount}` : ""}
+                          {job.lastQueuedCount
+                            ? ` | Queued ${job.lastQueuedCount}`
+                            : ""}
                         </p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-muted-foreground text-xs">
                           {job.prompts.map((prompt) => prompt.name).join(", ")}
                         </p>
                       </div>
@@ -710,9 +760,13 @@ export function PromptsPage({
                           onClick={() =>
                             void onTriggerPromptJobNow({ id: job._id })
                               .then((result) =>
-                                onNotice(`${result.queuedCount} prompt runs queued.`)
+                                onNotice(
+                                  `${result.queuedCount} prompt runs queued.`
+                                )
                               )
-                              .catch((error: unknown) => onNotice(errorMessage(error)))
+                              .catch((error: unknown) =>
+                                onNotice(errorMessage(error))
+                              )
                           }
                         >
                           Run now
@@ -721,7 +775,10 @@ export function PromptsPage({
                           size="sm"
                           variant="ghost"
                           onClick={() =>
-                            void onUpdatePromptJob({ id: job._id, enabled: !job.enabled })
+                            void onUpdatePromptJob({
+                              id: job._id,
+                              enabled: !job.enabled,
+                            })
                               .then(() =>
                                 onNotice(
                                   job.enabled
@@ -729,7 +786,9 @@ export function PromptsPage({
                                     : "Execution plan resumed."
                                 )
                               )
-                              .catch((error: unknown) => onNotice(errorMessage(error)))
+                              .catch((error: unknown) =>
+                                onNotice(errorMessage(error))
+                              )
                           }
                         >
                           {job.enabled ? "Pause" : "Resume"}
@@ -741,7 +800,9 @@ export function PromptsPage({
                           onClick={() =>
                             void onDeletePromptJob({ id: job._id })
                               .then(() => onNotice("Execution plan deleted."))
-                              .catch((error: unknown) => onNotice(errorMessage(error)))
+                              .catch((error: unknown) =>
+                                onNotice(errorMessage(error))
+                              )
                           }
                         >
                           Delete
