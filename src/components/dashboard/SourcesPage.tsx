@@ -72,11 +72,24 @@ export function SourcesPage({
   sources: Array<{
     domain: string;
     type: string;
+    citations: number;
+    responseCount: number;
+    promptCount: number;
     usedShare: number;
     avgCitationsPerRun: number;
     avgQualityScore?: number;
     avgPosition?: number;
     ownedShare: number;
+    promptNames?: string[];
+    latestResponses?: Array<{
+      runId: Id<"promptRuns">;
+      promptId: Id<"prompts">;
+      promptName: string;
+      startedAt: number;
+      responseSummary: string;
+      position: number;
+    }>;
+    mentionedEntities?: string[];
   }>;
   entities: Array<{
     _id: Id<"trackedEntities">;
@@ -158,6 +171,7 @@ export function SourcesPage({
                     <TableHead>Domain</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead className="text-right">Used</TableHead>
+                    <TableHead className="text-right">Responses</TableHead>
                     <TableHead className="text-right">Avg cites/run</TableHead>
                     <TableHead className="text-right">Quality</TableHead>
                     <TableHead className="text-right">Position</TableHead>
@@ -195,6 +209,9 @@ export function SourcesPage({
                         {formatPercent(s.usedShare)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
+                        {s.responseCount}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
                         {s.avgCitationsPerRun.toFixed(1)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
@@ -209,6 +226,35 @@ export function SourcesPage({
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {formatPercent(s.ownedShare)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {sources.map((s) => (
+                    <TableRow key={`${s.domain}-detail`} className="bg-muted/20">
+                      <TableCell colSpan={8}>
+                        <div className="flex flex-col gap-2 py-1">
+                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                            Prompt and response lineage
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {(s.promptNames ?? []).join(", ") || "No prompt lineage recorded."}
+                          </p>
+                          {s.latestResponses?.[0] ? (
+                            <p className="text-sm text-foreground/85">
+                              Latest: {s.latestResponses[0].promptName} referenced this source at
+                              {" "}#{s.latestResponses[0].position} in the response.
+                            </p>
+                          ) : null}
+                          {(s.mentionedEntities ?? []).length ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              {(s.mentionedEntities ?? []).map((entity) => (
+                                <Badge key={`${s.domain}-${entity}`} variant="outline">
+                                  {entity}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

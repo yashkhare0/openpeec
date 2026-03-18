@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ConvexHttpClient } from "convex/browser";
 import { chromium } from "playwright";
@@ -42,12 +42,12 @@ function parseArgs(argv) {
   return args;
 }
 
-async function readJsonFile(filePath) {
+export async function readJsonFile(filePath) {
   const content = await fs.readFile(filePath, "utf8");
   return JSON.parse(content);
 }
 
-function resolvePathIfRelative(inputPath) {
+export function resolvePathIfRelative(inputPath) {
   if (path.isAbsolute(inputPath)) {
     return inputPath;
   }
@@ -231,7 +231,7 @@ function qualityScoreForCitation(citation) {
   return Number((clamp(score, 0, 1) * 100).toFixed(1));
 }
 
-function normalizeRunnerConfig(rawConfig) {
+export function normalizeRunnerConfig(rawConfig) {
   const deepLink = rawConfig.navigation ?? rawConfig.deepLink ?? {};
   const browser = rawConfig.browser ?? {};
   const prompt = rawConfig.prompt ?? {};
@@ -256,6 +256,7 @@ function normalizeRunnerConfig(rawConfig) {
     authProfile: rawConfig.authProfile,
     navigation: {
       url: deepLink.url,
+      promptQueryParam: deepLink.promptQueryParam ?? null,
       waitUntil: deepLink.waitUntil ?? "domcontentloaded",
       timeoutMs: deepLink.timeoutMs ?? 30000,
     },
@@ -264,7 +265,7 @@ function normalizeRunnerConfig(rawConfig) {
       inputSelector:
         prompt.inputSelector ??
         selectors.promptInputSelector ??
-        "#prompt-textarea, [contenteditable='true'], textarea",
+        "div#prompt-textarea[contenteditable='true'], #prompt-textarea[contenteditable='true'], [contenteditable='true']:visible, textarea:visible",
       submitSelector:
         prompt.submitSelector ??
         selectors.submitButtonSelector ??
@@ -302,7 +303,7 @@ function normalizeRunnerConfig(rawConfig) {
   };
 }
 
-async function writeJson(filePath, data) {
+export async function writeJson(filePath, data) {
   const absolutePath = resolvePathIfRelative(filePath);
   await fs.mkdir(path.dirname(absolutePath), { recursive: true });
   await fs.writeFile(absolutePath, JSON.stringify(data, null, 2), "utf8");
@@ -564,7 +565,7 @@ async function ingestRunIfRequested(config, result, shouldIngest) {
   return { ok: false, skipped: "No ingestion path succeeded" };
 }
 
-async function runMonitor(config, options) {
+export async function runMonitor(config, options = {}) {
   const normalizedConfig = normalizeRunnerConfig(config);
 
   const startedAt = Date.now();
@@ -585,7 +586,7 @@ async function runMonitor(config, options) {
   const networkEvents = [];
   const consoleEvents = [];
 
-  const deepLinkUrl = normalizedConfig.navigation.url;
+  const deepLinkUrl = buildDeepLinkUrl(normalizedConfig);
   if (!deepLinkUrl) {
     throw new Error("Missing navigation.url (or deepLink.url)");
   }
@@ -683,8 +684,13 @@ async function runMonitor(config, options) {
       });
     }
 
-    let promptSubmitted = false;
-    if (normalizedConfig.prompt.text) {
+    let promptSubmitted = Boolean(
+      normalizedConfig.prompt.text && normalizedConfig.navigation.promptQueryParam
+    );
+
+    if (!normalizedConfig.prompt.text) {
+      warnings.push("No prompt text configured; running extraction-only mode.");
+    } else if (!promptSubmitted) {
       try {
         const input = page.locator(normalizedConfig.prompt.inputSelector).first();
         await input.waitFor({
@@ -693,13 +699,30 @@ async function runMonitor(config, options) {
         });
         await input.click({ timeout: normalizedConfig.timing.responseTimeoutMs });
 
-        if (normalizedConfig.prompt.clearExisting) {
-          await page.keyboard.press(
-            process.platform === "darwin" ? "Meta+A" : "Control+A"
-          );
-          await page.keyboard.press("Backspace");
+        const existingInputText = normalizeText(
+          await input
+            .evaluate((node) => {
+              if (node instanceof HTMLTextAreaElement) {
+                return node.value;
+              }
+              if (node instanceof HTMLElement) {
+                return node.innerText || node.textContent || "";
+              }
+              return "";
+            })
+            .catch(() => "")
+        );
+        const expectedPrompt = normalizeText(normalizedConfig.prompt.text);
+
+        if (existingInputText !== expectedPrompt) {
+          if (normalizedConfig.prompt.clearExisting) {
+            await page.keyboard.press(
+              process.platform === "darwin" ? "Meta+A" : "Control+A"
+            );
+            await page.keyboard.press("Backspace");
+          }
+          await page.keyboard.type(normalizedConfig.prompt.text);
         }
-        await page.keyboard.type(normalizedConfig.prompt.text);
 
         if (normalizedConfig.prompt.submitSelector) {
           const submit = page
@@ -721,8 +744,6 @@ async function runMonitor(config, options) {
           }`
         );
       }
-    } else {
-      warnings.push("No prompt text configured; running extraction-only mode.");
     }
 
     if (promptSubmitted) {
@@ -791,10 +812,30 @@ async function runMonitor(config, options) {
     citationQualityScore = metrics.citationQualityScore;
     averageCitationPosition = metrics.averageCitationPosition;
 
+    const missingUsableAssistantResponse = warnings.some((warning) =>
+      warning.startsWith("Response container not found after submit:")
+    );
+    const genericGuestShellResponse =
+      citations.length === 0 &&
+      /You said:/i.test(responseText) &&
+      /ChatGPT can make mistakes/i.test(responseText);
+
+    if (
+      status === "success" &&
+      promptSubmitted &&
+      (missingUsableAssistantResponse || genericGuestShellResponse)
+    ) {
+      status = "failed";
+      fallbackUsed = true;
+      summary = "Prompt submission did not produce a usable assistant response.";
+      responseSummary = summary;
+    }
+
     if (status === "success" && normalizedConfig.prompt.text && !responseText && citations.length === 0) {
       status = "failed";
       fallbackUsed = true;
       summary = "Prompt flow completed but no response/citations were extracted.";
+      responseSummary = summary;
     }
 
     await page.screenshot({ path: screenshotPath, fullPage: true });
@@ -943,8 +984,30 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`Runner failed: ${message}`);
-  process.exit(1);
-});
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  main().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Runner failed: ${message}`);
+    process.exit(1);
+  });
+}
+function buildDeepLinkUrl(config) {
+  const baseUrl = config.navigation.url;
+  if (!baseUrl || !config.navigation.promptQueryParam || !config.prompt.text) {
+    return baseUrl;
+  }
+
+  try {
+    const url = new URL(baseUrl);
+    url.searchParams.set(
+      config.navigation.promptQueryParam,
+      config.prompt.text
+    );
+    return url.toString();
+  } catch {
+    return baseUrl;
+  }
+}

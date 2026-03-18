@@ -168,7 +168,6 @@ function inferOwnedFromKind(kind: TrackedEntityDoc["kind"]): boolean {
 
 async function assertPromptIdsOwned(
   ctx: MutationCtx | QueryCtx,
-  userId: UserId,
   promptIds: Id<"prompts">[]
 ): Promise<PromptDoc[]> {
   const uniquePromptIds = [...new Set(promptIds)];
@@ -181,9 +180,6 @@ async function assertPromptIdsOwned(
       const prompt = await ctx.db.get(promptId);
       if (prompt == null) {
         throw new Error("Prompt not found");
-      }
-      if (prompt.userId !== userId) {
-        throw new Error("User not authorized for one or more prompts");
       }
       return prompt;
     })
@@ -217,19 +213,18 @@ async function deletePromptJobCron(ctx: MutationCtx, cronId: string | undefined)
 
 async function enqueuePromptRunDocs(
   ctx: MutationCtx,
-  userId: UserId,
   prompts: PromptDoc[],
   label: string
 ): Promise<number> {
-  const startedAt = Date.now();
+  const queuedAt = Date.now();
   await Promise.all(
     prompts.map((prompt) =>
       ctx.db.insert("promptRuns", {
-        userId,
         promptId: prompt._id,
         model: prompt.targetModel,
         status: "queued",
-        startedAt,
+        queuedAt,
+        startedAt: queuedAt,
         runLabel: label,
       })
     )
@@ -239,17 +234,243 @@ async function enqueuePromptRunDocs(
 
 async function assertPromptOwnership(
   ctx: MutationCtx | QueryCtx,
-  userId: UserId,
   promptId: Id<"prompts">
 ): Promise<Doc<"prompts">> {
   const prompt = await ctx.db.get(promptId);
   if (prompt == null) {
     throw new Error("Prompt not found");
   }
-  if (prompt.userId !== userId) {
-    throw new Error("User not authorized for this prompt");
-  }
   return prompt;
+}
+
+function normalizeCitationInputs(
+  citations: Array<{
+    domain: string;
+    url: string;
+    title?: string;
+    snippet?: string;
+    type: CitationDoc["type"];
+    position: number;
+    qualityScore?: number;
+    trackedEntityId?: Id<"trackedEntities">;
+    isOwned?: boolean;
+  }>
+) {
+  return citations.map((citation) => ({
+    ...citation,
+    qualityScore: normalizeCitationQualityScore(citation.qualityScore),
+  }));
+}
+
+async function insertCitationsForRun(
+  ctx: MutationCtx,
+  runId: Id<"promptRuns">,
+  citations: ReturnType<typeof normalizeCitationInputs>
+) {
+  const trackedEntities = await ctx.db.query("trackedEntities").collect();
+  const trackedEntityById = new Map(trackedEntities.map((entity) => [entity._id, entity]));
+  const trackedEntityByDomain = new Map<string, TrackedEntityDoc>();
+  for (const entity of trackedEntities) {
+    for (const domain of entity.ownedDomains ?? []) {
+      trackedEntityByDomain.set(normalizeDomain(domain), entity);
+    }
+  }
+
+  await Promise.all(
+    citations.map(async (citation) => {
+      const normalizedDomain = normalizeDomain(citation.domain);
+      let trackedEntityId = citation.trackedEntityId;
+      if (trackedEntityId && !trackedEntityById.has(trackedEntityId)) {
+        trackedEntityId = undefined;
+      }
+      const matchedEntity =
+        (trackedEntityId ? trackedEntityById.get(trackedEntityId) : undefined) ??
+        trackedEntityByDomain.get(normalizedDomain);
+      const resolvedEntityId = trackedEntityId ?? matchedEntity?._id;
+      const isOwned =
+        citation.isOwned ??
+        (matchedEntity ? inferOwnedFromKind(matchedEntity.kind) : false);
+
+      await ctx.db.insert("citations", {
+        promptRunId: runId,
+        domain: normalizedDomain,
+        url: citation.url,
+        title: citation.title,
+        snippet: citation.snippet,
+        type: citation.type,
+        position: citation.position,
+        qualityScore: citation.qualityScore,
+        trackedEntityId: resolvedEntityId,
+        isOwned,
+      });
+    })
+  );
+}
+
+function normalizeAnalysisText(input: string | undefined): string {
+  return String(input ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function uniqueStrings(values: Array<string | undefined>): string[] {
+  return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
+}
+
+function tokenSet(input: string | undefined): Set<string> {
+  return new Set(
+    normalizeAnalysisText(input)
+      .split(" ")
+      .filter((token) => token.length >= 4)
+  );
+}
+
+function jaccardSimilarity(left: Set<string>, right: Set<string>): number {
+  if (!left.size && !right.size) {
+    return 1;
+  }
+  const union = new Set([...left, ...right]);
+  const intersection = [...left].filter((value) => right.has(value));
+  return intersection.length / union.size;
+}
+
+function averagePairwiseSimilarity(sets: Set<string>[]): number | undefined {
+  if (sets.length < 2) {
+    return undefined;
+  }
+  let comparisons = 0;
+  let total = 0;
+  for (let index = 0; index < sets.length; index += 1) {
+    for (let other = index + 1; other < sets.length; other += 1) {
+      total += jaccardSimilarity(sets[index], sets[other]);
+      comparisons += 1;
+    }
+  }
+  return comparisons ? total / comparisons : undefined;
+}
+
+function computeResponseDrift(texts: Array<string | undefined>): number | undefined {
+  const sets = texts
+    .map((text) => tokenSet(text))
+    .filter((set) => set.size > 0);
+  const similarity = averagePairwiseSimilarity(sets);
+  if (similarity === undefined) {
+    return undefined;
+  }
+  return Math.round((1 - similarity) * 1000) / 10;
+}
+
+function computeSourceVariance(sourceDomainsByRun: string[][]): number | undefined {
+  const sets = sourceDomainsByRun
+    .map((domains) => new Set(domains.map((domain) => normalizeDomain(domain))))
+    .filter((set) => set.size > 0);
+  const similarity = averagePairwiseSimilarity(sets);
+  if (similarity === undefined) {
+    return undefined;
+  }
+  return Math.round((1 - similarity) * 1000) / 10;
+}
+
+function buildCitationMap<T extends { promptRunId: Id<"promptRuns"> }>(citations: T[]) {
+  const map = new Map<Id<"promptRuns">, T[]>();
+  for (const citation of citations) {
+    const existing = map.get(citation.promptRunId);
+    if (existing) {
+      existing.push(citation);
+    } else {
+      map.set(citation.promptRunId, [citation]);
+    }
+  }
+  return map;
+}
+
+function getEntityTerms(entity: TrackedEntityDoc): string[] {
+  return uniqueStrings([
+    entity.name,
+    entity.slug.replace(/-/g, " "),
+    ...(entity.aliases ?? []),
+  ]).filter((term) => term.length >= 3);
+}
+
+function citationsForEntity(
+  citations: CitationDoc[],
+  entity: TrackedEntityDoc
+): CitationDoc[] {
+  const ownedDomains = new Set((entity.ownedDomains ?? []).map((domain) => normalizeDomain(domain)));
+  return citations.filter(
+    (citation) =>
+      citation.trackedEntityId === entity._id ||
+      ownedDomains.has(normalizeDomain(citation.domain))
+  );
+}
+
+function extractEntityMentions(
+  responseText: string | undefined,
+  citations: CitationDoc[],
+  trackedEntities: TrackedEntityDoc[]
+) {
+  const normalizedResponse = normalizeAnalysisText(responseText);
+
+  return trackedEntities
+    .map((entity) => {
+      const matchedTerms: string[] = [];
+      let mentionCount = 0;
+      for (const term of getEntityTerms(entity)) {
+        const normalizedTerm = normalizeAnalysisText(term);
+        if (!normalizedTerm) {
+          continue;
+        }
+        const matches = normalizedResponse.match(
+          new RegExp(`\\b${escapeRegExp(normalizedTerm)}\\b`, "g")
+        );
+        if (matches?.length) {
+          matchedTerms.push(term);
+          mentionCount += matches.length;
+        }
+      }
+
+      const cited = citationsForEntity(citations, entity);
+      if (!mentionCount && !cited.length) {
+        return null;
+      }
+
+      return {
+        entityId: entity._id,
+        name: entity.name,
+        slug: entity.slug,
+        kind: entity.kind,
+        mentionCount,
+        citationCount: cited.length,
+        ownedCitationCount: cited.filter((citation) => citation.isOwned).length,
+        matchedTerms,
+      };
+    })
+    .filter(
+      (
+        item
+      ): item is {
+        entityId: Id<"trackedEntities">;
+        name: string;
+        slug: string;
+        kind: TrackedEntityDoc["kind"];
+        mentionCount: number;
+        citationCount: number;
+        ownedCitationCount: number;
+        matchedTerms: string[];
+      } => item !== null
+    )
+    .sort(
+      (left, right) =>
+        right.mentionCount - left.mentionCount ||
+        right.citationCount - left.citationCount ||
+        left.name.localeCompare(right.name)
+    );
 }
 
 export const createPromptGroup = mutation({
@@ -260,9 +481,7 @@ export const createPromptGroup = mutation({
     sortOrder: v.optional(v.float64()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     return await ctx.db.insert("promptGroups", {
-      userId,
       name: args.name.trim(),
       description: args.description?.trim(),
       color: args.color?.trim(),
@@ -273,10 +492,9 @@ export const createPromptGroup = mutation({
 
 export const listPromptGroups = query({
   handler: async (ctx) => {
-    const userId = await requireUserId(ctx);
     return await ctx.db
       .query("promptGroups")
-      .withIndex("userId_sortOrder", (q) => q.eq("userId", userId))
+      .withIndex("sortOrder")
       .collect();
   },
 });
@@ -290,13 +508,9 @@ export const updatePromptGroup = mutation({
     sortOrder: v.optional(v.float64()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const group = await ctx.db.get(args.id);
     if (group == null) {
       throw new Error("Prompt group not found");
-    }
-    if (group.userId !== userId) {
-      throw new Error("User not authorized to update this prompt group");
     }
 
     await ctx.db.patch(
@@ -315,18 +529,14 @@ export const updatePromptGroup = mutation({
 export const deletePromptGroup = mutation({
   args: { id: v.id("promptGroups") },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const group = await ctx.db.get(args.id);
     if (group == null) {
       throw new Error("Prompt group not found");
     }
-    if (group.userId !== userId) {
-      throw new Error("User not authorized to delete this prompt group");
-    }
 
     const prompts = await ctx.db
       .query("prompts")
-      .withIndex("userId_groupId", (q) => q.eq("userId", userId).eq("groupId", args.id))
+      .withIndex("groupId", (q) => q.eq("groupId", args.id))
       .collect();
     await Promise.all(prompts.map((prompt) => ctx.db.patch(prompt._id, { groupId: undefined })));
     await ctx.db.delete(args.id);
@@ -345,15 +555,13 @@ export const createPrompt = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     if (args.groupId) {
       const group = await ctx.db.get(args.groupId);
-      if (group == null || group.userId !== userId) {
+      if (group == null) {
         throw new Error("Invalid prompt group");
       }
     }
     return await ctx.db.insert("prompts", {
-      userId,
       groupId: args.groupId,
       name: args.name.trim(),
       promptText: args.promptText.trim(),
@@ -371,21 +579,15 @@ export const listPrompts = query({
     active: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     let prompts: Doc<"prompts">[];
 
     if (args.groupId) {
       prompts = await ctx.db
         .query("prompts")
-        .withIndex("userId_groupId", (q) =>
-          q.eq("userId", userId).eq("groupId", args.groupId)
-        )
+        .withIndex("groupId", (q) => q.eq("groupId", args.groupId))
         .collect();
     } else {
-      prompts = await ctx.db
-        .query("prompts")
-        .withIndex("userId", (q) => q.eq("userId", userId))
-        .collect();
+      prompts = await ctx.db.query("prompts").collect();
     }
 
     if (args.active !== undefined) {
@@ -407,18 +609,14 @@ export const updatePrompt = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const prompt = await ctx.db.get(args.id);
     if (prompt == null) {
       throw new Error("Prompt not found");
     }
-    if (prompt.userId !== userId) {
-      throw new Error("User not authorized to update this prompt");
-    }
 
     if (args.groupId) {
       const group = await ctx.db.get(args.groupId);
-      if (group == null || group.userId !== userId) {
+      if (group == null) {
         throw new Error("Invalid prompt group");
       }
     }
@@ -442,13 +640,9 @@ export const updatePrompt = mutation({
 export const deletePrompt = mutation({
   args: { id: v.id("prompts") },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const prompt = await ctx.db.get(args.id);
     if (prompt == null) {
       throw new Error("Prompt not found");
-    }
-    if (prompt.userId !== userId) {
-      throw new Error("User not authorized to delete this prompt");
     }
 
     const runs = await ctx.db
@@ -468,7 +662,6 @@ export const deletePrompt = mutation({
 
     const promptJobs = await ctx.db
       .query("promptJobs")
-      .withIndex("userId", (q) => q.eq("userId", userId))
       .collect();
     await Promise.all(
       promptJobs
@@ -500,15 +693,13 @@ export const createPromptJob = mutation({
     enabled: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
-    const prompts = await assertPromptIdsOwned(ctx, userId, args.promptIds);
+    const prompts = await assertPromptIdsOwned(ctx, args.promptIds);
     const now = Date.now();
     const enabled = args.enabled ?? true;
     const promptIds = prompts.map((prompt) => prompt._id);
     const schedule = args.schedule?.trim() || undefined;
 
     const jobId = await ctx.db.insert("promptJobs", {
-      userId,
       name: args.name.trim(),
       promptIds,
       schedule,
@@ -528,10 +719,9 @@ export const createPromptJob = mutation({
 
 export const listPromptJobs = query({
   handler: async (ctx) => {
-    const userId = await requireUserId(ctx);
     const [jobs, prompts] = await Promise.all([
-      ctx.db.query("promptJobs").withIndex("userId", (q) => q.eq("userId", userId)).collect(),
-      ctx.db.query("prompts").withIndex("userId", (q) => q.eq("userId", userId)).collect(),
+      ctx.db.query("promptJobs").collect(),
+      ctx.db.query("prompts").collect(),
     ]);
     const promptById = new Map(prompts.map((prompt) => [prompt._id, prompt]));
 
@@ -677,6 +867,236 @@ export const triggerPromptJob = internalMutation({
   },
 });
 
+export const getQueueStatus = query({
+  handler: async (ctx) => {
+    const [queuedRuns, runningRuns, recentRuns] = await Promise.all([
+      ctx.db
+        .query("promptRuns")
+        .withIndex("status_startedAt", (q) => q.eq("status", "queued"))
+        .collect(),
+      ctx.db
+        .query("promptRuns")
+        .withIndex("status_startedAt", (q) => q.eq("status", "running"))
+        .collect(),
+      ctx.db
+        .query("promptRuns")
+        .withIndex("startedAt")
+        .order("desc")
+        .take(100),
+    ]);
+
+    const latestFinishedRun = recentRuns.find(
+      (run) => run.status === "success" || run.status === "failed"
+    );
+    const latestQueuedRun = queuedRuns
+      .slice()
+      .sort(
+        (a, b) =>
+          (b.queuedAt ?? b.startedAt) - (a.queuedAt ?? a.startedAt)
+      )[0];
+
+    return {
+      queuedCount: queuedRuns.length,
+      runningCount: runningRuns.length,
+      latestFinishedRun: latestFinishedRun
+        ? {
+            id: latestFinishedRun._id,
+            status: latestFinishedRun.status,
+            finishedAt: latestFinishedRun.finishedAt,
+            startedAt: latestFinishedRun.startedAt,
+            runLabel: latestFinishedRun.runLabel,
+          }
+        : null,
+      latestQueuedRun: latestQueuedRun
+        ? {
+            id: latestQueuedRun._id,
+            queuedAt: latestQueuedRun.queuedAt ?? latestQueuedRun.startedAt,
+            runLabel: latestQueuedRun.runLabel,
+            model: latestQueuedRun.model,
+          }
+        : null,
+    };
+  },
+});
+
+export const claimNextQueuedPromptRun = mutation({
+  args: {
+    runner: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const queuedRun = await ctx.db
+      .query("promptRuns")
+      .withIndex("status_startedAt", (q) => q.eq("status", "queued"))
+      .order("asc")
+      .first();
+
+    if (queuedRun == null) {
+      return null;
+    }
+
+    const prompt = await ctx.db.get(queuedRun.promptId);
+    if (prompt == null) {
+      await ctx.db.patch(queuedRun._id, {
+        status: "failed",
+        finishedAt: Date.now(),
+        responseSummary: "Prompt was deleted before the run could execute.",
+        warnings: ["Prompt was deleted before execution."],
+        runner: args.runner?.trim() || "local-playwright-worker",
+      });
+      return null;
+    }
+
+    const startedAt = Date.now();
+    await ctx.db.patch(queuedRun._id, {
+      status: "running",
+      startedAt,
+      warnings: undefined,
+      runner: args.runner?.trim() || "local-playwright-worker",
+    });
+
+    return {
+      runId: queuedRun._id,
+      queuedAt: queuedRun.queuedAt ?? queuedRun.startedAt,
+      startedAt,
+      prompt: {
+        id: prompt._id,
+        name: prompt.name,
+        promptText: prompt.promptText,
+        targetModel: prompt.targetModel,
+      },
+      runLabel: queuedRun.runLabel ?? prompt.name,
+    };
+  },
+});
+
+export const recoverStaleRunningPromptRuns = mutation({
+  args: {
+    olderThanMs: v.optional(v.float64()),
+    runner: v.optional(v.string()),
+    summary: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const thresholdMs = Math.max(60_000, Math.floor(args.olderThanMs ?? 15 * 60_000));
+    const cutoff = Date.now() - thresholdMs;
+    const runningRuns = await ctx.db
+      .query("promptRuns")
+      .withIndex("status_startedAt", (q) => q.eq("status", "running"))
+      .collect();
+
+    const staleRuns = runningRuns.filter((run) => run.startedAt <= cutoff);
+    const summary =
+      args.summary?.trim() ||
+      "Recovered stale running job after worker interruption.";
+
+    await Promise.all(
+      staleRuns.map((run) =>
+        ctx.db.patch(run._id, {
+          status: "failed",
+          finishedAt: Date.now(),
+          responseSummary: summary,
+          warnings: [...(run.warnings ?? []), summary],
+          runner: args.runner ?? run.runner,
+        })
+      )
+    );
+
+    return {
+      recoveredCount: staleRuns.length,
+    };
+  },
+});
+
+export const completePromptRun = mutation({
+  args: {
+    runId: v.id("promptRuns"),
+    status: v.union(v.literal("success"), v.literal("failed")),
+    finishedAt: v.optional(v.float64()),
+    latencyMs: v.optional(v.float64()),
+    responseText: v.optional(v.string()),
+    responseSummary: v.optional(v.string()),
+    visibilityScore: v.optional(v.float64()),
+    citationQualityScore: v.optional(v.float64()),
+    averageCitationPosition: v.optional(v.float64()),
+    sourceCount: v.optional(v.float64()),
+    runLabel: v.optional(v.string()),
+    deeplinkUsed: v.optional(v.string()),
+    evidencePath: v.optional(v.string()),
+    output: v.optional(v.string()),
+    warnings: v.optional(v.array(v.string())),
+    runner: v.optional(v.string()),
+    citations: v.optional(
+      v.array(
+        v.object({
+          domain: v.string(),
+          url: v.string(),
+          title: v.optional(v.string()),
+          snippet: v.optional(v.string()),
+          type: vCitationType,
+          position: v.float64(),
+          qualityScore: v.optional(v.float64()),
+          trackedEntityId: v.optional(v.id("trackedEntities")),
+          isOwned: v.optional(v.boolean()),
+        })
+      )
+    ),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.runId);
+    if (run == null) {
+      throw new Error("Prompt run not found");
+    }
+
+    const citationInputs = normalizeCitationInputs(args.citations ?? []);
+    const positionValues = citationInputs.map((citation) => citation.position);
+    const qualityValues = citationInputs
+      .map((citation) => citation.qualityScore)
+      .filter((value): value is number => typeof value === "number");
+
+    const derivedAveragePosition = average(positionValues);
+    const rawAverageQuality = average(qualityValues);
+    const derivedCitationQuality =
+      rawAverageQuality === undefined
+        ? undefined
+        : rawAverageQuality <= 1
+          ? rawAverageQuality * 100
+          : rawAverageQuality;
+    const derivedVisibility =
+      derivedAveragePosition === undefined
+        ? undefined
+        : clamp(100 - (derivedAveragePosition - 1) * 8, 0, 100);
+
+    const existingCitations = await ctx.db
+      .query("citations")
+      .withIndex("promptRunId", (q) => q.eq("promptRunId", args.runId))
+      .collect();
+    await Promise.all(existingCitations.map((citation) => ctx.db.delete(citation._id)));
+
+    await ctx.db.patch(args.runId, {
+      status: args.status,
+      finishedAt: args.finishedAt,
+      latencyMs: args.latencyMs,
+      responseText: args.responseText,
+      responseSummary: args.responseSummary,
+      visibilityScore: args.visibilityScore ?? derivedVisibility,
+      citationQualityScore: args.citationQualityScore ?? derivedCitationQuality,
+      averageCitationPosition: args.averageCitationPosition ?? derivedAveragePosition,
+      runLabel: args.runLabel ?? run.runLabel,
+      sourceCount:
+        args.sourceCount ??
+        new Set(citationInputs.map((citation) => normalizeDomain(citation.domain))).size,
+      deeplinkUsed: args.deeplinkUsed,
+      evidencePath: args.evidencePath,
+      output: args.output,
+      warnings: args.warnings,
+      runner: args.runner,
+    });
+
+    await insertCitationsForRun(ctx, args.runId, citationInputs);
+
+    return { runId: args.runId, citationCount: citationInputs.length };
+  },
+});
+
 export const createTrackedEntity = mutation({
   args: {
     name: v.string(),
@@ -720,9 +1140,7 @@ export const listTrackedEntities = query({
     active: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    let entities = await ctx.db
-      .query("trackedEntities")
-      .collect();
+    let entities = await ctx.db.query("trackedEntities").collect();
     if (args.active !== undefined) {
       entities = entities.filter((entity) => entity.active === args.active);
     }
@@ -809,6 +1227,10 @@ export const ingestPromptRun = mutation({
     averageCitationPosition: v.optional(v.float64()),
     runLabel: v.optional(v.string()),
     sourceCount: v.optional(v.float64()),
+    deeplinkUsed: v.optional(v.string()),
+    evidencePath: v.optional(v.string()),
+    output: v.optional(v.string()),
+    warnings: v.optional(v.array(v.string())),
     ingestKey: v.optional(v.string()),
     citations: v.optional(
       v.array(
@@ -837,21 +1259,7 @@ export const ingestPromptRun = mutation({
       throw new Error("Unauthorized ingest");
     }
 
-    const trackedEntities = await ctx.db
-      .query("trackedEntities")
-      .collect();
-    const trackedEntityById = new Map(trackedEntities.map((entity) => [entity._id, entity]));
-    const trackedEntityByDomain = new Map<string, TrackedEntityDoc>();
-    for (const entity of trackedEntities) {
-      for (const domain of entity.ownedDomains ?? []) {
-        trackedEntityByDomain.set(normalizeDomain(domain), entity);
-      }
-    }
-
-    const citationInputs = (args.citations ?? []).map((citation) => ({
-      ...citation,
-      qualityScore: normalizeCitationQualityScore(citation.qualityScore),
-    }));
+    const citationInputs = normalizeCitationInputs(args.citations ?? []);
     const positionValues = citationInputs.map((citation) => citation.position);
     const qualityValues = citationInputs
       .map((citation) => citation.qualityScore)
@@ -886,37 +1294,13 @@ export const ingestPromptRun = mutation({
       sourceCount:
         args.sourceCount ??
         new Set(citationInputs.map((citation) => normalizeDomain(citation.domain))).size,
+      deeplinkUsed: args.deeplinkUsed,
+      evidencePath: args.evidencePath,
+      output: args.output,
+      warnings: args.warnings,
     });
 
-    await Promise.all(
-      citationInputs.map(async (citation) => {
-        const normalizedDomain = normalizeDomain(citation.domain);
-        let trackedEntityId = citation.trackedEntityId;
-        if (trackedEntityId && !trackedEntityById.has(trackedEntityId)) {
-          trackedEntityId = undefined;
-        }
-        const matchedEntity =
-          (trackedEntityId ? trackedEntityById.get(trackedEntityId) : undefined) ??
-          trackedEntityByDomain.get(normalizedDomain);
-        const resolvedEntityId = trackedEntityId ?? matchedEntity?._id;
-        const isOwned =
-          citation.isOwned ??
-          (matchedEntity ? inferOwnedFromKind(matchedEntity.kind) : false);
-
-        await ctx.db.insert("citations", {
-          promptRunId: runId,
-          domain: normalizedDomain,
-          url: citation.url,
-          title: citation.title,
-          snippet: citation.snippet,
-          type: citation.type,
-          position: citation.position,
-          qualityScore: citation.qualityScore,
-          trackedEntityId: resolvedEntityId,
-          isOwned,
-        });
-      })
-    );
+    await insertCitationsForRun(ctx, runId, citationInputs);
 
     return { runId, citationCount: citationInputs.length };
   },
@@ -980,6 +1364,362 @@ export const listPromptRuns = query({
   },
 });
 
+export const listPromptResponseAnalytics = query({
+  args: {
+    groupId: v.optional(v.id("promptGroups")),
+    model: v.optional(v.string()),
+    active: v.optional(v.boolean()),
+    rangeDays: v.optional(v.float64()),
+  },
+  handler: async (ctx, args) => {
+    let prompts: PromptDoc[];
+    if (args.groupId) {
+      prompts = await ctx.db
+        .query("prompts")
+        .withIndex("groupId", (q) => q.eq("groupId", args.groupId))
+        .collect();
+    } else {
+      prompts = await ctx.db.query("prompts").collect();
+    }
+
+    if (args.active !== undefined) {
+      prompts = prompts.filter((prompt) => prompt.active === args.active);
+    }
+
+    const groups = await ctx.db.query("promptGroups").collect();
+    const groupNameById = new Map(groups.map((group) => [group._id, group.name]));
+    const trackedEntities = await ctx.db.query("trackedEntities").collect();
+
+    const runs = await ctx.db
+      .query("promptRuns")
+      .withIndex("startedAt")
+      .order("desc")
+      .take(1200);
+    const referenceTime = getReferenceTimeFromRuns(runs);
+    const rangeStart =
+      referenceTime - (args.rangeDays ?? 30) * 24 * 60 * 60 * 1000;
+
+    const filteredRuns = runs.filter((run) => {
+      if (run.startedAt < rangeStart) {
+        return false;
+      }
+      if (args.model && run.model !== args.model) {
+        return false;
+      }
+      return true;
+    });
+
+    const promptIds = new Set(prompts.map((prompt) => prompt._id));
+    const scopedRuns = filteredRuns.filter((run) => promptIds.has(run.promptId));
+    const citations = await collectCitationsForRuns(
+      ctx,
+      scopedRuns.map((run) => run._id)
+    );
+    const citationsByRun = buildCitationMap(citations);
+
+    return prompts
+      .map((prompt) => {
+        const promptRuns = scopedRuns
+          .filter((run) => run.promptId === prompt._id)
+          .sort((left, right) => right.startedAt - left.startedAt);
+        const completedRuns = promptRuns.filter((run) =>
+          isTerminalRunStatus(run.status)
+        );
+        const latestRun = promptRuns[0];
+        const latestCompletedRun = completedRuns[0];
+        const latestCitations = latestCompletedRun
+          ? citationsByRun.get(latestCompletedRun._id) ?? []
+          : [];
+        const allPromptCitations = completedRuns.flatMap(
+          (run) => citationsByRun.get(run._id) ?? []
+        );
+        const uniqueDomains = uniqueStrings(
+          allPromptCitations.map((citation) => citation.domain)
+        );
+        const topSources = [...new Map(
+          allPromptCitations.map((citation) => [citation.domain, 0])
+        ).keys()].slice(0, 3);
+        const sourceVariance = computeSourceVariance(
+          completedRuns
+            .slice(0, 5)
+            .map((run) =>
+              (citationsByRun.get(run._id) ?? []).map((citation) => citation.domain)
+            )
+        );
+        const responseDrift = computeResponseDrift(
+          completedRuns
+            .slice(0, 5)
+            .map((run) => run.responseText ?? run.responseSummary)
+        );
+
+        const aggregatedEntityMap = new Map<
+          string,
+          {
+            name: string;
+            mentionCount: number;
+            citationCount: number;
+          }
+        >();
+        for (const run of completedRuns.slice(0, 5)) {
+          const mentions = extractEntityMentions(
+            run.responseText ?? run.responseSummary,
+            citationsByRun.get(run._id) ?? [],
+            trackedEntities
+          );
+          for (const mention of mentions) {
+            const existing = aggregatedEntityMap.get(String(mention.entityId));
+            if (existing) {
+              existing.mentionCount += mention.mentionCount;
+              existing.citationCount += mention.citationCount;
+            } else {
+              aggregatedEntityMap.set(String(mention.entityId), {
+                name: mention.name,
+                mentionCount: mention.mentionCount,
+                citationCount: mention.citationCount,
+              });
+            }
+          }
+        }
+
+        const topEntities = [...aggregatedEntityMap.values()]
+          .sort(
+            (left, right) =>
+              right.mentionCount - left.mentionCount ||
+              right.citationCount - left.citationCount
+          )
+          .slice(0, 3)
+          .map((entity) => entity.name);
+
+        return {
+          id: prompt._id,
+          name: prompt.name,
+          group: prompt.groupId
+            ? groupNameById.get(prompt.groupId) ?? "Ungrouped"
+            : "Ungrouped",
+          model: prompt.targetModel,
+          active: prompt.active,
+          responseCount: completedRuns.length,
+          latestRunAt: latestRun?.startedAt,
+          latestRunId: latestRun?._id,
+          latestStatus: latestRun?.status,
+          latestResponseSummary:
+            latestCompletedRun?.responseSummary ??
+            latestCompletedRun?.responseText ??
+            undefined,
+          latestSourceCount:
+            latestCompletedRun?.sourceCount ?? latestCitations.length,
+          latestVisibility: latestCompletedRun?.visibilityScore,
+          latestCitationQuality: latestCompletedRun?.citationQualityScore,
+          sourceDiversity: uniqueDomains.length,
+          topSources,
+          topEntities,
+          responseDrift,
+          sourceVariance,
+        };
+      })
+      .sort(
+        (left, right) =>
+          (right.latestRunAt ?? 0) - (left.latestRunAt ?? 0) ||
+          left.name.localeCompare(right.name)
+      );
+  },
+});
+
+export const getPromptAnalysis = query({
+  args: {
+    promptId: v.id("prompts"),
+    model: v.optional(v.string()),
+    rangeDays: v.optional(v.float64()),
+  },
+  handler: async (ctx, args) => {
+    const prompt = await assertPromptOwnership(ctx, args.promptId);
+    const trackedEntities = await ctx.db.query("trackedEntities").collect();
+    const promptRuns = await ctx.db
+      .query("promptRuns")
+      .withIndex("promptId_startedAt", (q) => q.eq("promptId", args.promptId))
+      .order("desc")
+      .take(80);
+
+    const referenceTime = getReferenceTimeFromRuns(promptRuns);
+    const rangeStart =
+      referenceTime - (args.rangeDays ?? 30) * 24 * 60 * 60 * 1000;
+    const filteredRuns = promptRuns.filter((run) => {
+      if (run.startedAt < rangeStart) {
+        return false;
+      }
+      if (args.model && run.model !== args.model) {
+        return false;
+      }
+      return true;
+    });
+
+    const citations = await collectCitationsForRuns(
+      ctx,
+      filteredRuns.map((run) => run._id)
+    );
+    const citationsByRun = buildCitationMap(citations);
+
+    const responses = filteredRuns.map((run) => {
+      const runCitations = citationsByRun.get(run._id) ?? [];
+      const mentions = extractEntityMentions(
+        run.responseText ?? run.responseSummary,
+        runCitations,
+        trackedEntities
+      );
+      return {
+        id: run._id,
+        status: run.status,
+        startedAt: run.startedAt,
+        finishedAt: run.finishedAt,
+        model: run.model,
+        visibilityScore: run.visibilityScore,
+        citationQualityScore: run.citationQualityScore,
+        averageCitationPosition: run.averageCitationPosition,
+        responseSummary: run.responseSummary,
+        responseTextPreview: (run.responseText ?? "").slice(0, 320),
+        sourceCount: run.sourceCount ?? runCitations.length,
+        sourceDomains: uniqueStrings(
+          runCitations.map((citation) => citation.domain)
+        ).slice(0, 6),
+        mentionNames: mentions.slice(0, 4).map((mention) => mention.name),
+        warnings: run.warnings ?? [],
+        evidencePath: run.evidencePath,
+      };
+    });
+
+    const completedRuns = filteredRuns.filter((run) =>
+      isTerminalRunStatus(run.status)
+    );
+    const allCitations = completedRuns.flatMap(
+      (run) => citationsByRun.get(run._id) ?? []
+    );
+
+    const sourceMap = new Map<
+      string,
+      {
+        domain: string;
+        citations: CitationDoc[];
+        runIds: Set<Id<"promptRuns">>;
+      }
+    >();
+    for (const citation of allCitations) {
+      const existing = sourceMap.get(citation.domain);
+      if (existing) {
+        existing.citations.push(citation);
+        existing.runIds.add(citation.promptRunId);
+      } else {
+        sourceMap.set(citation.domain, {
+          domain: citation.domain,
+          citations: [citation],
+          runIds: new Set([citation.promptRunId]),
+        });
+      }
+    }
+
+    const sourceBreakdown = [...sourceMap.values()]
+      .map((entry) => ({
+        domain: entry.domain,
+        type: domainTypeMode(entry.citations),
+        citationCount: entry.citations.length,
+        responseCount: entry.runIds.size,
+        avgPosition: average(entry.citations.map((citation) => citation.position)),
+        avgQualityScore: average(
+          entry.citations
+            .map((citation) => citation.qualityScore)
+            .filter((value): value is number => typeof value === "number")
+        ),
+        ownedShare:
+          toPercent(
+            entry.citations.filter((citation) => citation.isOwned).length /
+              entry.citations.length
+          ) ?? 0,
+        latestResponses: filteredRuns
+          .filter((run) => entry.runIds.has(run._id))
+          .slice(0, 3)
+          .map((run) => ({
+            runId: run._id,
+            startedAt: run.startedAt,
+            responseSummary: run.responseSummary ?? run.responseText ?? "",
+          })),
+      }))
+      .sort((left, right) => right.citationCount - left.citationCount);
+
+    const mentionMap = new Map<
+      string,
+      {
+        entityId: Id<"trackedEntities">;
+        name: string;
+        kind: TrackedEntityDoc["kind"];
+        mentionCount: number;
+        citationCount: number;
+        responseIds: Set<Id<"promptRuns">>;
+      }
+    >();
+
+    for (const run of completedRuns) {
+      const mentions = extractEntityMentions(
+        run.responseText ?? run.responseSummary,
+        citationsByRun.get(run._id) ?? [],
+        trackedEntities
+      );
+      for (const mention of mentions) {
+        const key = String(mention.entityId);
+        const existing = mentionMap.get(key);
+        if (existing) {
+          existing.mentionCount += mention.mentionCount;
+          existing.citationCount += mention.citationCount;
+          existing.responseIds.add(run._id);
+        } else {
+          mentionMap.set(key, {
+            entityId: mention.entityId,
+            name: mention.name,
+            kind: mention.kind,
+            mentionCount: mention.mentionCount,
+            citationCount: mention.citationCount,
+            responseIds: new Set([run._id]),
+          });
+        }
+      }
+    }
+
+    const entityBreakdown = [...mentionMap.values()]
+      .map((entry) => ({
+        entityId: entry.entityId,
+        name: entry.name,
+        kind: entry.kind,
+        mentionCount: entry.mentionCount,
+        citationCount: entry.citationCount,
+        responseCount: entry.responseIds.size,
+      }))
+      .sort(
+        (left, right) =>
+          right.mentionCount - left.mentionCount ||
+          right.citationCount - left.citationCount
+      );
+
+    return {
+      prompt,
+      summary: {
+        responseCount: completedRuns.length,
+        sourceDiversity: uniqueStrings(
+          allCitations.map((citation) => citation.domain)
+        ).length,
+        responseDrift: computeResponseDrift(
+          completedRuns.map((run) => run.responseText ?? run.responseSummary)
+        ),
+        sourceVariance: computeSourceVariance(
+          completedRuns.map((run) =>
+            (citationsByRun.get(run._id) ?? []).map((citation) => citation.domain)
+          )
+        ),
+      },
+      responses,
+      sourceBreakdown,
+      entityBreakdown,
+    };
+  },
+});
+
 export const getPromptRun = query({
   args: { id: v.id("promptRuns") },
   handler: async (ctx, args) => {
@@ -989,6 +1729,7 @@ export const getPromptRun = query({
     }
 
     const prompt = await ctx.db.get(run.promptId);
+    const trackedEntities = await ctx.db.query("trackedEntities").collect();
     const citations = await ctx.db
       .query("citations")
       .withIndex("promptRunId", (q) => q.eq("promptRunId", args.id))
@@ -996,21 +1737,36 @@ export const getPromptRun = query({
     const trackedEntityIds = citations
       .map((citation) => citation.trackedEntityId)
       .filter((id): id is Id<"trackedEntities"> => id !== undefined);
-    const trackedEntities = await Promise.all(
+    const citationTrackedEntities = await Promise.all(
       trackedEntityIds.map(async (id) => {
         const entity = await ctx.db.get(id);
         return entity != null ? { id: entity._id, name: entity.name, slug: entity.slug } : null;
       })
     );
     const trackedEntityById = new Map(
-      trackedEntities
+      citationTrackedEntities
         .filter((entity): entity is { id: Id<"trackedEntities">; name: string; slug: string } => entity !== null)
         .map((entity) => [entity.id, entity])
     );
 
+    let output = null;
+    if (run.output) {
+      try {
+        output = JSON.parse(run.output);
+      } catch {
+        output = { raw: run.output };
+      }
+    }
+
     return {
       run,
       prompt,
+      output,
+      mentions: extractEntityMentions(
+        run.responseText ?? run.responseSummary,
+        citations,
+        trackedEntities
+      ),
       citations: citations.map((citation) => ({
         ...citation,
         trackedEntity:
@@ -1053,6 +1809,9 @@ export const listSources = query({
       return true;
     });
 
+    const prompts = await ctx.db.query("prompts").collect();
+    const promptById = new Map(prompts.map((prompt) => [prompt._id, prompt]));
+    const trackedEntities = await ctx.db.query("trackedEntities").collect();
     const runIds = selectedRuns.map((run) => run._id);
     let citations = await collectCitationsForRuns(ctx, runIds);
     if (args.type) {
@@ -1090,6 +1849,13 @@ export const listSources = query({
           domain: entry.domain,
           type: domainTypeMode(entry.citations),
           citations: entry.citations.length,
+          responseCount: new Set(entry.citations.map((citation) => citation.promptRunId)).size,
+          promptCount: new Set(
+            entry.citations.map((citation) => {
+              const run = selectedRuns.find((item) => item._id === citation.promptRunId);
+              return run?.promptId;
+            })
+          ).size,
           usedShare: totalCitations ? toPercent(entry.citations.length / totalCitations) ?? 0 : 0,
           avgCitationsPerRun: totalRuns
             ? Math.round((entry.citations.length / totalRuns) * 100) / 100
@@ -1099,6 +1865,55 @@ export const listSources = query({
           ownedShare: entry.citations.length
             ? toPercent(ownedCitations / entry.citations.length) ?? 0
             : 0,
+          promptNames: uniqueStrings(
+            entry.citations.map((citation) => {
+              const run = selectedRuns.find((item) => item._id === citation.promptRunId);
+              return run ? promptById.get(run.promptId)?.name : undefined;
+            })
+          ).slice(0, 4),
+          latestResponses: entry.citations
+            .map((citation) => {
+              const run = selectedRuns.find((item) => item._id === citation.promptRunId);
+              if (!run) {
+                return null;
+              }
+              const prompt = promptById.get(run.promptId);
+              return {
+                runId: run._id,
+                promptId: run.promptId,
+                promptName: prompt?.name ?? "Unknown prompt",
+                startedAt: run.startedAt,
+                responseSummary: run.responseSummary ?? run.responseText ?? "",
+                position: citation.position,
+              };
+            })
+            .filter(
+              (
+                item
+              ): item is {
+                runId: Id<"promptRuns">;
+                promptId: Id<"prompts">;
+                promptName: string;
+                startedAt: number;
+                responseSummary: string;
+                position: number;
+              } => item !== null
+            )
+            .sort((left, right) => right.startedAt - left.startedAt)
+            .slice(0, 3),
+          mentionedEntities: uniqueStrings(
+            entry.citations.flatMap((citation) => {
+              const run = selectedRuns.find((item) => item._id === citation.promptRunId);
+              if (!run) {
+                return [];
+              }
+              return extractEntityMentions(
+                run.responseText ?? run.responseSummary,
+                [citation],
+                trackedEntities
+              ).map((mention) => mention.name);
+            })
+          ).slice(0, 4),
         };
       })
       .sort((a, b) => b.citations - a.citations)
@@ -1164,6 +1979,9 @@ export const getOverview = query({
     const currentRunIds = currentRuns.map((run) => run._id);
     const currentCitations = await collectCitationsForRuns(ctx, currentRunIds);
     const totalCitations = currentCitations.length;
+    const trackedEntities = await ctx.db.query("trackedEntities").collect();
+    const prompts = await ctx.db.query("prompts").collect();
+    const currentCitationsByRun = buildCitationMap(currentCitations);
 
     const trendByDay = new Map<
       string,
@@ -1268,6 +2086,102 @@ export const getOverview = query({
       }))
       .sort((a, b) => b.citations - a.citations);
 
+    const promptComparison = prompts
+      .map((prompt) => {
+        const promptRuns = currentRuns
+          .filter((run) => run.promptId === prompt._id)
+          .sort((left, right) => right.startedAt - left.startedAt);
+        if (!promptRuns.length) {
+          return null;
+        }
+        const promptCitations = promptRuns.flatMap(
+          (run) => currentCitationsByRun.get(run._id) ?? []
+        );
+        const mentions = promptRuns.flatMap((run) =>
+          extractEntityMentions(
+            run.responseText ?? run.responseSummary,
+            currentCitationsByRun.get(run._id) ?? [],
+            trackedEntities
+          )
+        );
+        const latestRun = promptRuns[0];
+        return {
+          promptId: prompt._id,
+          name: prompt.name,
+          responseCount: promptRuns.length,
+          latestStatus: latestRun.status,
+          latestResponseSummary:
+            latestRun.responseSummary ?? latestRun.responseText ?? "",
+          sourceDiversity: uniqueStrings(
+            promptCitations.map((citation) => citation.domain)
+          ).length,
+          responseDrift: computeResponseDrift(
+            promptRuns.map((run) => run.responseText ?? run.responseSummary)
+          ),
+          topEntity: mentions[0]?.name,
+        };
+      })
+      .filter(
+        (
+          item
+        ): item is NonNullable<typeof item> => item !== null
+      )
+      .sort((left, right) => right.responseCount - left.responseCount)
+      .slice(0, 8);
+
+    const entityLeaderboardMap = new Map<
+      string,
+      {
+        entityId: Id<"trackedEntities">;
+        name: string;
+        kind: TrackedEntityDoc["kind"];
+        mentionCount: number;
+        responseIds: Set<Id<"promptRuns">>;
+        citationCount: number;
+      }
+    >();
+    for (const run of currentRuns) {
+      const mentions = extractEntityMentions(
+        run.responseText ?? run.responseSummary,
+        currentCitationsByRun.get(run._id) ?? [],
+        trackedEntities
+      );
+      for (const mention of mentions) {
+        const key = String(mention.entityId);
+        const existing = entityLeaderboardMap.get(key);
+        if (existing) {
+          existing.mentionCount += mention.mentionCount;
+          existing.citationCount += mention.citationCount;
+          existing.responseIds.add(run._id);
+        } else {
+          entityLeaderboardMap.set(key, {
+            entityId: mention.entityId,
+            name: mention.name,
+            kind: mention.kind,
+            mentionCount: mention.mentionCount,
+            responseIds: new Set([run._id]),
+            citationCount: mention.citationCount,
+          });
+        }
+      }
+    }
+
+    const entityLeaderboard = [...entityLeaderboardMap.values()]
+      .map((entry) => ({
+        entityId: entry.entityId,
+        name: entry.name,
+        kind: entry.kind,
+        mentionCount: entry.mentionCount,
+        responseCount: entry.responseIds.size,
+        citationCount: entry.citationCount,
+      }))
+      .sort(
+        (left, right) =>
+          right.mentionCount - left.mentionCount ||
+          right.citationCount - left.citationCount
+      )
+      .slice(0, 8);
+
     return {
       kpis: {
         rangeDays,
@@ -1295,8 +2209,10 @@ export const getOverview = query({
       },
       trendSeries,
       modelComparison,
+      promptComparison,
       topSources,
       domainTypeBreakdown,
+      entityLeaderboard,
       recentRuns: currentRuns.slice(0, 8),
     };
   },

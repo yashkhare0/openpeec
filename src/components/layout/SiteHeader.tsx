@@ -2,6 +2,14 @@ import { GraduationCap, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -35,6 +43,7 @@ export function SiteHeader({
   onModelFilter,
   onRefresh,
   onStartTutorial,
+  breadcrumbs,
 }: {
   rangeDays: number;
   onRangeDays: (value: number) => void;
@@ -42,62 +51,89 @@ export function SiteHeader({
   onModelFilter: (value: string) => void;
   onRefresh: () => void;
   onStartTutorial: () => void;
+  breadcrumbs?: Array<{ label: string; onClick?: () => void }>;
 }) {
   return (
-    <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4">
-      <SidebarTrigger className="-ml-1" />
-      <Separator orientation="vertical" className="mr-2 h-4" />
+    <header className="flex min-h-14 shrink-0 items-center gap-2 border-b bg-background px-4 py-2">
+      <SidebarTrigger className="-ml-1 self-start sm:self-center" />
+      <Separator orientation="vertical" className="mr-2 hidden h-4 sm:block" />
 
-      <div data-tour="header-filters" className="flex flex-1 items-center gap-2">
-        <div data-tour="client-badge" className="flex items-center gap-1.5 rounded-lg border bg-muted/50 px-2.5 py-1 text-sm font-medium">
-          <div className="size-2 rounded-full bg-primary" />
-          ChatGPT
+      <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 space-y-1">
+          <div data-tour="client-badge" className="inline-flex items-center gap-1.5 rounded-lg border bg-muted/50 px-2.5 py-1 text-sm font-medium">
+            <div className="size-2 rounded-full bg-primary" />
+            ChatGPT
+          </div>
+          {breadcrumbs?.length ? (
+            <Breadcrumb>
+              <BreadcrumbList>
+                {breadcrumbs.map((item, index) => {
+                  const isLast = index === breadcrumbs.length - 1;
+                  return (
+                    <div key={`${item.label}-${index}`} className="contents">
+                      <BreadcrumbItem>
+                        {isLast || !item.onClick ? (
+                          <BreadcrumbPage>{item.label}</BreadcrumbPage>
+                        ) : (
+                          <BreadcrumbLink asChild>
+                            <button type="button" onClick={item.onClick}>
+                              {item.label}
+                            </button>
+                          </BreadcrumbLink>
+                        )}
+                      </BreadcrumbItem>
+                      {!isLast ? <BreadcrumbSeparator /> : null}
+                    </div>
+                  );
+                })}
+              </BreadcrumbList>
+            </Breadcrumb>
+          ) : null}
         </div>
 
-        <Select
-          value={rangeDays.toString()}
-          onValueChange={(v) => onRangeDays(Number(v))}
-        >
-          <SelectTrigger className="h-8 w-[140px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {rangeOptions.map((opt) => (
-              <SelectItem key={opt.days} value={opt.days.toString()}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div data-tour="header-filters" className="flex flex-wrap items-center gap-2">
+          <Select
+            value={rangeDays.toString()}
+            onValueChange={(v) => onRangeDays(Number(v))}
+          >
+            <SelectTrigger className="h-8 w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {rangeOptions.map((opt) => (
+                <SelectItem key={opt.days} value={opt.days.toString()}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-        <Select value={modelFilter} onValueChange={onModelFilter}>
-          <SelectTrigger className="h-8 w-[140px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {modelFilterOptions.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          <Select value={modelFilter} onValueChange={onModelFilter}>
+            <SelectTrigger className="h-8 w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {modelFilterOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8"
-          onClick={onRefresh}
-        >
-          <RefreshCw className="size-4" />
-        </Button>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <Button data-tour="tutorial-btn" variant="outline" size="sm" onClick={onStartTutorial}>
-          <GraduationCap className="mr-1.5 size-4" />
-          Run Tutorial
-        </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            onClick={onRefresh}
+          >
+            <RefreshCw className="size-4" />
+          </Button>
+          <Button data-tour="tutorial-btn" variant="outline" size="sm" onClick={onStartTutorial}>
+            <GraduationCap className="mr-1.5 size-4" />
+            Run Tutorial
+          </Button>
+        </div>
       </div>
     </header>
   );

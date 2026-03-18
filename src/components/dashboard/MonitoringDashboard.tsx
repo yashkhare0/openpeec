@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -13,6 +13,8 @@ import { StatusBanner } from "./components/StatusBanner";
 import { ProductTour } from "./components/ProductTour";
 import { OverviewPage } from "./OverviewPage";
 import { PromptsPage } from "./PromptsPage";
+import { PromptDetailPage } from "./PromptDetailPage";
+import { ResponseDetailPage } from "./ResponseDetailPage";
 import { SourcesPage } from "./SourcesPage";
 import { ModelsPage } from "./ModelsPage";
 
@@ -47,15 +49,24 @@ export function MonitoringDashboard() {
   const [newEntityDomain, setNewEntityDomain] = useState("");
 
   const model = modelFilter === "all" ? undefined : modelFilter;
-  const promptArgs =
-    selectedGroup === "all" ? {} : { groupId: selectedGroup };
-
   const overview = useQuery(api.analytics.getOverview, { rangeDays, model });
   const promptGroups = useQuery(api.analytics.listPromptGroups, {});
-  const prompts = useQuery(api.analytics.listPrompts, promptArgs);
+  const promptAnalytics = useQuery(api.analytics.listPromptResponseAnalytics, {
+    groupId: selectedGroup === "all" ? undefined : selectedGroup,
+    model,
+    rangeDays,
+  });
   const promptJobs = useQuery(api.analytics.listPromptJobs, {});
+  const queueStatus = useQuery(api.analytics.getQueueStatus, {});
   const runs = useQuery(api.analytics.listPromptRuns, { limit: 200, model });
+  const [selectedPromptId, setSelectedPromptId] = useState<Id<"prompts"> | null>(
+    null
+  );
   const sources = useQuery(api.analytics.listSources, { rangeDays, model, limit: 80 });
+  const promptAnalysis = useQuery(
+    api.analytics.getPromptAnalysis,
+    selectedPromptId ? { promptId: selectedPromptId, model, rangeDays } : "skip"
+  );
   const entities = useQuery(api.analytics.listTrackedEntities, {}) ?? [];
   const runDetail = useQuery(
     api.analytics.getPromptRun,
@@ -81,44 +92,47 @@ export function MonitoringDashboard() {
 
   const loading =
     overview === undefined ||
-    prompts === undefined ||
+    promptAnalytics === undefined ||
     promptJobs === undefined ||
+    queueStatus === undefined ||
     runs === undefined ||
     sources === undefined;
   const hasData = !!overview && overview.kpis.totalRuns > 0;
 
-  const rollups = useMemo(
-    () => buildPromptRollups(runs ?? []),
-    [runs]
-  );
-  const promptRows = useMemo(() => {
-    const list = prompts ?? [];
-    return list
-      .map((prompt) => {
-        const row = rollups.get(String(prompt._id));
-        const group = (promptGroups ?? []).find(
-          (item) => item._id === prompt.groupId
-        );
-        return {
-          id: prompt._id,
-          name: prompt.name,
-          group: group?.name ?? "Ungrouped",
-          model: prompt.targetModel,
-          visibility: row?.visibility,
-          citation: row?.citation,
-          latestRunAt: row?.latestRunAt,
-          latestRunId: row?.latestRunId,
-          active: prompt.active,
-        };
-      })
-      .filter(
+  const promptRows = useMemo(
+    () =>
+      (promptAnalytics ?? []).filter(
         (row) =>
           !search ||
-          `${row.name} ${row.group} ${row.model}`
+          `${row.name} ${row.group} ${row.model} ${row.latestResponseSummary ?? ""} ${(row.topEntities ?? []).join(" ")} ${(row.topSources ?? []).join(" ")}`
             .toLowerCase()
             .includes(search)
-      );
-  }, [promptGroups, prompts, rollups, search]);
+      ),
+    [promptAnalytics, search]
+  );
+
+  useEffect(() => {
+    if (!promptRows.length) {
+      setSelectedPromptId(null);
+      setSelectedRunId(null);
+      return;
+    }
+    if (selectedPromptId && promptRows.some((row) => row.id === selectedPromptId)) {
+      return;
+    }
+    setSelectedPromptId(null);
+    setSelectedRunId(null);
+  }, [promptRows, selectedPromptId]);
+
+  const queueSummary = useMemo(() => {
+    return {
+      queuedCount: queueStatus?.queuedCount ?? 0,
+      runningCount: queueStatus?.runningCount ?? 0,
+      latestCompletedAt:
+        queueStatus?.latestFinishedRun?.finishedAt ??
+        queueStatus?.latestFinishedRun?.startedAt,
+    };
+  }, [queueStatus]);
 
   const trend = useMemo(() => {
     if (!overview) return [];
@@ -142,10 +156,51 @@ export function MonitoringDashboard() {
     () => mapKpis(overview, sources?.meta.totalDomains),
     [overview, sources?.meta.totalDomains]
   );
+  const selectedGroupName = useMemo(() => {
+    if (selectedGroup === "all") return "All prompts";
+    return (promptGroups ?? []).find((group) => group._id === selectedGroup)?.name;
+  }, [promptGroups, selectedGroup]);
 
   const refreshAnalytics = () => {
     window.location.reload();
   };
+
+  const openPrompt = (promptId: Id<"prompts"> | null) => {
+    setSelectedPromptId(promptId);
+    setSelectedRunId(null);
+  };
+
+  const openRun = (runId: Id<"promptRuns"> | null) => {
+    setSelectedRunId(runId);
+  };
+
+  const promptView = selectedRunId
+    ? "response"
+    : selectedPromptId
+      ? "prompt"
+      : "list";
+  const breadcrumbs = (() => {
+    if (page !== "prompts") {
+      return [{ label: page.charAt(0).toUpperCase() + page.slice(1) }];
+    }
+
+    const items: Array<{ label: string; onClick?: () => void }> = [
+      { label: "Prompts", onClick: promptView !== "list" ? () => openPrompt(null) : undefined },
+    ];
+
+    if (promptView !== "list" && promptAnalysis?.prompt.name) {
+      items.push({
+        label: promptAnalysis.prompt.name,
+        onClick: promptView === "response" ? () => openRun(null) : undefined,
+      });
+    }
+
+    if (promptView === "response") {
+      items.push({ label: "Response Detail" });
+    }
+
+    return items;
+  })();
 
   return (
     <TooltipProvider>
@@ -165,6 +220,7 @@ export function MonitoringDashboard() {
             onModelFilter={setModelFilter}
             onRefresh={refreshAnalytics}
             onStartTutorial={() => setTourOpen(true)}
+            breadcrumbs={breadcrumbs}
           />
 
           <div className="flex flex-1 flex-col">
@@ -191,40 +247,59 @@ export function MonitoringDashboard() {
               />
             )}
             {page === "prompts" && (
-              <PromptsPage
-                groups={promptGroups ?? []}
-                selectedGroup={selectedGroup}
-                onSelectGroup={setSelectedGroup}
-                rows={promptRows}
-                promptJobs={promptJobs ?? []}
-                search={promptSearch}
-                onSearch={setPromptSearch}
-                runDetail={runDetail}
-                selectedRunId={selectedRunId}
-                onSelectRun={setSelectedRunId}
-                newGroupName={newGroupName}
-                onNewGroupName={setNewGroupName}
-                newPromptName={newPromptName}
-                onNewPromptName={setNewPromptName}
-                newPromptText={newPromptText}
-                onNewPromptText={setNewPromptText}
-                newPromptModel={newPromptModel}
-                onNewPromptModel={setNewPromptModel}
-                newPromptGroup={newPromptGroup}
-                onNewPromptGroup={setNewPromptGroup}
-                onCreateGroup={createPromptGroup}
-                onUpdateGroup={updatePromptGroup}
-                onDeleteGroup={deletePromptGroup}
-                onCreatePrompt={createPrompt}
-                onUpdatePrompt={updatePrompt}
-                onDeletePrompt={deletePrompt}
-                onCreatePromptJob={createPromptJob}
-                onUpdatePromptJob={updatePromptJob}
-                onDeletePromptJob={deletePromptJob}
-                onTriggerSelectedNow={triggerSelectedPromptsNow}
-                onTriggerPromptJobNow={triggerPromptJobNow}
-                onNotice={setNotice}
-              />
+              <>
+                {promptView === "list" && (
+                  <PromptsPage
+                    groups={promptGroups ?? []}
+                    selectedGroup={selectedGroup}
+                    onSelectGroup={setSelectedGroup}
+                    rows={promptRows}
+                    selectedPromptId={selectedPromptId}
+                    onSelectPrompt={openPrompt}
+                    promptJobs={promptJobs ?? []}
+                    queueSummary={queueSummary}
+                    search={promptSearch}
+                    onSearch={setPromptSearch}
+                    newGroupName={newGroupName}
+                    onNewGroupName={setNewGroupName}
+                    newPromptName={newPromptName}
+                    onNewPromptName={setNewPromptName}
+                    newPromptText={newPromptText}
+                    onNewPromptText={setNewPromptText}
+                    newPromptModel={newPromptModel}
+                    onNewPromptModel={setNewPromptModel}
+                    newPromptGroup={newPromptGroup}
+                    onNewPromptGroup={setNewPromptGroup}
+                    onCreateGroup={createPromptGroup}
+                    onUpdateGroup={updatePromptGroup}
+                    onDeleteGroup={deletePromptGroup}
+                    onCreatePrompt={createPrompt}
+                    onUpdatePrompt={updatePrompt}
+                    onDeletePrompt={deletePrompt}
+                    onCreatePromptJob={createPromptJob}
+                    onUpdatePromptJob={updatePromptJob}
+                    onDeletePromptJob={deletePromptJob}
+                    onTriggerSelectedNow={triggerSelectedPromptsNow}
+                    onTriggerPromptJobNow={triggerPromptJobNow}
+                    onNotice={setNotice}
+                  />
+                )}
+                {promptView === "prompt" && (
+                  <PromptDetailPage
+                    selectedGroupName={selectedGroupName}
+                    promptAnalysis={promptAnalysis}
+                    onBack={() => openPrompt(null)}
+                    selectedRunId={selectedRunId}
+                    onOpenRun={(runId) => openRun(runId)}
+                  />
+                )}
+                {promptView === "response" && (
+                  <ResponseDetailPage
+                    runDetail={runDetail}
+                    onBack={() => openRun(null)}
+                  />
+                )}
+              </>
             )}
             {page === "sources" && (
               <SourcesPage
@@ -259,49 +334,6 @@ export function MonitoringDashboard() {
 }
 
 /* ─── helpers ─── */
-
-function buildPromptRollups(
-  runs: Array<{
-    _id: Id<"promptRuns">;
-    promptId: Id<"prompts">;
-    startedAt: number;
-    visibilityScore?: number;
-    citationQualityScore?: number;
-  }>
-) {
-  const map = new Map<
-    string,
-    {
-      visibility?: number;
-      citation?: number;
-      latestRunAt?: number;
-      latestRunId?: Id<"promptRuns">;
-    }
-  >();
-  for (const run of runs) {
-    const key = String(run.promptId);
-    const current = map.get(key) ?? {};
-    const vis =
-      current.visibility !== undefined ? [current.visibility] : [];
-    const cit =
-      current.citation !== undefined ? [current.citation] : [];
-    if (typeof run.visibilityScore === "number")
-      vis.push(run.visibilityScore);
-    if (typeof run.citationQualityScore === "number")
-      cit.push(run.citationQualityScore);
-    map.set(key, {
-      visibility: average(vis),
-      citation: average(cit),
-      latestRunAt: Math.max(current.latestRunAt ?? 0, run.startedAt),
-      latestRunId:
-        current.latestRunAt !== undefined &&
-        current.latestRunAt > run.startedAt
-          ? current.latestRunId
-          : run._id,
-    });
-  }
-  return map;
-}
 
 function mapModelRows(
   comparison: Array<{
@@ -388,11 +420,6 @@ function mapKpis(
           : "negative",
     },
   ];
-}
-
-function average(values: number[]): number | undefined {
-  if (values.length === 0) return undefined;
-  return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
 
 function clamp(value: number, min: number, max: number): number {

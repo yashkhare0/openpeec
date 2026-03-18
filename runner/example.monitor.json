@@ -16,7 +16,7 @@
   },
   "prompt": {
     "text": "You are helping an internal monitoring team. In 4 concise bullets, explain reliable ways to monitor AI response visibility and citation quality for internal products. Include at least 3 source links.",
-    "inputSelector": "#prompt-textarea, [contenteditable='true'], textarea",
+    "inputSelector": "div#prompt-textarea[contenteditable='true'], #prompt-textarea[contenteditable='true'], [contenteditable='true']:visible, textarea:visible",
     "submitSelector": "button[data-testid='send-button'], button[aria-label*='Send']",
     "submitKey": "Enter",
     "clearExisting": true

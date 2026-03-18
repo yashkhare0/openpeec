@@ -80,13 +80,14 @@ export default defineSchema({
       v.literal("ios"),
       v.literal("android")
     ),
-    status: v.union(
-      v.literal("queued"),
-      v.literal("running"),
-      v.literal("success"),
-      v.literal("failed")
-    ),
-    startedAt: v.float64(),
+      status: v.union(
+        v.literal("queued"),
+        v.literal("running"),
+        v.literal("success"),
+        v.literal("failed")
+      ),
+      queuedAt: v.optional(v.float64()),
+      startedAt: v.float64(),
     finishedAt: v.optional(v.float64()),
     latencyMs: v.optional(v.float64()),
     summary: v.optional(v.string()),
@@ -157,6 +158,7 @@ export default defineSchema({
       v.literal("success"),
       v.literal("failed")
     ),
+    queuedAt: v.optional(v.float64()),
     startedAt: v.float64(),
     finishedAt: v.optional(v.float64()),
     latencyMs: v.optional(v.float64()),
@@ -167,8 +169,14 @@ export default defineSchema({
     averageCitationPosition: v.optional(v.float64()),
     runLabel: v.optional(v.string()),
     sourceCount: v.optional(v.float64()),
+    deeplinkUsed: v.optional(v.string()),
+    evidencePath: v.optional(v.string()),
+    output: v.optional(v.string()),
+    warnings: v.optional(v.array(v.string())),
+    runner: v.optional(v.string()),
   })
     .index("startedAt", ["startedAt"])
+    .index("status_startedAt", ["status", "startedAt"])
     .index("promptId_startedAt", ["promptId", "startedAt"])
     .index("model_startedAt", ["model", "startedAt"]),
 

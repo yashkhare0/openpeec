@@ -9,18 +9,20 @@ This is an operator tool for recurring checks, not a generic browser automation 
 
 ## Commands
 
-- `npm run runner:install-browsers`
-- `npm run runner:capture-session`
-- `npm run runner:monitor -- --config runner/example.monitor.json`
-- `npm run runner:monitor -- --config runner/example.monitor.json --output runner/last-run.json --ingest`
-- `npm run runner:prompt:example`
+- `pnpm runner:install-browsers`
+- `pnpm runner:capture-session`
+- `pnpm runner:monitor -- --config runner/example.monitor.json`
+- `pnpm runner:monitor -- --config runner/example.monitor.json --output runner/last-run.json --ingest`
+- `pnpm runner:prompt:example`
+- `pnpm runner:queue`
+- `pnpm runner:queue:once`
 
 ## Operator Workflow
 
-1. Install browsers once with `runner:install-browsers`.
-2. Capture a real ChatGPT session with `runner:capture-session`. This opens a headed Edge session and saves storage state to `runner/chatgpt.storage-state.json`.
+1. Install browsers once with `pnpm runner:install-browsers`.
+2. Capture a real ChatGPT session with `pnpm runner:capture-session`. This opens a headed Edge session and saves storage state to `runner/chatgpt.storage-state.json`.
 3. Keep `runner/example.auth-profile.json` pointed at that file, or replace it with your own local path.
-4. Run a monitoring check with `runner:prompt:example`.
+4. Run a monitoring check with `pnpm runner:prompt:example`, or queue prompts from the dashboard and process them with `pnpm runner:queue` or `pnpm runner:queue:once`.
 5. Review `runner/last-run.json` and the evidence bundle in `runner/artifacts/<run-label>-<timestamp>/`.
 6. Inspect:
 `status`, `warnings`, `responseText`, `citations`, `visibilityScore`, `citationQualityScore`, `network.json`, `console.json`, `page.html`, `response.html`, `trace.zip`, and the recorded video.
@@ -44,12 +46,13 @@ This is an operator tool for recurring checks, not a generic browser automation 
   },
   "navigation": {
     "url": "https://chatgpt.com/",
+    "promptQueryParam": "q",
     "waitUntil": "domcontentloaded",
     "timeoutMs": 30000
   },
   "prompt": {
     "text": "Prompt text to submit",
-    "inputSelector": "#prompt-textarea, [contenteditable='true'], textarea",
+    "inputSelector": "div#prompt-textarea[contenteditable='true'], #prompt-textarea[contenteditable='true'], [contenteditable='true']:visible, textarea:visible",
     "submitSelector": "button[data-testid='send-button'], button[aria-label*='Send']",
     "submitKey": "Enter",
     "clearExisting": true
@@ -80,8 +83,9 @@ This is an operator tool for recurring checks, not a generic browser automation 
 ```
 
 `authProfile.localRef` is a local-only metadata pointer. Secrets stay local.
-The default example profile expects `runner/chatgpt.storage-state.json`, which you create with `npm run runner:capture-session`.
+The default example profile expects `runner/chatgpt.storage-state.json`, which you create with `pnpm runner:capture-session`.
 The live ChatGPT page uses a visible `#prompt-textarea` contenteditable and a hidden fallback `textarea`; keep the contenteditable first in your selector order.
+The runner supports ChatGPT's optional `?q=` deep link through `navigation.promptQueryParam`. In local queue processing this is the preferred path because it creates the user turn directly in a new thread. If the assistant never resolves past the `request-placeholder` node, the run should be treated as failed because there is no completed answer or citation set to analyze.
 The live ChatGPT response stream also renders temporary `request-placeholder` assistant nodes; exclude those from extraction or you will scrape an empty streaming shell instead of the completed answer.
 If selectors fail, session is missing, or ChatGPT markup shifts, the run still returns structured output with warnings.
 
@@ -155,12 +159,18 @@ If auth/session is missing or selectors shift:
 - `warnings` records the failure details
 - screenshot, trace, and DOM/network evidence are still captured when possible
 - explicit access blockers such as ChatGPT verification pages are marked as failed runs
+- queued worker runs write their evidence back into the existing queued `promptRuns` record rather than creating a second run row
 
 ## Ingestion Behavior
 
 If `--ingest` is provided and `VITE_CONVEX_URL` is set:
 1. The runner first tries `api.analytics.ingestPromptRun` when `promptId` is present.
 2. If analytics ingestion is unavailable or fails, it can fall back to `api.monitoring.ingestMonitorRun` when `monitorId` is present.
+
+For queued prompt execution:
+1. The dashboard creates `promptRuns` with `status: "queued"`.
+2. `pnpm runner:queue` claims the next queued run, launches Playwright locally, and patches that same record to `running`, then `success` or `failed`.
+3. Citations, warnings, screenshot/video/trace paths, and the final deep link are written back onto the original queued run so the dashboard can inspect the evidence.
 
 Optional hardening:
 - set `PEEC_RUN_INGEST_KEY` in Convex env and local shell to require signed ingestion.
