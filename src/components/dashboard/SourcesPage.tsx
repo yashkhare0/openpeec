@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -28,6 +29,10 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { InlineEmpty } from "./components/EmptyState";
+import {
+  DashboardCardSkeleton,
+  DashboardTableCardSkeleton,
+} from "./components/LoadingState";
 
 type TrackedKind = "brand" | "competitor" | "product" | "feature" | "other";
 
@@ -59,6 +64,7 @@ const typeColors: Record<string, string> = {
 };
 
 export function SourcesPage({
+  loading = false,
   sources,
   entities,
   newEntityName,
@@ -71,6 +77,7 @@ export function SourcesPage({
   onUpdateEntity,
   onDeleteEntity,
 }: {
+  loading?: boolean;
   sources: Array<{
     domain: string;
     type: string;
@@ -158,210 +165,260 @@ export function SourcesPage({
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
       <div className="grid gap-4 px-4 lg:px-6 xl:grid-cols-[1fr_360px]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Sources</CardTitle>
-            <CardDescription>
-              Domains ranked by citation frequency and quality.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {sources.length ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Domain</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead className="text-right">Used share</TableHead>
-                    <TableHead className="text-right">Responses</TableHead>
-                    <TableHead className="text-right">Avg quality</TableHead>
-                    <TableHead>Latest response</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sources.map((s) => (
-                    <TableRow key={s.domain}>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <div className="bg-muted flex size-6 items-center justify-center rounded">
-                            <img
-                              src={`https://www.google.com/s2/favicons?domain=${s.domain}&sz=32`}
-                              alt=""
-                              className="size-4 rounded-sm"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).style.display =
-                                  "none";
-                              }}
-                            />
-                          </div>
-                          <span className="font-medium">{s.domain}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="secondary"
-                          className={typeColors[s.type.toLowerCase()] ?? ""}
-                        >
-                          {titleCase(s.type)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatPercent(s.usedShare)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {s.responseCount}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {s.avgQualityScore !== undefined
-                          ? Math.round(s.avgQualityScore)
-                          : "-"}
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-1">
-                          {s.latestResponses?.[0] ? (
-                            <>
-                              <p className="text-sm font-medium">
-                                {s.latestResponses[0].promptName}
-                              </p>
-                              <p className="text-muted-foreground text-xs">
-                                {formatFreshness(
-                                  s.latestResponses[0].startedAt
-                                )}{" "}
-                                · #{s.latestResponses[0].position}
-                              </p>
-                            </>
-                          ) : (
-                            <p className="text-muted-foreground text-sm">
-                              No response lineage
-                            </p>
-                          )}
-                        </div>
-                      </TableCell>
+        {loading ? (
+          <DashboardTableCardSkeleton titleWidth="w-20" rows={6} columns={6} />
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Sources</CardTitle>
+              <CardDescription>
+                Domains ranked by citation frequency and quality.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {sources.length ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Domain</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead className="text-right">Used share</TableHead>
+                      <TableHead className="text-right">Responses</TableHead>
+                      <TableHead className="text-right">Avg quality</TableHead>
+                      <TableHead>Latest response</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <InlineEmpty text="No source analytics available yet." />
-            )}
-          </CardContent>
-        </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {sources.map((source) => (
+                      <TableRow key={source.domain}>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className="bg-muted flex size-6 items-center justify-center rounded">
+                              <img
+                                src={`https://www.google.com/s2/favicons?domain=${source.domain}&sz=32`}
+                                alt=""
+                                className="size-4 rounded-sm"
+                                onError={(event) => {
+                                  (
+                                    event.target as HTMLImageElement
+                                  ).style.display = "none";
+                                }}
+                              />
+                            </div>
+                            <span className="font-medium">{source.domain}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="secondary"
+                            className={
+                              typeColors[source.type.toLowerCase()] ?? ""
+                            }
+                          >
+                            {titleCase(source.type)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatPercent(source.usedShare)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {source.responseCount}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {source.avgQualityScore !== undefined
+                            ? Math.round(source.avgQualityScore)
+                            : "-"}
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            {source.latestResponses?.[0] ? (
+                              <>
+                                <p className="text-sm font-medium">
+                                  {source.latestResponses[0].promptName}
+                                </p>
+                                <p className="text-muted-foreground text-xs">
+                                  {formatFreshness(
+                                    source.latestResponses[0].startedAt
+                                  )}{" "}
+                                  | #{source.latestResponses[0].position}
+                                </p>
+                              </>
+                            ) : (
+                              <p className="text-muted-foreground text-sm">
+                                No response lineage
+                              </p>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <InlineEmpty text="No source analytics available yet." />
+              )}
+            </CardContent>
+          </Card>
+        )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Tracked Entities</CardTitle>
-            <CardDescription>
-              Maintain brand and competitor coverage targets.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="bg-muted/30 grid gap-2 rounded-lg border p-3">
-              <Input
-                value={newEntityName}
-                onChange={(e) => onNewEntityName(e.target.value)}
-                placeholder="Entity name"
-                className="h-8"
-              />
-              <Select
-                value={newEntityKind}
-                onValueChange={(v) => onNewEntityKind(v as TrackedKind)}
-              >
-                <SelectTrigger className="h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {["brand", "competitor", "product", "feature", "other"].map(
-                    (k) => (
-                      <SelectItem key={k} value={k}>
-                        {titleCase(k)}
-                      </SelectItem>
-                    )
-                  )}
-                </SelectContent>
-              </Select>
-              <Input
-                value={newEntityDomain}
-                onChange={(e) => onNewEntityDomain(e.target.value)}
-                placeholder="Owned domains (comma-separated)"
-                className="h-8"
-              />
-              <Button size="sm" onClick={() => void createEntity()}>
-                Add entity
-              </Button>
+        {loading ? (
+          <DashboardCardSkeleton
+            titleWidth="w-32"
+            descriptionWidth="w-48"
+            contentClassName="space-y-3"
+          >
+            <div className="grid gap-2 rounded-lg border p-3">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-24" />
             </div>
-
-            {entities.length === 0 ? (
-              <InlineEmpty text="No tracked entities yet." />
-            ) : (
-              entities.map((entity) => (
-                <div key={String(entity._id)} className="rounded-lg border p-3">
+            <div className="space-y-2">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <div key={index} className="rounded-lg border p-3">
                   <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-medium">{entity.name}</p>
-                      <p className="text-muted-foreground text-xs">
-                        {titleCase(entity.kind)} |{" "}
-                        {(entity.ownedDomains ?? []).join(", ") || "No domains"}
-                      </p>
+                    <div className="space-y-2">
+                      <Skeleton className="h-4 w-28" />
+                      <Skeleton className="h-3 w-40" />
                     </div>
-                    <Badge
-                      variant={entity.active ? "default" : "secondary"}
-                      className={cn(
-                        entity.active
-                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300"
-                          : ""
-                      )}
-                    >
-                      {entity.active ? "Active" : "Paused"}
-                    </Badge>
+                    <Skeleton className="h-6 w-16" />
                   </div>
-                  <div className="mt-2 flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => void renameEntity(entity._id, entity.name)}
-                    >
-                      Rename
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() =>
-                        void onUpdateEntity({
-                          id: entity._id,
-                          active: !entity.active,
-                        })
-                          .then(() =>
-                            toast.success(
-                              entity.active
-                                ? "Entity paused."
-                                : "Entity resumed."
-                            )
-                          )
-                          .catch((e: unknown) => toast.error(errorMessage(e)))
-                      }
-                    >
-                      {entity.active ? "Pause" : "Resume"}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive h-7 text-xs"
-                      onClick={() =>
-                        void onDeleteEntity({ id: entity._id })
-                          .then(() => toast.success("Entity deleted."))
-                          .catch((e: unknown) => toast.error(errorMessage(e)))
-                      }
-                    >
-                      Delete
-                    </Button>
+                  <div className="mt-3 flex gap-2">
+                    <Skeleton className="h-7 w-14" />
+                    <Skeleton className="h-7 w-14" />
+                    <Skeleton className="h-7 w-14" />
                   </div>
                 </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
+              ))}
+            </div>
+          </DashboardCardSkeleton>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Tracked Entities</CardTitle>
+              <CardDescription>
+                Maintain brand and competitor coverage targets.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="bg-muted/30 grid gap-2 rounded-lg border p-3">
+                <Input
+                  value={newEntityName}
+                  onChange={(e) => onNewEntityName(e.target.value)}
+                  placeholder="Entity name"
+                  className="h-8"
+                />
+                <Select
+                  value={newEntityKind}
+                  onValueChange={(v) => onNewEntityKind(v as TrackedKind)}
+                >
+                  <SelectTrigger className="h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {["brand", "competitor", "product", "feature", "other"].map(
+                      (kind) => (
+                        <SelectItem key={kind} value={kind}>
+                          {titleCase(kind)}
+                        </SelectItem>
+                      )
+                    )}
+                  </SelectContent>
+                </Select>
+                <Input
+                  value={newEntityDomain}
+                  onChange={(e) => onNewEntityDomain(e.target.value)}
+                  placeholder="Owned domains (comma-separated)"
+                  className="h-8"
+                />
+                <Button size="sm" onClick={() => void createEntity()}>
+                  Add entity
+                </Button>
+              </div>
+
+              {entities.length === 0 ? (
+                <InlineEmpty text="No tracked entities yet." />
+              ) : (
+                entities.map((entity) => (
+                  <div
+                    key={String(entity._id)}
+                    className="rounded-lg border p-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-medium">{entity.name}</p>
+                        <p className="text-muted-foreground text-xs">
+                          {titleCase(entity.kind)} |{" "}
+                          {(entity.ownedDomains ?? []).join(", ") ||
+                            "No domains"}
+                        </p>
+                      </div>
+                      <Badge
+                        variant={entity.active ? "default" : "secondary"}
+                        className={cn(
+                          entity.active
+                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300"
+                            : ""
+                        )}
+                      >
+                        {entity.active ? "Active" : "Paused"}
+                      </Badge>
+                    </div>
+                    <div className="mt-2 flex gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() =>
+                          void renameEntity(entity._id, entity.name)
+                        }
+                      >
+                        Rename
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() =>
+                          void onUpdateEntity({
+                            id: entity._id,
+                            active: !entity.active,
+                          })
+                            .then(() =>
+                              toast.success(
+                                entity.active
+                                  ? "Entity paused."
+                                  : "Entity resumed."
+                              )
+                            )
+                            .catch((error: unknown) =>
+                              toast.error(errorMessage(error))
+                            )
+                        }
+                      >
+                        {entity.active ? "Pause" : "Resume"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive h-7 text-xs"
+                        onClick={() =>
+                          void onDeleteEntity({ id: entity._id })
+                            .then(() => toast.success("Entity deleted."))
+                            .catch((error: unknown) =>
+                              toast.error(errorMessage(error))
+                            )
+                        }
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

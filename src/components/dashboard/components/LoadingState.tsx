@@ -75,7 +75,9 @@ export function DashboardTableCardSkeleton({
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Skeleton className={cn("h-5", titleWidth)} />
-        {showControls ? <Skeleton className={cn("h-8", controlsWidth)} /> : null}
+        {showControls ? (
+          <Skeleton className={cn("h-8", controlsWidth)} />
+        ) : null}
       </div>
       <div className="space-y-3">
         <div

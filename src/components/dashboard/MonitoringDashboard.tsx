@@ -71,7 +71,7 @@ export function MonitoringDashboard() {
     api.analytics.getPromptAnalysis,
     selectedPromptId ? { promptId: selectedPromptId, model, rangeDays } : "skip"
   );
-  const entities = useQuery(api.analytics.listTrackedEntities, {}) ?? [];
+  const entities = useQuery(api.analytics.listTrackedEntities, {});
   const runDetail = useQuery(
     api.analytics.getPromptRun,
     selectedRunId ? { id: selectedRunId } : "skip"
@@ -95,6 +95,7 @@ export function MonitoringDashboard() {
     promptAnalytics === undefined ||
     runs === undefined ||
     sources === undefined;
+  const sourcesPageLoading = loading || entities === undefined;
   const hasData = !!overview && overview.kpis.totalRuns > 0;
   const queueStatusHydratedRef = useRef(false);
   const lastFinishedRunIdRef = useRef<Id<"promptRuns"> | null>(null);
@@ -265,6 +266,11 @@ export function MonitoringDashboard() {
     page === "responses" &&
     runDetailContext === "responses" &&
     selectedRunId !== null;
+  const promptDetailLoading =
+    promptView === "prompt" &&
+    selectedPromptId !== null &&
+    promptAnalysis === undefined;
+  const runDetailLoading = selectedRunId !== null && runDetail === undefined;
 
   const breadcrumbs = (() => {
     if (page === "prompts") {
@@ -355,6 +361,7 @@ export function MonitoringDashboard() {
               <>
                 {promptView === "list" && (
                   <PromptsPage
+                    loading={loading}
                     groups={promptGroups ?? []}
                     selectedGroup={selectedGroup}
                     onSelectGroup={setSelectedGroup}
@@ -372,6 +379,7 @@ export function MonitoringDashboard() {
                 )}
                 {promptView === "prompt" && (
                   <PromptDetailPage
+                    loading={promptDetailLoading}
                     selectedGroupName={selectedGroupName}
                     promptAnalysis={promptAnalysis}
                     onBack={() => openPrompt(null)}
@@ -381,6 +389,7 @@ export function MonitoringDashboard() {
                 )}
                 {promptView === "response" && (
                   <ResponseDetailPage
+                    loading={runDetailLoading}
                     runDetail={runDetail}
                     onBack={() => openRunFromPromptDetail(null)}
                   />
@@ -391,6 +400,7 @@ export function MonitoringDashboard() {
             {page === "runs" &&
               (showingRunDetailForRuns ? (
                 <ResponseDetailPage
+                  loading={runDetailLoading}
                   runDetail={runDetail}
                   backLabel="Back to runs"
                   onBack={() => openGlobalRunDetail("runs", null)}
@@ -402,6 +412,7 @@ export function MonitoringDashboard() {
                 />
               ) : (
                 <RunsPage
+                  loading={loading}
                   runs={runs ?? []}
                   selectedRunId={selectedRunId}
                   onOpenRun={(runId) => openGlobalRunDetail("runs", runId)}
@@ -411,6 +422,7 @@ export function MonitoringDashboard() {
 
             {page === "groups" && (
               <GroupsPage
+                loading={loading}
                 groups={promptGroups ?? []}
                 prompts={prompts ?? []}
                 onOpenPrompt={openPrompt}
@@ -424,6 +436,7 @@ export function MonitoringDashboard() {
             {page === "responses" &&
               (showingRunDetailForResponses ? (
                 <ResponseDetailPage
+                  loading={runDetailLoading}
                   runDetail={runDetail}
                   backLabel="Back to responses"
                   onBack={() => openGlobalRunDetail("responses", null)}
@@ -435,6 +448,7 @@ export function MonitoringDashboard() {
                 />
               ) : (
                 <ResponsesPage
+                  loading={loading}
                   runs={responseRows}
                   selectedRunId={selectedRunId}
                   onOpenRun={(runId) => openGlobalRunDetail("responses", runId)}
@@ -444,8 +458,9 @@ export function MonitoringDashboard() {
 
             {page === "sources" && (
               <SourcesPage
+                loading={sourcesPageLoading}
                 sources={sources?.items ?? []}
-                entities={entities}
+                entities={entities ?? []}
                 newEntityName={newEntityName}
                 onNewEntityName={setNewEntityName}
                 newEntityKind={newEntityKind}

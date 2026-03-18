@@ -25,6 +25,11 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { InlineEmpty } from "./components/EmptyState";
+import {
+  DashboardCardSkeleton,
+  DashboardListSkeleton,
+  DashboardMetricCardsSkeleton,
+} from "./components/LoadingState";
 
 function formatPercent(value: number | undefined): string {
   if (value === undefined) return "-";
@@ -61,12 +66,14 @@ const sourceChartConfig = {
 } satisfies ChartConfig;
 
 export function PromptDetailPage({
+  loading = false,
   selectedGroupName,
   promptAnalysis,
   onBack,
   selectedRunId,
   onOpenRun,
 }: {
+  loading?: boolean;
   selectedGroupName?: string;
   promptAnalysis:
     | {
@@ -126,6 +133,63 @@ export function PromptDetailPage({
   selectedRunId: Id<"promptRuns"> | null;
   onOpenRun: (value: Id<"promptRuns">) => void;
 }) {
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+        <div className="flex items-center gap-2 px-4 lg:px-6">
+          <Button variant="outline" size="sm" onClick={onBack}>
+            Back to prompts
+          </Button>
+        </div>
+
+        <div className="grid gap-4 px-4 lg:px-6 xl:grid-cols-[minmax(0,1.1fr)_380px]">
+          <div className="flex flex-col gap-4">
+            <DashboardCardSkeleton
+              titleWidth="w-40"
+              descriptionWidth="w-full max-w-2xl"
+              contentClassName="space-y-4"
+            >
+              <DashboardMetricCardsSkeleton count={4} />
+            </DashboardCardSkeleton>
+
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
+              <DashboardCardSkeleton
+                titleWidth="w-36"
+                descriptionWidth="w-64"
+                contentClassName="space-y-3"
+              >
+                <div className="bg-muted/40 h-[280px] rounded-xl" />
+              </DashboardCardSkeleton>
+              <DashboardCardSkeleton
+                titleWidth="w-32"
+                descriptionWidth="w-56"
+                contentClassName="space-y-3"
+              >
+                <div className="bg-muted/40 h-[280px] rounded-xl" />
+              </DashboardCardSkeleton>
+            </div>
+
+            <DashboardCardSkeleton
+              titleWidth="w-24"
+              descriptionWidth="w-72"
+              contentClassName="space-y-3"
+            >
+              <DashboardListSkeleton items={4} />
+            </DashboardCardSkeleton>
+          </div>
+
+          <DashboardCardSkeleton
+            titleWidth="w-32"
+            descriptionWidth="w-60"
+            contentClassName="space-y-3"
+          >
+            <DashboardListSkeleton items={4} />
+          </DashboardCardSkeleton>
+        </div>
+      </div>
+    );
+  }
+
   if (!promptAnalysis) {
     return (
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
