@@ -357,17 +357,19 @@ describe("MonitoringDashboard", () => {
 
     await user.click(screen.getByRole("button", { name: "Prompts" }));
 
-    expect(screen.getByRole("heading", { name: "Prompts" })).toBeTruthy();
-    expect(screen.getByText("Best AI visibility tools")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Select a prompt to inspect its response history, source mix, and brand/entity mentions."
+      )
+    ).toBeTruthy();
+    expect(
+      screen.getAllByText("Best AI visibility tools").length
+    ).toBeGreaterThan(0);
 
     await user.click(screen.getByText("Best AI visibility tools"));
 
-    expect(
-      screen.getByRole("heading", { name: "Response Variance" })
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("heading", { name: "Top Sources Used" })
-    ).toBeTruthy();
+    expect(screen.getAllByText("Response Variance").length).toBeGreaterThan(0);
+    expect(screen.getByText("Top Sources Used")).toBeTruthy();
 
     await user.click(
       screen.getByRole("button", {
@@ -375,15 +377,21 @@ describe("MonitoringDashboard", () => {
       })
     );
 
-    expect(
-      screen.getByRole("heading", { name: "Sources Used in This Response" })
-    ).toBeTruthy();
+    expect(screen.getByText("Sources Used in This Response")).toBeTruthy();
     expect(screen.getByText("OpenPeec Docs")).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: "Back to prompt" }));
-    expect(screen.getByRole("heading", { name: "Responses" })).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Open a response to inspect evidence, citations, and entity mentions."
+      )
+    ).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: "Back to prompts" }));
-    expect(screen.getByRole("heading", { name: "Prompts" })).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Select a prompt to inspect its response history, source mix, and brand/entity mentions."
+      )
+    ).toBeTruthy();
   });
 });

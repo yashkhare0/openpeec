@@ -6,7 +6,7 @@ test("dashboard shell loads and prompts workspace is reachable", async ({
   await page.goto("/");
 
   await expect(page.getByText("OpenPeec")).toBeVisible();
-  await expect(page.getByText("ChatGPT")).toBeVisible();
+  await expect(page.getByText("Visibility Lab")).toBeVisible();
 
   await expect(
     page

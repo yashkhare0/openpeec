@@ -20,3 +20,16 @@ if (typeof window !== "undefined" && !window.matchMedia) {
     }),
   });
 }
+
+if (typeof globalThis.ResizeObserver === "undefined") {
+  class ResizeObserverMock implements ResizeObserver {
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+  }
+
+  Object.defineProperty(globalThis, "ResizeObserver", {
+    writable: true,
+    value: ResizeObserverMock,
+  });
+}
