@@ -297,7 +297,7 @@ export function normalizeRunnerConfig(rawConfig) {
       titleIncludes: assertions.titleIncludes ?? null,
     },
     timing: {
-      responseTimeoutMs: timing.responseTimeoutMs ?? 45000,
+      responseTimeoutMs: timing.responseTimeoutMs ?? 300000,
       settleDelayMs: timing.settleDelayMs ?? 1500,
     },
     ingest: {

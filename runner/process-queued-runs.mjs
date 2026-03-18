@@ -95,6 +95,9 @@ async function resolveConvexUrl() {
 }
 
 function buildRunConfig(baseConfig, claimedRun) {
+  const configuredResponseTimeout =
+    baseConfig?.timing?.responseTimeoutMs ?? 300000;
+
   return {
     ...baseConfig,
     promptId: claimedRun.prompt.id,
@@ -112,7 +115,43 @@ function buildRunConfig(baseConfig, claimedRun) {
     ingest: {
       target: "none",
     },
+    timing: {
+      ...(baseConfig.timing ?? {}),
+      responseTimeoutMs: Math.max(300000, configuredResponseTimeout),
+    },
   };
+}
+
+function shouldAutoRetry(result, runLabel) {
+  if (result.status !== "failed") {
+    return false;
+  }
+  if (/\[retry\s+\d+\]/i.test(runLabel)) {
+    return false;
+  }
+
+  const haystack =
+    `${result.summary ?? ""} ${(result.warnings ?? []).join(" ")}`.toLowerCase();
+  return (
+    haystack.includes("response container not found after submit") ||
+    haystack.includes("did not produce a usable assistant response") ||
+    haystack.includes("timeout")
+  );
+}
+
+function buildRetryLabel(runLabel) {
+  return `${runLabel} [retry 1]`;
+}
+
+async function queueRetry(client, claimedRun) {
+  const queued = await client.mutation(
+    api.analytics.triggerSelectedPromptsNow,
+    {
+      promptIds: [claimedRun.prompt.id],
+      label: buildRetryLabel(claimedRun.runLabel),
+    }
+  );
+  return queued.queuedCount > 0;
 }
 
 async function completeRunFromError(client, claimedRun, error) {
@@ -162,11 +201,33 @@ async function processClaimedRun(client, baseConfig, claimedRun, cliArgs) {
     console.log(
       `[queue-worker] ${claimedRun.prompt.name}: ${result.status} with ${result.citations.length} citations`
     );
+
+    if (shouldAutoRetry(result, claimedRun.runLabel)) {
+      const retried = await queueRetry(client, claimedRun);
+      if (retried) {
+        console.log(
+          `[queue-worker] ${claimedRun.prompt.name}: auto-requeued after response timeout/stall`
+        );
+      }
+    }
+
     return result.status === "success";
   } catch (error) {
     await completeRunFromError(client, claimedRun, error);
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[queue-worker] ${claimedRun.prompt.name}: ${message}`);
+
+    if (
+      !/\[retry\s+\d+\]/i.test(claimedRun.runLabel) &&
+      /timeout/i.test(message)
+    ) {
+      const retried = await queueRetry(client, claimedRun);
+      if (retried) {
+        console.log(
+          `[queue-worker] ${claimedRun.prompt.name}: auto-requeued after worker timeout`
+        );
+      }
+    }
     return false;
   }
 }

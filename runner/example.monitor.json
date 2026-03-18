@@ -7,7 +7,7 @@
   "model": "chatgpt-web",
   "browser": {
     "channel": "msedge",
-    "headless": false
+    "headless": true
   },
   "navigation": {
     "url": "https://chatgpt.com/",
@@ -35,7 +35,7 @@
     "urlIncludes": "chatgpt.com"
   },
   "timing": {
-    "responseTimeoutMs": 45000,
+    "responseTimeoutMs": 300000,
     "settleDelayMs": 1500
   },
   "ingest": {
