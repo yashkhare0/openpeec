@@ -11,3 +11,9 @@
 - Verified `npm run build`, `npx convex codegen`, and `npx tsc -p convex/tsconfig.json`.
 - Verified `npm run lint` still fails on pre-existing repo issues outside the new monitoring slice.
 - Reset product direction toward visibility/citation analytics and a full dashboard redesign based on the reference UI.
+
+## 2026-03-18
+
+- Added a dedicated cross-device continuation plan into `task_plan.md`.
+- Documented cross-device constraints and portability findings in `findings.md`.
+- Defined a single reproducibility gate (`pnpm check`) for handoff between devices.

@@ -27,3 +27,11 @@
 - A hybrid product shape is best:
   - top half analytics: visibility, citation quality, source coverage, comparison tables
   - lower-level operational confidence: run freshness, failures, parsing confidence
+
+## Cross-Device Findings (2026-03-18)
+
+- Code state is portable through git; browser auth state is not reliably portable and must be captured per machine.
+- `pnpm` must remain the only package manager to avoid lockfile/toolchain drift.
+- The minimum reproducibility gate across devices is `pnpm check`.
+- Runner evidence under `runner/artifacts/` is useful for local diagnosis but should not be used as the source of truth for analytics.
+- The source of truth for analytics continuity is Convex data (`promptRuns`, `citations`, prompt metadata), not local screenshots/videos.

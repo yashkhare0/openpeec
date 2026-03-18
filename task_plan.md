@@ -41,6 +41,47 @@ Turn `openpeec` into a local-first internal monitoring product focused on:
 - [pending] Redesign the dashboard shell and analytics pages based on the reference UI
 - [pending] Verify build/test/lint and summarize remaining gaps
 
+## Cross-Device Continuation Plan (2026-03-18)
+
+- [in_progress] Standardize machine bootstrap and verification
+- [pending] Standardize browser/session state capture per machine
+- [pending] Standardize evidence artifact and run handoff workflow
+- [pending] Standardize daily sync workflow (branch/commit/test gates)
+- [pending] Add CI parity so device drift is caught automatically
+
+### Phase Details
+
+1. Machine bootstrap
+
+- Use the same Node and pnpm versions on every device.
+- Run `pnpm install --frozen-lockfile`.
+- Run `pnpm exec convex codegen` before first local run.
+- Verify baseline with `pnpm check`.
+
+2. Browser/session capture
+
+- Do not share committed auth state files between devices.
+- On each machine, run `pnpm runner:capture-session`.
+- Save resulting state in local-only files (ignored by git).
+- Validate with one real prompt execution via `pnpm runner:prompt:example`.
+
+3. Evidence/run handoff
+
+- Treat `runner/artifacts/*` as local evidence, not shared source code.
+- Persist canonical analytics data through Convex tables (`promptRuns`, `citations`).
+- For cross-device debugging, share only run IDs and exported JSON summaries.
+
+4. Daily sync workflow
+
+- Start from latest mainline branch state.
+- Run `pnpm format:check`, `pnpm typecheck`, `pnpm lint`, `pnpm test:once`, `pnpm test:e2e`.
+- Commit only after all checks pass on the active device.
+
+5. CI parity
+
+- Mirror local `pnpm check` in CI.
+- Block merges on lint/type/test failures to avoid machine-specific regressions.
+
 ## Decisions
 
 - Use Playwright-style deterministic automation over `browser-use`.
