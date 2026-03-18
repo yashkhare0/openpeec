@@ -4,9 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "npm-run-all --parallel dev:backend dev:frontend",
+    "dev": "npm-run-all --parallel dev:backend dev:frontend dev:runner",
     "dev:frontend": "vite --open",
     "dev:backend": "convex dev --tail-logs",
+    "dev:runner": "node runner/process-queued-runs.mjs --config runner/example.monitor.json --poll-interval-ms 1000",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p convex/tsconfig.json --noEmit && tsc -p tsconfig.e2e.json --noEmit",
     "build": "pnpm typecheck && vite build",
     "lint": "eslint . --ext ts,tsx,mts,cjs --report-unused-disable-directives --max-warnings 0",
@@ -25,7 +26,7 @@
     "runner:prompt:example": "node runner/run-monitor.mjs --config runner/example.monitor.json --output runner/last-run.json",
     "runner:capture-session": "node runner/capture-session.mjs",
     "runner:install-browsers": "playwright install chromium",
-    "runner:queue": "node runner/process-queued-runs.mjs --config runner/example.monitor.json",
+    "runner:queue": "node runner/process-queued-runs.mjs --config runner/example.monitor.json --poll-interval-ms 1000",
     "runner:queue:once": "node runner/process-queued-runs.mjs --config runner/example.monitor.json --once"
   },
   "dependencies": {

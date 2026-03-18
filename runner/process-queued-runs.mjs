@@ -1,4 +1,6 @@
 import process from "node:process";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 import { ConvexHttpClient } from "convex/browser";
 
@@ -45,6 +47,51 @@ function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+async function readEnvFile(filePath) {
+  try {
+    const content = await fs.readFile(filePath, "utf8");
+    return content;
+  } catch {
+    return "";
+  }
+}
+
+function parseEnvValue(content, key) {
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const separator = line.indexOf("=");
+    if (separator === -1) continue;
+    const currentKey = line.slice(0, separator).trim();
+    if (currentKey !== key) continue;
+    let value = line.slice(separator + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    return value;
+  }
+  return undefined;
+}
+
+async function resolveConvexUrl() {
+  if (process.env.VITE_CONVEX_URL) {
+    return process.env.VITE_CONVEX_URL;
+  }
+
+  const cwd = process.cwd();
+  const envLocal = await readEnvFile(path.join(cwd, ".env.local"));
+  const fromLocal = parseEnvValue(envLocal, "VITE_CONVEX_URL");
+  if (fromLocal) {
+    return fromLocal;
+  }
+
+  const env = await readEnvFile(path.join(cwd, ".env"));
+  return parseEnvValue(env, "VITE_CONVEX_URL");
 }
 
 function buildRunConfig(baseConfig, claimedRun) {
@@ -126,9 +173,11 @@ async function processClaimedRun(client, baseConfig, claimedRun, cliArgs) {
 
 async function main() {
   const cliArgs = parseArgs(process.argv.slice(2));
-  const convexUrl = process.env.VITE_CONVEX_URL;
+  const convexUrl = await resolveConvexUrl();
   if (!convexUrl) {
-    throw new Error("VITE_CONVEX_URL is required to process queued runs.");
+    throw new Error(
+      "VITE_CONVEX_URL is required to process queued runs (env or .env.local)."
+    );
   }
 
   const baseConfig = await readJsonFile(resolvePathIfRelative(cliArgs.config));

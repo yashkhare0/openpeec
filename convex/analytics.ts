@@ -947,6 +947,18 @@ export const claimNextQueuedPromptRun = mutation({
     runner: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const activeRun = await ctx.db
+      .query("promptRuns")
+      .withIndex("status_startedAt", (q) => q.eq("status", "running"))
+      .order("asc")
+      .first();
+
+    // Enforce single-run processing globally: next queued run only starts after
+    // the current running run is completed (or recovered as stale).
+    if (activeRun != null) {
+      return null;
+    }
+
     const queuedRun = await ctx.db
       .query("promptRuns")
       .withIndex("status_startedAt", (q) => q.eq("status", "queued"))
