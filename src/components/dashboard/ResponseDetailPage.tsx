@@ -59,11 +59,28 @@ function parseOutputPayload(value: string | undefined) {
         pageHtml?: string;
         responseHtml?: string;
         sources?: string;
+        network?: string;
+        console?: string;
       };
     };
   } catch {
     return null;
   }
+}
+
+function artifactUrlFromPath(filePath: string | undefined): string | null {
+  if (!filePath) return null;
+  const normalized = filePath.replace(/\\/g, "/");
+  const marker = "runner/artifacts/";
+  const markerIndex = normalized.toLowerCase().indexOf(marker);
+  if (markerIndex === -1) return null;
+  const relative = normalized.slice(markerIndex + marker.length);
+  if (!relative) return null;
+  const encoded = relative
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  return `/runner-artifacts/${encoded}`;
 }
 
 const typeTone: Record<string, string> = {
@@ -128,6 +145,9 @@ export function ResponseDetailPage({
   onBack: () => void;
 }) {
   const outputPayload = parseOutputPayload(runDetail?.run.output);
+  const screenshotPath =
+    runDetail?.run.evidencePath ?? outputPayload?.artifacts?.screenshot;
+  const screenshotUrl = artifactUrlFromPath(screenshotPath);
 
   if (!runDetail) {
     return (
@@ -325,50 +345,86 @@ export function ResponseDetailPage({
 
           <Card>
             <CardHeader>
-              <CardTitle>Evidence Paths</CardTitle>
+              <CardTitle>Run Evidence</CardTitle>
               <CardDescription>
-                Local artifacts for verifying what actually happened during the
-                run.
+                Screenshot and minimal debug context from this run.
               </CardDescription>
             </CardHeader>
-            <CardContent className="text-muted-foreground space-y-2 text-xs">
-              {runDetail.run.deeplinkUsed ? (
-                <p className="break-all">
-                  Deep link: {runDetail.run.deeplinkUsed}
-                </p>
-              ) : null}
-              {runDetail.run.evidencePath ? (
-                <p className="break-all">
-                  Screenshot: {runDetail.run.evidencePath}
-                </p>
-              ) : null}
-              {outputPayload?.artifacts?.video ? (
-                <p className="break-all">
-                  Video: {outputPayload.artifacts.video}
-                </p>
-              ) : null}
-              {outputPayload?.artifacts?.trace ? (
-                <p className="break-all">
-                  Trace: {outputPayload.artifacts.trace}
-                </p>
-              ) : null}
-              {outputPayload?.artifacts?.pageHtml ? (
-                <p className="break-all">
-                  Page HTML: {outputPayload.artifacts.pageHtml}
-                </p>
-              ) : null}
-              {outputPayload?.artifacts?.responseHtml ? (
-                <p className="break-all">
-                  Response HTML: {outputPayload.artifacts.responseHtml}
-                </p>
-              ) : null}
-              {outputPayload?.artifacts?.sources ? (
-                <p className="break-all">
-                  Sources JSON: {outputPayload.artifacts.sources}
-                </p>
-              ) : null}
+            <CardContent className="space-y-3">
+              {screenshotUrl ? (
+                <a
+                  href={screenshotUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block overflow-hidden rounded-xl border"
+                >
+                  <img
+                    src={screenshotUrl}
+                    alt="Run screenshot"
+                    className="max-h-[320px] w-full object-cover"
+                    loading="lazy"
+                  />
+                </a>
+              ) : (
+                <InlineEmpty text="Screenshot preview unavailable for this run." />
+              )}
+
+              <div className="text-muted-foreground space-y-2 text-xs">
+                {runDetail.run.deeplinkUsed ? (
+                  <p className="break-all">
+                    Deep link: {runDetail.run.deeplinkUsed}
+                  </p>
+                ) : null}
+                {screenshotPath ? (
+                  <p className="break-all">Screenshot: {screenshotPath}</p>
+                ) : null}
+              </div>
+
+              <details className="rounded-xl border p-3 text-xs">
+                <summary className="text-muted-foreground cursor-pointer font-medium">
+                  Technical artifacts
+                </summary>
+                <div className="text-muted-foreground mt-3 space-y-2">
+                  {outputPayload?.artifacts?.video ? (
+                    <p className="break-all">
+                      Video: {outputPayload.artifacts.video}
+                    </p>
+                  ) : null}
+                  {outputPayload?.artifacts?.trace ? (
+                    <p className="break-all">
+                      Trace: {outputPayload.artifacts.trace}
+                    </p>
+                  ) : null}
+                  {outputPayload?.artifacts?.pageHtml ? (
+                    <p className="break-all">
+                      Page HTML: {outputPayload.artifacts.pageHtml}
+                    </p>
+                  ) : null}
+                  {outputPayload?.artifacts?.responseHtml ? (
+                    <p className="break-all">
+                      Response HTML: {outputPayload.artifacts.responseHtml}
+                    </p>
+                  ) : null}
+                  {outputPayload?.artifacts?.sources ? (
+                    <p className="break-all">
+                      Sources JSON: {outputPayload.artifacts.sources}
+                    </p>
+                  ) : null}
+                  {outputPayload?.artifacts?.network ? (
+                    <p className="break-all">
+                      Network JSON: {outputPayload.artifacts.network}
+                    </p>
+                  ) : null}
+                  {outputPayload?.artifacts?.console ? (
+                    <p className="break-all">
+                      Console JSON: {outputPayload.artifacts.console}
+                    </p>
+                  ) : null}
+                </div>
+              </details>
+
               {runDetail.run.warnings?.length ? (
-                <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-amber-900">
+                <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900">
                   {runDetail.run.warnings.join(" | ")}
                 </div>
               ) : null}

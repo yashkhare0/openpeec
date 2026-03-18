@@ -31,6 +31,8 @@ This is an operator tool for recurring checks, not a generic browser automation 
 
 `pnpm dev` now starts the queue worker automatically (`dev:runner`) so queued
 prompt jobs are picked up without manual worker startup.
+Queue runs use headless Playwright by default and still capture screenshots,
+video, trace, DOM, and source artifacts.
 
 ## Prompt-Oriented Config Contract
 
@@ -181,6 +183,8 @@ For queued prompt execution:
 
 Queue execution is strictly sequential. Only one run can be in `running` state
 at a time; the next queued run starts after the previous run is completed.
+If a run waits 5 minutes for a usable assistant response and times out/stalls,
+the worker marks it failed and auto-queues one retry.
 
 Optional hardening:
 
