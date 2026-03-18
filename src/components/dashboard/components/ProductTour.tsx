@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef } from "react";
 import { driver, type DriveStep, type Driver } from "driver.js";
 import "driver.js/dist/driver.css";
 
-type PageKey = "overview" | "prompts" | "sources" | "models";
+type PageKey =
+  | "overview"
+  | "prompts"
+  | "runs"
+  | "groups"
+  | "responses"
+  | "sources";
 
 function buildSteps(onNavigate: (page: PageKey) => void): DriveStep[] {
   return [
@@ -11,7 +17,7 @@ function buildSteps(onNavigate: (page: PageKey) => void): DriveStep[] {
       popover: {
         title: "Sidebar Navigation",
         description:
-          "Switch between pages here. Overview shows your dashboard, Prompts lets you manage what to monitor, Sources tracks citation domains, and Models compares AI engines.",
+          "Switch between pages here. Overview shows the dashboard, Prompts manages monitored questions, Runs and Responses drill into execution detail, Groups organizes prompt sets, and Sources tracks citation domains.",
         side: "right",
         align: "start",
       },
@@ -31,7 +37,7 @@ function buildSteps(onNavigate: (page: PageKey) => void): DriveStep[] {
       popover: {
         title: "KPI Cards",
         description:
-          "Your at-a-glance metrics: Visibility score, Citation quality, Source coverage, and Run health. Each card shows the current value and trend vs. the previous period.",
+          "Your at-a-glance metrics: captured runs, citation quality, source coverage, and run health. Each card shows the current value with a compact comparison or freshness signal.",
         side: "bottom",
         align: "start",
       },
@@ -44,7 +50,7 @@ function buildSteps(onNavigate: (page: PageKey) => void): DriveStep[] {
       popover: {
         title: "Trends & Model Comparison",
         description:
-          "The trend chart tracks visibility, citations, and coverage over time. Toggle between series using the buttons. The table compares how different AI models represent your brand.",
+          "The trend chart tracks citation quality and coverage over time. Use the surrounding pages to move from prompt setup into run and response inspection.",
         side: "top",
         align: "start",
       },

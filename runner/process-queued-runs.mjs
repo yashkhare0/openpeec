@@ -49,6 +49,22 @@ function sleep(ms) {
   });
 }
 
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isTransientConvexError(error) {
+  const message = errorMessage(error).toLowerCase();
+  return (
+    message.includes("fetch failed") ||
+    message.includes("failed to fetch") ||
+    message.includes("networkerror") ||
+    message.includes("network error") ||
+    message.includes("econnrefused") ||
+    message.includes("socket hang up")
+  );
+}
+
 async function readEnvFile(filePath) {
   try {
     const content = await fs.readFile(filePath, "utf8");
@@ -92,6 +108,23 @@ async function resolveConvexUrl() {
 
   const env = await readEnvFile(path.join(cwd, ".env"));
   return parseEnvValue(env, "VITE_CONVEX_URL");
+}
+
+async function waitForBackendReady(client, cliArgs) {
+  while (true) {
+    try {
+      await client.query(api.analytics.getQueueStatus, {});
+      return;
+    } catch (error) {
+      if (cliArgs.once || !isTransientConvexError(error)) {
+        throw error;
+      }
+      console.warn(
+        `[queue-worker] Convex not ready yet: ${errorMessage(error)}. Retrying in ${cliArgs.pollIntervalMs}ms`
+      );
+      await sleep(cliArgs.pollIntervalMs);
+    }
+  }
 }
 
 function buildRunConfig(baseConfig, claimedRun) {
@@ -155,7 +188,7 @@ async function queueRetry(client, claimedRun) {
 }
 
 async function completeRunFromError(client, claimedRun, error) {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   await client.mutation(api.analytics.completePromptRun, {
     runId: claimedRun.runId,
     status: "failed",
@@ -245,6 +278,7 @@ async function main() {
   const client = new ConvexHttpClient(convexUrl);
   let hadFailure = false;
 
+  await waitForBackendReady(client, cliArgs);
   await client.mutation(api.analytics.recoverStaleRunningPromptRuns, {
     olderThanMs: 10 * 60 * 1000,
     runner: "local-playwright-worker",
@@ -252,10 +286,24 @@ async function main() {
   });
 
   while (true) {
-    const claimedRun = await client.mutation(
-      api.analytics.claimNextQueuedPromptRun,
-      { runner: "local-playwright-worker" }
-    );
+    let claimedRun;
+    try {
+      claimedRun = await client.mutation(
+        api.analytics.claimNextQueuedPromptRun,
+        {
+          runner: "local-playwright-worker",
+        }
+      );
+    } catch (error) {
+      if (cliArgs.once || !isTransientConvexError(error)) {
+        throw error;
+      }
+      console.warn(
+        `[queue-worker] Claim failed: ${errorMessage(error)}. Waiting for Convex and retrying.`
+      );
+      await waitForBackendReady(client, cliArgs);
+      continue;
+    }
 
     if (!claimedRun) {
       if (cliArgs.once) {
@@ -275,7 +323,7 @@ async function main() {
 }
 
 main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   console.error(`[queue-worker] ${message}`);
   process.exit(1);
 });

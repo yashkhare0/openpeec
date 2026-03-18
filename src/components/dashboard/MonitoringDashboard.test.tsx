@@ -27,6 +27,7 @@ vi.mock("../../../convex/_generated/api", () => ({
       getPromptAnalysis: "getPromptAnalysis",
       listTrackedEntities: "listTrackedEntities",
       getPromptRun: "getPromptRun",
+      listPrompts: "listPrompts",
       createPromptGroup: "createPromptGroup",
       updatePromptGroup: "updatePromptGroup",
       deletePromptGroup: "deletePromptGroup",
@@ -47,6 +48,74 @@ vi.mock("../../../convex/_generated/api", () => ({
 
 vi.mock("./components/ProductTour", () => ({
   ProductTour: () => null,
+}));
+
+vi.mock("./OverviewPage", () => ({
+  OverviewPage: () => <div>Overview Surface</div>,
+}));
+
+vi.mock("./PromptsPage", () => ({
+  PromptsPage: ({
+    onSelectPrompt,
+  }: {
+    onSelectPrompt: (value: string | null) => void;
+  }) => (
+    <button type="button" onClick={() => onSelectPrompt("prompt_1")}>
+      Best AI visibility tools
+    </button>
+  ),
+}));
+
+vi.mock("./PromptDetailPage", () => ({
+  PromptDetailPage: ({
+    onBack,
+    onOpenRun,
+  }: {
+    onBack: () => void;
+    onOpenRun: (value: string | null) => void;
+  }) => (
+    <div>
+      <button type="button" onClick={onBack}>
+        Back to prompts
+      </button>
+      <button type="button" onClick={() => onOpenRun("run_2")}>
+        Open Response
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock("./ResponseDetailPage", () => ({
+  ResponseDetailPage: ({
+    backLabel = "Back to prompt",
+    onBack,
+  }: {
+    backLabel?: string;
+    onBack: () => void;
+  }) => (
+    <div>
+      <div>Response Detail Surface</div>
+      <button type="button" onClick={onBack}>
+        {backLabel}
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock("./RunsPage", () => ({
+  RunsPage: () => <div>Runs Surface</div>,
+}));
+
+vi.mock("./GroupsPage", () => ({
+  GroupsPage: () => <div>Groups Surface</div>,
+}));
+
+vi.mock("./ResponsesPage", () => ({
+  ResponsesPage: () => <div>Responses Surface</div>,
+}));
+
+vi.mock("./SourcesPage", () => ({
+  SourcesPage: () => <div>Sources Surface</div>,
 }));
 
 const now = Date.now();
@@ -325,6 +394,15 @@ describe("MonitoringDashboard", () => {
           return promptGroups;
         case "listPromptResponseAnalytics":
           return promptRows;
+        case "listPrompts":
+          return [
+            {
+              _id: "prompt_1",
+              name: "Best AI visibility tools",
+              targetModel: "gpt-5",
+              active: true,
+            },
+          ];
         case "listPromptJobs":
           return [];
         case "getQueueStatus":
@@ -353,45 +431,27 @@ describe("MonitoringDashboard", () => {
     const user = userEvent.setup();
     render(<MonitoringDashboard />);
 
-    expect(screen.getByText("Visibility Command Center")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /theme/i })).toBeNull();
+    expect(screen.getByText("Overview Surface")).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: "Prompts" }));
 
-    expect(
-      screen.getByText(
-        "Select a prompt to inspect its response history, source mix, and brand/entity mentions."
-      )
-    ).toBeTruthy();
-    expect(
-      screen.getAllByText("Best AI visibility tools").length
-    ).toBeGreaterThan(0);
+    expect(screen.getByText("Best AI visibility tools")).toBeTruthy();
 
     await user.click(screen.getByText("Best AI visibility tools"));
 
-    expect(screen.getAllByText("Response Variance").length).toBeGreaterThan(0);
-    expect(screen.getByText("Top Sources Used")).toBeTruthy();
+    expect(screen.getByText("Open Response")).toBeTruthy();
 
-    await user.click(
-      screen.getByRole("button", {
-        name: /OpenPeec is cited alongside Swept and CiteCompass/i,
-      })
-    );
+    await user.click(screen.getByRole("button", { name: "Open Response" }));
 
-    expect(screen.getByText("Sources Used in This Response")).toBeTruthy();
-    expect(screen.getByText("OpenPeec Docs")).toBeTruthy();
+    expect(screen.getByText("Response Detail Surface")).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: "Back to prompt" }));
-    expect(
-      screen.getByText(
-        "Open a response to inspect evidence, citations, and entity mentions."
-      )
-    ).toBeTruthy();
+    expect(await screen.findByText("Open Response")).toBeTruthy();
 
-    await user.click(screen.getByRole("button", { name: "Back to prompts" }));
-    expect(
-      screen.getByText(
-        "Select a prompt to inspect its response history, source mix, and brand/entity mentions."
-      )
-    ).toBeTruthy();
+    await user.click(
+      await screen.findByRole("button", { name: "Back to prompts" })
+    );
+    expect(screen.getByText("Best AI visibility tools")).toBeTruthy();
   });
 });

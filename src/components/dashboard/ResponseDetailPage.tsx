@@ -12,11 +12,6 @@ import {
 } from "@/components/ui/card";
 import { InlineEmpty } from "./components/EmptyState";
 
-function formatPercent(value: number | undefined): string {
-  if (value === undefined) return "-";
-  return `${Math.round(value)}%`;
-}
-
 function formatScore(value: number | undefined): string {
   if (value === undefined) return "-";
   return `${Math.round(value)}`;
@@ -28,6 +23,17 @@ function formatFreshness(timestamp: number): string {
   const hours = Math.round(minutes / 60);
   if (hours < 48) return `${hours}h ago`;
   return `${Math.round(hours / 24)}d ago`;
+}
+
+function formatDuration(
+  startedAt: number,
+  finishedAt: number | undefined,
+  latencyMs: number | undefined
+): string {
+  if (latencyMs !== undefined) return `${(latencyMs / 1000).toFixed(1)}s`;
+  if (finishedAt !== undefined)
+    return `${((finishedAt - startedAt) / 1000).toFixed(1)}s`;
+  return "-";
 }
 
 function titleCase(value: string): string {
@@ -96,16 +102,20 @@ const typeTone: Record<string, string> = {
 export function ResponseDetailPage({
   runDetail,
   onBack,
+  backLabel = "Back to prompt",
+  onOpenPrompt,
 }: {
   runDetail:
     | {
         run: {
+          promptId?: Id<"prompts">;
           status: string;
           startedAt: number;
+          finishedAt?: number;
+          latencyMs?: number;
           model: string;
           responseSummary?: string;
           sourceCount?: number;
-          visibilityScore?: number;
           citationQualityScore?: number;
           deeplinkUsed?: string;
           evidencePath?: string;
@@ -143,6 +153,8 @@ export function ResponseDetailPage({
       }
     | undefined;
   onBack: () => void;
+  backLabel?: string;
+  onOpenPrompt?: () => void;
 }) {
   const outputPayload = parseOutputPayload(runDetail?.run.output);
   const screenshotPath =
@@ -163,8 +175,13 @@ export function ResponseDetailPage({
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
       <div className="flex items-center gap-2 px-4 lg:px-6">
         <Button variant="outline" size="sm" onClick={onBack}>
-          Back to prompt
+          {backLabel}
         </Button>
+        {onOpenPrompt ? (
+          <Button variant="ghost" size="sm" onClick={onOpenPrompt}>
+            Open prompt
+          </Button>
+        ) : null}
       </div>
 
       <div className="grid gap-4 px-4 lg:px-6 xl:grid-cols-[minmax(0,1.05fr)_380px]">
@@ -185,16 +202,19 @@ export function ResponseDetailPage({
                   {runDetail.run.sourceCount ?? runDetail.citations.length}{" "}
                   sources
                 </Badge>
-                {runDetail.run.visibilityScore !== undefined ? (
-                  <Badge variant="outline">
-                    Visibility {formatPercent(runDetail.run.visibilityScore)}
-                  </Badge>
-                ) : null}
                 {runDetail.run.citationQualityScore !== undefined ? (
                   <Badge variant="outline">
                     Citation {formatScore(runDetail.run.citationQualityScore)}
                   </Badge>
                 ) : null}
+                <Badge variant="outline">
+                  Runtime{" "}
+                  {formatDuration(
+                    runDetail.run.startedAt,
+                    runDetail.run.finishedAt,
+                    runDetail.run.latencyMs
+                  )}
+                </Badge>
               </div>
 
               {runDetail.prompt?.promptText ? (

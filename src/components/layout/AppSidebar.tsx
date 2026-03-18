@@ -1,27 +1,40 @@
 import { startTransition } from "react";
-import { Activity, Bot, FileText, Link2 } from "lucide-react";
+import {
+  Activity,
+  FileStack,
+  FileText,
+  Link2,
+  ListTree,
+  MessageSquareText,
+} from "lucide-react";
 
-import { ModeToggle } from "@/components/ModeToggle";
 import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 
-type PageKey = "overview" | "prompts" | "sources" | "models";
+type PageKey =
+  | "overview"
+  | "prompts"
+  | "runs"
+  | "groups"
+  | "responses"
+  | "sources";
 
 const mainPages: Array<{ key: PageKey; label: string; icon: typeof Activity }> =
   [
     { key: "overview", label: "Overview", icon: Activity },
     { key: "prompts", label: "Prompts", icon: FileText },
+    { key: "runs", label: "Runs", icon: FileStack },
+    { key: "groups", label: "Groups", icon: ListTree },
+    { key: "responses", label: "Responses", icon: MessageSquareText },
     { key: "sources", label: "Sources", icon: Link2 },
-    { key: "models", label: "Models", icon: Bot },
   ];
 
 export function AppSidebar({
@@ -43,9 +56,6 @@ export function AppSidebar({
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">OpenPeec</span>
-                <span className="text-muted-foreground truncate text-xs">
-                  Visibility Lab
-                </span>
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -53,8 +63,7 @@ export function AppSidebar({
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup data-tour="sidebar-nav">
-          <SidebarGroupLabel>Platform</SidebarGroupLabel>
+        <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
               {mainPages.map((item) => (
@@ -69,16 +78,6 @@ export function AppSidebar({
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarGroup className="mt-auto">
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <ModeToggle />
-              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

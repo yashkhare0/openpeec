@@ -1,35 +1,22 @@
-import { useState } from "react";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { InlineEmpty } from "./EmptyState";
+import { DashboardCardSkeleton } from "./LoadingState";
 
 type TrendPoint = {
   label: string;
-  visibility: number;
   citation: number;
   coverage: number;
 };
 
 const chartConfig = {
-  visibility: {
-    label: "Visibility",
-    color: "oklch(0.623 0.214 259.815)",
-  },
   citation: {
     label: "Citation Quality",
     color: "oklch(0.705 0.213 47.604)",
@@ -40,21 +27,39 @@ const chartConfig = {
   },
 } satisfies ChartConfig;
 
-type SeriesKey = "visibility" | "citation" | "coverage";
+type SeriesKey = "citation" | "coverage";
 
-export function TrendChart({ trend }: { trend: TrendPoint[] }) {
-  const [activeSeries, setActiveSeries] = useState<SeriesKey>("visibility");
+const allSeries: SeriesKey[] = ["citation", "coverage"];
 
-  const allSeries: SeriesKey[] = ["visibility", "citation", "coverage"];
+export function TrendChart({
+  trend,
+  loading = false,
+}: {
+  trend: TrendPoint[];
+  loading?: boolean;
+}) {
+  if (loading) {
+    return (
+      <DashboardCardSkeleton
+        className="@container/chart"
+        titleWidth="w-16"
+        showDescription={false}
+        contentClassName="px-2 pt-0 sm:px-6"
+      >
+        <div className="flex justify-end gap-3 pb-4">
+          <div className="bg-muted/60 h-4 w-28 animate-pulse rounded-full" />
+          <div className="bg-muted/60 h-4 w-24 animate-pulse rounded-full" />
+        </div>
+        <div className="bg-muted/50 h-[250px] w-full animate-pulse rounded-xl border" />
+      </DashboardCardSkeleton>
+    );
+  }
 
   if (trend.length === 0) {
     return (
       <Card>
         <CardHeader>
           <CardTitle>Trend</CardTitle>
-          <CardDescription>
-            Visibility, citations, and coverage over time.
-          </CardDescription>
         </CardHeader>
         <CardContent>
           <InlineEmpty text="No trend data in this range." />
@@ -66,35 +71,20 @@ export function TrendChart({ trend }: { trend: TrendPoint[] }) {
   return (
     <Card className="@container/chart">
       <CardHeader>
-        <CardTitle>Trend</CardTitle>
-        <CardDescription>
-          Visibility, citations, and coverage over time.
-        </CardDescription>
-        <CardAction>
-          <ToggleGroup
-            type="single"
-            value={activeSeries}
-            onValueChange={(v) => {
-              if (v) setActiveSeries(v as SeriesKey);
-            }}
-            variant="outline"
-            className="gap-1"
-          >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle>Trend</CardTitle>
+          <div className="text-muted-foreground flex flex-wrap items-center gap-3 text-xs">
             {allSeries.map((key) => (
-              <ToggleGroupItem
-                key={key}
-                value={key}
-                className="h-7 px-2.5 text-xs capitalize"
-              >
-                <div
-                  className="mr-1.5 size-2 rounded-full"
+              <span key={key} className="inline-flex items-center gap-2">
+                <span
+                  className="size-2 rounded-full"
                   style={{ background: chartConfig[key].color }}
                 />
                 {chartConfig[key].label}
-              </ToggleGroupItem>
+              </span>
             ))}
-          </ToggleGroup>
-        </CardAction>
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="px-2 pt-0 sm:px-6">
         <ChartContainer
@@ -129,10 +119,10 @@ export function TrendChart({ trend }: { trend: TrendPoint[] }) {
                 dataKey={key}
                 type="monotone"
                 stroke={chartConfig[key].color}
-                strokeWidth={activeSeries === key ? 2.5 : 1.5}
-                strokeOpacity={activeSeries === key ? 1 : 0.3}
+                strokeWidth={2}
+                strokeOpacity={1}
                 dot={false}
-                activeDot={activeSeries === key ? { r: 4 } : false}
+                activeDot={{ r: 4 }}
               />
             ))}
           </LineChart>

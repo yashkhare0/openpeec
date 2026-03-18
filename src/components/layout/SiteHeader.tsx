@@ -1,4 +1,4 @@
-import { GraduationCap, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -42,7 +42,6 @@ export function SiteHeader({
   modelFilter,
   onModelFilter,
   onRefresh,
-  onStartTutorial,
   breadcrumbs,
 }: {
   rangeDays: number;
@@ -50,7 +49,6 @@ export function SiteHeader({
   modelFilter: string;
   onModelFilter: (value: string) => void;
   onRefresh: () => void;
-  onStartTutorial: () => void;
   breadcrumbs?: Array<{ label: string; onClick?: () => void }>;
 }) {
   return (
@@ -87,10 +85,7 @@ export function SiteHeader({
           ) : null}
         </div>
 
-        <div
-          data-tour="header-filters"
-          className="flex flex-wrap items-center gap-2"
-        >
+        <div className="flex flex-wrap items-center gap-2">
           <Select
             value={rangeDays.toString()}
             onValueChange={(v) => onRangeDays(Number(v))}
@@ -127,15 +122,6 @@ export function SiteHeader({
             onClick={onRefresh}
           >
             <RefreshCw className="size-4" />
-          </Button>
-          <Button
-            data-tour="tutorial-btn"
-            variant="outline"
-            size="sm"
-            onClick={onStartTutorial}
-          >
-            <GraduationCap className="mr-1.5 size-4" />
-            Run Tutorial
           </Button>
         </div>
       </div>

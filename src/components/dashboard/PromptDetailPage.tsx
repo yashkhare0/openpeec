@@ -52,8 +52,7 @@ function titleCase(value: string): string {
 }
 
 const responseChartConfig = {
-  visibility: { label: "Visibility", color: "var(--chart-1)" },
-  citation: { label: "Citation", color: "var(--chart-2)" },
+  citation: { label: "Citation quality", color: "var(--chart-2)" },
   sources: { label: "Sources", color: "var(--chart-3)" },
 } satisfies ChartConfig;
 
@@ -89,7 +88,6 @@ export function PromptDetailPage({
           startedAt: number;
           finishedAt?: number;
           model: string;
-          visibilityScore?: number;
           citationQualityScore?: number;
           averageCitationPosition?: number;
           responseSummary?: string;
@@ -143,7 +141,6 @@ export function PromptDetailPage({
     .reverse()
     .map((response, index) => ({
       label: `R${index + 1}`,
-      visibility: response.visibilityScore ?? 0,
       citation: response.citationQualityScore ?? 0,
       sources: response.sourceCount,
     }));
@@ -207,8 +204,7 @@ export function PromptDetailPage({
               <CardHeader>
                 <CardTitle>Response Variance</CardTitle>
                 <CardDescription>
-                  Visibility, citation quality, and source count across captured
-                  responses.
+                  Citation quality and source count across captured responses.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -232,13 +228,6 @@ export function PromptDetailPage({
                       <YAxis tickLine={false} axisLine={false} width={32} />
                       <ChartTooltip
                         content={<ChartTooltipContent indicator="line" />}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="visibility"
-                        stroke="var(--color-visibility)"
-                        strokeWidth={2.5}
-                        dot={false}
                       />
                       <Line
                         type="monotone"
@@ -349,11 +338,6 @@ export function PromptDetailPage({
                         <Badge variant="outline">
                           {response.sourceCount} sources
                         </Badge>
-                        {response.visibilityScore !== undefined ? (
-                          <Badge variant="outline">
-                            Visibility {formatPercent(response.visibilityScore)}
-                          </Badge>
-                        ) : null}
                         {response.citationQualityScore !== undefined ? (
                           <Badge variant="outline">
                             Citation{" "}

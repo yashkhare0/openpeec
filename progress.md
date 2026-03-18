@@ -17,3 +17,25 @@
 - Added a dedicated cross-device continuation plan into `task_plan.md`.
 - Documented cross-device constraints and portability findings in `findings.md`.
 - Defined a single reproducibility gate (`pnpm check`) for handoff between devices.
+- Started scoped UI/IA refactor requested on 2026-03-18:
+  - planned `/prompts`, `/runs`, `/groups`, `/responses`, and `/models` removal work
+  - synced planning files with active request
+- Implemented dashboard navigation + page routing updates:
+  - added `Runs`, `Groups`, `Responses`
+  - removed `Models` from active navigation/rendering
+- Reworked prompts table interactions:
+  - three-dot row action menu
+  - `Run` + `Add To Group` flow
+  - top-5 group picks plus view-all/create-group in secondary panel
+  - removed Prompt Groups and Execution Plans side cards
+- Added/updated pages for requested IA:
+  - runs list + run details drill-down
+  - groups grid with prompt listings and add-more affordance
+  - responses table with drill-down
+- Verified end-to-end gates pass:
+  - `pnpm.cmd format:check`
+  - `pnpm.cmd typecheck`
+  - `pnpm.cmd lint`
+  - `pnpm.cmd test:once`
+  - `pnpm.cmd test:e2e`
+  - `pnpm.cmd check`

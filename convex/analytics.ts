@@ -87,6 +87,10 @@ function isTerminalRunStatus(status: PromptRunDoc["status"]): boolean {
   return status === "success" || status === "failed";
 }
 
+function isSuccessfulRunStatus(status: PromptRunDoc["status"]): boolean {
+  return status === "success";
+}
+
 function toPercent(value: number | undefined): number | undefined {
   if (value === undefined) {
     return undefined;
@@ -1084,7 +1088,10 @@ export const completePromptRun = mutation({
       throw new Error("Prompt run not found");
     }
 
-    const citationInputs = normalizeCitationInputs(args.citations ?? []);
+    const shouldPersistCitations = isSuccessfulRunStatus(args.status);
+    const citationInputs = shouldPersistCitations
+      ? normalizeCitationInputs(args.citations ?? [])
+      : [];
     const positionValues = citationInputs.map((citation) => citation.position);
     const qualityValues = citationInputs
       .map((citation) => citation.qualityScore)
@@ -1117,16 +1124,22 @@ export const completePromptRun = mutation({
       latencyMs: args.latencyMs,
       responseText: args.responseText,
       responseSummary: args.responseSummary,
-      visibilityScore: args.visibilityScore ?? derivedVisibility,
-      citationQualityScore: args.citationQualityScore ?? derivedCitationQuality,
-      averageCitationPosition:
-        args.averageCitationPosition ?? derivedAveragePosition,
+      visibilityScore: shouldPersistCitations
+        ? (args.visibilityScore ?? derivedVisibility)
+        : undefined,
+      citationQualityScore: shouldPersistCitations
+        ? (args.citationQualityScore ?? derivedCitationQuality)
+        : undefined,
+      averageCitationPosition: shouldPersistCitations
+        ? (args.averageCitationPosition ?? derivedAveragePosition)
+        : undefined,
       runLabel: args.runLabel ?? run.runLabel,
-      sourceCount:
-        args.sourceCount ??
-        new Set(
-          citationInputs.map((citation) => normalizeDomain(citation.domain))
-        ).size,
+      sourceCount: shouldPersistCitations
+        ? (args.sourceCount ??
+          new Set(
+            citationInputs.map((citation) => normalizeDomain(citation.domain))
+          ).size)
+        : 0,
       deeplinkUsed: args.deeplinkUsed,
       evidencePath: args.evidencePath,
       output: args.output,
@@ -1134,7 +1147,9 @@ export const completePromptRun = mutation({
       runner: args.runner,
     });
 
-    await insertCitationsForRun(ctx, args.runId, citationInputs);
+    if (shouldPersistCitations) {
+      await insertCitationsForRun(ctx, args.runId, citationInputs);
+    }
 
     return { runId: args.runId, citationCount: citationInputs.length };
   },
@@ -1306,7 +1321,10 @@ export const ingestPromptRun = mutation({
       throw new Error("Unauthorized ingest");
     }
 
-    const citationInputs = normalizeCitationInputs(args.citations ?? []);
+    const shouldPersistCitations = isSuccessfulRunStatus(args.status);
+    const citationInputs = shouldPersistCitations
+      ? normalizeCitationInputs(args.citations ?? [])
+      : [];
     const positionValues = citationInputs.map((citation) => citation.position);
     const qualityValues = citationInputs
       .map((citation) => citation.qualityScore)
@@ -1334,23 +1352,31 @@ export const ingestPromptRun = mutation({
       latencyMs: args.latencyMs,
       responseText: args.responseText,
       responseSummary: args.responseSummary,
-      visibilityScore: args.visibilityScore ?? derivedVisibility,
-      citationQualityScore: args.citationQualityScore ?? derivedCitationQuality,
-      averageCitationPosition:
-        args.averageCitationPosition ?? derivedAveragePosition,
+      visibilityScore: shouldPersistCitations
+        ? (args.visibilityScore ?? derivedVisibility)
+        : undefined,
+      citationQualityScore: shouldPersistCitations
+        ? (args.citationQualityScore ?? derivedCitationQuality)
+        : undefined,
+      averageCitationPosition: shouldPersistCitations
+        ? (args.averageCitationPosition ?? derivedAveragePosition)
+        : undefined,
       runLabel: args.runLabel,
-      sourceCount:
-        args.sourceCount ??
-        new Set(
-          citationInputs.map((citation) => normalizeDomain(citation.domain))
-        ).size,
+      sourceCount: shouldPersistCitations
+        ? (args.sourceCount ??
+          new Set(
+            citationInputs.map((citation) => normalizeDomain(citation.domain))
+          ).size)
+        : 0,
       deeplinkUsed: args.deeplinkUsed,
       evidencePath: args.evidencePath,
       output: args.output,
       warnings: args.warnings,
     });
 
-    await insertCitationsForRun(ctx, runId, citationInputs);
+    if (shouldPersistCitations) {
+      await insertCitationsForRun(ctx, runId, citationInputs);
+    }
 
     return { runId, citationCount: citationInputs.length };
   },
@@ -1399,6 +1425,9 @@ export const listPromptRuns = query({
 
     const citationCounts = await Promise.all(
       runs.map(async (run) => {
+        if (!isSuccessfulRunStatus(run.status)) {
+          return { runId: run._id, count: 0 };
+        }
         const citations = await ctx.db
           .query("citations")
           .withIndex("promptRunId", (q) => q.eq("promptRunId", run._id))
@@ -1412,6 +1441,16 @@ export const listPromptRuns = query({
 
     return runs.map((run) => ({
       ...run,
+      citationQualityScore: isSuccessfulRunStatus(run.status)
+        ? run.citationQualityScore
+        : undefined,
+      averageCitationPosition: isSuccessfulRunStatus(run.status)
+        ? run.averageCitationPosition
+        : undefined,
+      visibilityScore: isSuccessfulRunStatus(run.status)
+        ? run.visibilityScore
+        : undefined,
+      sourceCount: isSuccessfulRunStatus(run.status) ? run.sourceCount : 0,
       promptName: promptNameById.get(run.promptId) ?? "Unknown prompt",
       citationCount: citationCountByRun.get(run._id) ?? 0,
     }));
@@ -1480,15 +1519,15 @@ export const listPromptResponseAnalytics = query({
         const promptRuns = scopedRuns
           .filter((run) => run.promptId === prompt._id)
           .sort((left, right) => right.startedAt - left.startedAt);
-        const completedRuns = promptRuns.filter((run) =>
-          isTerminalRunStatus(run.status)
+        const successfulRuns = promptRuns.filter((run) =>
+          isSuccessfulRunStatus(run.status)
         );
         const latestRun = promptRuns[0];
-        const latestCompletedRun = completedRuns[0];
-        const latestCitations = latestCompletedRun
-          ? (citationsByRun.get(latestCompletedRun._id) ?? [])
+        const latestSuccessfulRun = successfulRuns[0];
+        const latestCitations = latestSuccessfulRun
+          ? (citationsByRun.get(latestSuccessfulRun._id) ?? [])
           : [];
-        const allPromptCitations = completedRuns.flatMap(
+        const allPromptCitations = successfulRuns.flatMap(
           (run) => citationsByRun.get(run._id) ?? []
         );
         const uniqueDomains = uniqueStrings(
@@ -1500,7 +1539,7 @@ export const listPromptResponseAnalytics = query({
           ).keys(),
         ].slice(0, 3);
         const sourceVariance = computeSourceVariance(
-          completedRuns
+          successfulRuns
             .slice(0, 5)
             .map((run) =>
               (citationsByRun.get(run._id) ?? []).map(
@@ -1509,7 +1548,7 @@ export const listPromptResponseAnalytics = query({
             )
         );
         const responseDrift = computeResponseDrift(
-          completedRuns
+          successfulRuns
             .slice(0, 5)
             .map((run) => run.responseText ?? run.responseSummary)
         );
@@ -1522,7 +1561,7 @@ export const listPromptResponseAnalytics = query({
             citationCount: number;
           }
         >();
-        for (const run of completedRuns.slice(0, 5)) {
+        for (const run of successfulRuns.slice(0, 5)) {
           const mentions = extractEntityMentions(
             run.responseText ?? run.responseSummary,
             citationsByRun.get(run._id) ?? [],
@@ -1560,18 +1599,18 @@ export const listPromptResponseAnalytics = query({
             : "Ungrouped",
           model: prompt.targetModel,
           active: prompt.active,
-          responseCount: completedRuns.length,
+          responseCount: successfulRuns.length,
           latestRunAt: latestRun?.startedAt,
           latestRunId: latestRun?._id,
           latestStatus: latestRun?.status,
           latestResponseSummary:
-            latestCompletedRun?.responseSummary ??
-            latestCompletedRun?.responseText ??
+            latestSuccessfulRun?.responseSummary ??
+            latestSuccessfulRun?.responseText ??
             undefined,
           latestSourceCount:
-            latestCompletedRun?.sourceCount ?? latestCitations.length,
-          latestVisibility: latestCompletedRun?.visibilityScore,
-          latestCitationQuality: latestCompletedRun?.citationQualityScore,
+            latestSuccessfulRun?.sourceCount ?? latestCitations.length,
+          latestVisibility: latestSuccessfulRun?.visibilityScore,
+          latestCitationQuality: latestSuccessfulRun?.citationQualityScore,
           sourceDiversity: uniqueDomains.length,
           topSources,
           topEntities,
@@ -1622,7 +1661,9 @@ export const getPromptAnalysis = query({
     const citationsByRun = buildCitationMap(citations);
 
     const responses = filteredRuns.map((run) => {
-      const runCitations = citationsByRun.get(run._id) ?? [];
+      const runCitations = isSuccessfulRunStatus(run.status)
+        ? (citationsByRun.get(run._id) ?? [])
+        : [];
       const mentions = extractEntityMentions(
         run.responseText ?? run.responseSummary,
         runCitations,
@@ -1634,12 +1675,20 @@ export const getPromptAnalysis = query({
         startedAt: run.startedAt,
         finishedAt: run.finishedAt,
         model: run.model,
-        visibilityScore: run.visibilityScore,
-        citationQualityScore: run.citationQualityScore,
-        averageCitationPosition: run.averageCitationPosition,
+        visibilityScore: isSuccessfulRunStatus(run.status)
+          ? run.visibilityScore
+          : undefined,
+        citationQualityScore: isSuccessfulRunStatus(run.status)
+          ? run.citationQualityScore
+          : undefined,
+        averageCitationPosition: isSuccessfulRunStatus(run.status)
+          ? run.averageCitationPosition
+          : undefined,
         responseSummary: run.responseSummary,
         responseTextPreview: (run.responseText ?? "").slice(0, 320),
-        sourceCount: run.sourceCount ?? runCitations.length,
+        sourceCount: isSuccessfulRunStatus(run.status)
+          ? (run.sourceCount ?? runCitations.length)
+          : 0,
         sourceDomains: uniqueStrings(
           runCitations.map((citation) => citation.domain)
         ).slice(0, 6),
@@ -1650,7 +1699,7 @@ export const getPromptAnalysis = query({
     });
 
     const completedRuns = filteredRuns.filter((run) =>
-      isTerminalRunStatus(run.status)
+      isSuccessfulRunStatus(run.status)
     );
     const allCitations = completedRuns.flatMap(
       (run) => citationsByRun.get(run._id) ?? []
@@ -1796,10 +1845,12 @@ export const getPromptRun = query({
 
     const prompt = await ctx.db.get(run.promptId);
     const trackedEntities = await ctx.db.query("trackedEntities").collect();
-    const citations = await ctx.db
-      .query("citations")
-      .withIndex("promptRunId", (q) => q.eq("promptRunId", args.id))
-      .collect();
+    const citations = isSuccessfulRunStatus(run.status)
+      ? await ctx.db
+          .query("citations")
+          .withIndex("promptRunId", (q) => q.eq("promptRunId", args.id))
+          .collect()
+      : [];
     const trackedEntityIds = citations
       .map((citation) => citation.trackedEntityId)
       .filter((id): id is Id<"trackedEntities"> => id !== undefined);
@@ -1835,7 +1886,19 @@ export const getPromptRun = query({
     }
 
     return {
-      run,
+      run: {
+        ...run,
+        sourceCount: isSuccessfulRunStatus(run.status) ? run.sourceCount : 0,
+        citationQualityScore: isSuccessfulRunStatus(run.status)
+          ? run.citationQualityScore
+          : undefined,
+        averageCitationPosition: isSuccessfulRunStatus(run.status)
+          ? run.averageCitationPosition
+          : undefined,
+        visibilityScore: isSuccessfulRunStatus(run.status)
+          ? run.visibilityScore
+          : undefined,
+      },
       prompt,
       output,
       mentions: extractEntityMentions(
@@ -1879,7 +1942,7 @@ export const listSources = query({
       if (args.model && run.model !== args.model) {
         return false;
       }
-      if (!isTerminalRunStatus(run.status)) {
+      if (!isSuccessfulRunStatus(run.status)) {
         return false;
       }
       return true;
@@ -2065,10 +2128,16 @@ export const getOverview = query({
     const previousRuns = filteredRuns.filter(
       (run) => run.startedAt >= previousStart && run.startedAt < currentStart
     );
+    const currentSuccessfulRuns = currentRuns.filter((run) =>
+      isSuccessfulRunStatus(run.status)
+    );
+    const previousSuccessfulRuns = previousRuns.filter((run) =>
+      isSuccessfulRunStatus(run.status)
+    );
 
-    const currentMetrics = summarizeRunMetrics(currentRuns);
-    const previousMetrics = summarizeRunMetrics(previousRuns);
-    const currentRunIds = currentRuns.map((run) => run._id);
+    const currentMetrics = summarizeRunMetrics(currentSuccessfulRuns);
+    const previousMetrics = summarizeRunMetrics(previousSuccessfulRuns);
+    const currentRunIds = currentSuccessfulRuns.map((run) => run._id);
     const currentCitations = await collectCitationsForRuns(ctx, currentRunIds);
     const totalCitations = currentCitations.length;
     const trackedEntities = await ctx.db.query("trackedEntities").collect();
@@ -2082,7 +2151,7 @@ export const getOverview = query({
         runs: PromptRunDoc[];
       }
     >();
-    for (const run of currentRuns) {
+    for (const run of currentSuccessfulRuns) {
       const day = seriesDateKey(run.startedAt);
       const entry = trendByDay.get(day);
       if (entry) {
@@ -2106,13 +2175,17 @@ export const getOverview = query({
       .sort((a, b) => a.day.localeCompare(b.day));
 
     const modelSet = new Set<string>([
-      ...currentRuns.map((run) => run.model),
-      ...previousRuns.map((run) => run.model),
+      ...currentSuccessfulRuns.map((run) => run.model),
+      ...previousSuccessfulRuns.map((run) => run.model),
     ]);
     const modelComparison = [...modelSet]
       .map((model) => {
-        const modelCurrent = currentRuns.filter((run) => run.model === model);
-        const modelPrevious = previousRuns.filter((run) => run.model === model);
+        const modelCurrent = currentSuccessfulRuns.filter(
+          (run) => run.model === model
+        );
+        const modelPrevious = previousSuccessfulRuns.filter(
+          (run) => run.model === model
+        );
         const modelCurrentMetrics = summarizeRunMetrics(modelCurrent);
         const modelPreviousMetrics = summarizeRunMetrics(modelPrevious);
         return {
@@ -2185,7 +2258,7 @@ export const getOverview = query({
 
     const promptComparison = prompts
       .map((prompt) => {
-        const promptRuns = currentRuns
+        const promptRuns = currentSuccessfulRuns
           .filter((run) => run.promptId === prompt._id)
           .sort((left, right) => right.startedAt - left.startedAt);
         if (!promptRuns.length) {
@@ -2233,7 +2306,7 @@ export const getOverview = query({
         citationCount: number;
       }
     >();
-    for (const run of currentRuns) {
+    for (const run of currentSuccessfulRuns) {
       const mentions = extractEntityMentions(
         run.responseText ?? run.responseSummary,
         currentCitationsByRun.get(run._id) ?? [],
@@ -2278,16 +2351,13 @@ export const getOverview = query({
     return {
       kpis: {
         rangeDays,
-        totalRuns: currentMetrics.runCount,
+        totalRuns: currentRuns.length,
         totalCitations,
         visibility: currentMetrics.visibility,
         citationQuality: currentMetrics.citationQuality,
         averageCitationPosition: currentMetrics.position,
-        runSuccessRate: currentMetrics.runCount
-          ? toPercent(
-              currentRuns.filter((run) => run.status === "success").length /
-                currentMetrics.runCount
-            )
+        runSuccessRate: currentRuns.length
+          ? toPercent(currentSuccessfulRuns.length / currentRuns.length)
           : 0,
         deltaVisibility:
           currentMetrics.visibility !== undefined &&

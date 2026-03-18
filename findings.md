@@ -35,3 +35,11 @@
 - The minimum reproducibility gate across devices is `pnpm check`.
 - Runner evidence under `runner/artifacts/` is useful for local diagnosis but should not be used as the source of truth for analytics.
 - The source of truth for analytics continuity is Convex data (`promptRuns`, `citations`, prompt metadata), not local screenshots/videos.
+
+## UI Refactor Findings (2026-03-18)
+
+- Current dashboard page model is still keyed by `overview`, `prompts`, `sources`, `models`; requested IA needs `runs`, `groups`, `responses` and no `models`.
+- Prompt list currently uses inline action buttons and includes right-side cards (`Prompt Groups`, `Execution Plans`) that conflict with the new simplified list workflow.
+- Convex already exposes core read queries needed for new pages (`listPromptRuns`, `getPromptRun`, `listPromptGroups`, `listPrompts`), so this pass is mostly frontend composition and routing.
+- Implemented IA now uses `overview`, `prompts`, `runs`, `groups`, `responses`, `sources` with shared run-detail drill-down and no `models` tab.
+- Prompt actions now use a single three-dot control with `Run` and `Add To Group`; group assignment supports top-5 quick picks, `View all`, and inline `Create new group`.

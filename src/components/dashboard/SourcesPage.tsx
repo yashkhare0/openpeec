@@ -1,4 +1,5 @@
 import type { Id } from "../../../convex/_generated/dataModel";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,7 +54,8 @@ const typeColors: Record<string, string> = {
   corporate:
     "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-300",
   docs: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300",
-  news: "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-300",
+  social: "bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-300",
+  other: "bg-muted text-muted-foreground",
 };
 
 export function SourcesPage({
@@ -68,7 +70,6 @@ export function SourcesPage({
   onCreateEntity,
   onUpdateEntity,
   onDeleteEntity,
-  onNotice,
 }: {
   sources: Array<{
     domain: string;
@@ -81,7 +82,6 @@ export function SourcesPage({
     avgQualityScore?: number;
     avgPosition?: number;
     ownedShare: number;
-    promptNames?: string[];
     latestResponses?: Array<{
       runId: Id<"promptRuns">;
       promptId: Id<"prompts">;
@@ -90,7 +90,6 @@ export function SourcesPage({
       responseSummary: string;
       position: number;
     }>;
-    mentionedEntities?: string[];
   }>;
   entities: Array<{
     _id: Id<"trackedEntities">;
@@ -118,10 +117,12 @@ export function SourcesPage({
   onDeleteEntity: (args: {
     id: Id<"trackedEntities">;
   }) => Promise<Id<"trackedEntities">>;
-  onNotice: (text: string) => void;
 }) {
   const createEntity = async () => {
-    if (!newEntityName.trim()) return onNotice("Entity name is required.");
+    if (!newEntityName.trim()) {
+      toast.error("Entity name is required.");
+      return;
+    }
     const ownedDomains = newEntityDomain
       .split(",")
       .map((d) => d.trim())
@@ -134,9 +135,9 @@ export function SourcesPage({
       });
       onNewEntityName("");
       onNewEntityDomain("");
-      onNotice("Tracked entity created.");
+      toast.success("Tracked entity created.");
     } catch (error) {
-      onNotice(errorMessage(error));
+      toast.error(errorMessage(error));
     }
   };
 
@@ -148,9 +149,9 @@ export function SourcesPage({
     if (!next || next.trim() === currentName) return;
     try {
       await onUpdateEntity({ id, name: next.trim() });
-      onNotice("Tracked entity updated.");
+      toast.success("Tracked entity updated.");
     } catch (error) {
-      onNotice(errorMessage(error));
+      toast.error(errorMessage(error));
     }
   };
 
@@ -161,7 +162,7 @@ export function SourcesPage({
           <CardHeader>
             <CardTitle>Sources</CardTitle>
             <CardDescription>
-              Domains ranked by usage and citation quality.
+              Domains ranked by citation frequency and quality.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -171,12 +172,10 @@ export function SourcesPage({
                   <TableRow>
                     <TableHead>Domain</TableHead>
                     <TableHead>Type</TableHead>
-                    <TableHead className="text-right">Used</TableHead>
+                    <TableHead className="text-right">Used share</TableHead>
                     <TableHead className="text-right">Responses</TableHead>
-                    <TableHead className="text-right">Avg cites/run</TableHead>
-                    <TableHead className="text-right">Quality</TableHead>
-                    <TableHead className="text-right">Position</TableHead>
-                    <TableHead className="text-right">Owned share</TableHead>
+                    <TableHead className="text-right">Avg quality</TableHead>
+                    <TableHead>Latest response</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -213,56 +212,29 @@ export function SourcesPage({
                         {s.responseCount}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {s.avgCitationsPerRun.toFixed(1)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
                         {s.avgQualityScore !== undefined
                           ? Math.round(s.avgQualityScore)
                           : "-"}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {s.avgPosition !== undefined
-                          ? `#${s.avgPosition.toFixed(1)}`
-                          : "-"}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatPercent(s.ownedShare)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {sources.map((s) => (
-                    <TableRow
-                      key={`${s.domain}-detail`}
-                      className="bg-muted/20"
-                    >
-                      <TableCell colSpan={8}>
-                        <div className="flex flex-col gap-2 py-1">
-                          <p className="text-muted-foreground text-xs tracking-[0.16em] uppercase">
-                            Prompt and response lineage
-                          </p>
-                          <p className="text-muted-foreground text-sm">
-                            {(s.promptNames ?? []).join(", ") ||
-                              "No prompt lineage recorded."}
-                          </p>
+                      <TableCell>
+                        <div className="space-y-1">
                           {s.latestResponses?.[0] ? (
-                            <p className="text-foreground/85 text-sm">
-                              Latest: {s.latestResponses[0].promptName}{" "}
-                              referenced this source at #
-                              {s.latestResponses[0].position} in the response.
+                            <>
+                              <p className="text-sm font-medium">
+                                {s.latestResponses[0].promptName}
+                              </p>
+                              <p className="text-muted-foreground text-xs">
+                                {formatFreshness(
+                                  s.latestResponses[0].startedAt
+                                )}{" "}
+                                · #{s.latestResponses[0].position}
+                              </p>
+                            </>
+                          ) : (
+                            <p className="text-muted-foreground text-sm">
+                              No response lineage
                             </p>
-                          ) : null}
-                          {(s.mentionedEntities ?? []).length ? (
-                            <div className="flex flex-wrap gap-1.5">
-                              {(s.mentionedEntities ?? []).map((entity) => (
-                                <Badge
-                                  key={`${s.domain}-${entity}`}
-                                  variant="outline"
-                                >
-                                  {entity}
-                                </Badge>
-                              ))}
-                            </div>
-                          ) : null}
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -361,13 +333,13 @@ export function SourcesPage({
                           active: !entity.active,
                         })
                           .then(() =>
-                            onNotice(
+                            toast.success(
                               entity.active
                                 ? "Entity paused."
                                 : "Entity resumed."
                             )
                           )
-                          .catch((e: unknown) => onNotice(errorMessage(e)))
+                          .catch((e: unknown) => toast.error(errorMessage(e)))
                       }
                     >
                       {entity.active ? "Pause" : "Resume"}
@@ -378,8 +350,8 @@ export function SourcesPage({
                       className="text-destructive h-7 text-xs"
                       onClick={() =>
                         void onDeleteEntity({ id: entity._id })
-                          .then(() => onNotice("Entity deleted."))
-                          .catch((e: unknown) => onNotice(errorMessage(e)))
+                          .then(() => toast.success("Entity deleted."))
+                          .catch((e: unknown) => toast.error(errorMessage(e)))
                       }
                     >
                       Delete
@@ -393,4 +365,12 @@ export function SourcesPage({
       </div>
     </div>
   );
+}
+
+function formatFreshness(timestamp: number) {
+  const minutes = Math.max(1, Math.round((Date.now() - timestamp) / 60000));
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
 }

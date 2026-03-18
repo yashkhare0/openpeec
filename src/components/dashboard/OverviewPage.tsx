@@ -1,11 +1,4 @@
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -14,18 +7,30 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { DomainTable } from "./components/DomainTable";
-import { EmptyState, InlineEmpty } from "./components/EmptyState";
 import { KpiCards } from "./components/KpiCards";
-import { SourceMixChart } from "./components/SourceMixChart";
+import { EmptyState, InlineEmpty } from "./components/EmptyState";
+import {
+  DashboardCardSkeleton,
+  DashboardTableCardSkeleton,
+} from "./components/LoadingState";
 import { TrendChart } from "./components/TrendChart";
 
 type Tone = "positive" | "negative" | "neutral";
 type TrendPoint = {
   label: string;
-  visibility: number;
   citation: number;
   coverage: number;
+};
+
+type OverviewRun = {
+  id: string;
+  promptName: string;
+  status: string;
+  startedAt: number;
+  finishedAt?: number;
+  latencyMs?: number;
+  sourceCount?: number;
+  citationCount: number;
 };
 
 function formatPercent(value: number | undefined): string {
@@ -40,7 +45,7 @@ export function OverviewPage({
   trend,
   overview,
   sources,
-  sourceMix,
+  recentRuns,
 }: {
   loading: boolean;
   hasData: boolean;
@@ -58,14 +63,6 @@ export function OverviewPage({
           responseDrift?: number;
           topEntity?: string;
         }>;
-        entityLeaderboard: Array<{
-          entityId: string;
-          name: string;
-          kind: string;
-          mentionCount: number;
-          responseCount: number;
-          citationCount: number;
-        }>;
       }
     | undefined;
   sources: Array<{
@@ -74,14 +71,8 @@ export function OverviewPage({
     usedShare: number;
     avgCitationsPerRun: number;
     avgQualityScore: number | undefined;
-    promptCount?: number;
-    latestResponses?: Array<{
-      promptName: string;
-      responseSummary: string;
-      position: number;
-    }>;
   }>;
-  sourceMix: Array<{ type: string; share: number }>;
+  recentRuns: OverviewRun[];
 }) {
   if (!loading && !hasData) {
     return (
@@ -98,226 +89,261 @@ export function OverviewPage({
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="grid gap-4 px-4 lg:px-6 xl:grid-cols-[minmax(0,1.12fr)_380px]">
-        <div className="flex flex-col gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Visibility Command Center</CardTitle>
-              <CardDescription>
-                Track how prompts change over time, which brands appear in the
-                answers, and which sources ChatGPT is actually using.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <KpiCards kpis={kpis} />
-            </CardContent>
-          </Card>
+      <div className="space-y-4 px-4 lg:px-6">
+        <KpiCards kpis={kpis} loading={loading} />
 
-          <div
-            data-tour="charts-area"
-            className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.92fr)]"
-          >
-            <TrendChart trend={trend} />
-            <Card>
-              <CardHeader>
-                <CardTitle>Prompt Response Variance</CardTitle>
-                <CardDescription>
-                  Which prompts are changing most across their captured
-                  responses.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {(overview?.promptComparison?.length ?? 0) === 0 ? (
-                  <InlineEmpty text="No prompt comparison data yet." />
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Prompt</TableHead>
-                        <TableHead className="text-right">Responses</TableHead>
-                        <TableHead className="text-right">Drift</TableHead>
-                        <TableHead className="text-right">Sources</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {overview?.promptComparison.slice(0, 6).map((row) => (
-                        <TableRow key={row.promptId}>
-                          <TableCell>
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <p className="font-medium">{row.name}</p>
-                                <Badge variant="outline">
-                                  {row.latestStatus}
-                                </Badge>
-                              </div>
-                              <p className="text-muted-foreground line-clamp-2 text-xs">
-                                {row.latestResponseSummary ||
-                                  "No completed response yet."}
-                              </p>
-                              {row.topEntity ? (
-                                <p className="text-muted-foreground text-[11px] tracking-[0.16em] uppercase">
-                                  Top brand/entity: {row.topEntity}
-                                </p>
-                              ) : null}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {row.responseCount}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {formatPercent(row.responseDrift)}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {row.sourceDiversity}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+          <TrendChart trend={trend} loading={loading} />
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.92fr)]">
-            <DomainTable sources={sources} />
-            <Card>
-              <CardHeader>
-                <CardTitle>Latest Source Attribution</CardTitle>
-                <CardDescription>
-                  Which prompt responses most recently cited each source.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {sources.length === 0 ? (
-                  <InlineEmpty text="No source attribution data yet." />
-                ) : (
-                  <div className="space-y-3">
-                    {sources.slice(0, 6).map((source) => (
-                      <div
-                        key={source.domain}
-                        className="bg-muted/20 rounded-xl border p-3"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="font-medium">{source.domain}</p>
-                            <p className="text-muted-foreground text-xs">
-                              Used in {source.promptCount ?? 0} prompts
-                            </p>
-                          </div>
-                          <Badge variant="outline">{source.type}</Badge>
-                        </div>
-                        {source.latestResponses?.[0] ? (
-                          <div className="mt-3 space-y-1">
-                            <p className="text-muted-foreground text-xs tracking-[0.16em] uppercase">
-                              Latest prompt
-                            </p>
-                            <p className="text-foreground/90 text-sm">
-                              {source.latestResponses[0].promptName}
-                            </p>
-                            <p className="text-muted-foreground line-clamp-2 text-sm">
-                              {source.latestResponses[0].responseSummary}
-                            </p>
-                          </div>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Brands and Entities</CardTitle>
-              <CardDescription>
-                Which brands or tracked entities are surfacing across responses.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {(overview?.entityLeaderboard?.length ?? 0) === 0 ? (
-                <InlineEmpty text="No tracked entity mentions yet." />
-              ) : (
+          {loading ? (
+            <DashboardCardSkeleton
+              titleWidth="w-28"
+              showDescription={false}
+              contentClassName="space-y-6"
+            >
+              <div className="space-y-3">
+                <div className="bg-muted/60 h-3 w-20 animate-pulse rounded-sm" />
                 <div className="space-y-3">
-                  {overview?.entityLeaderboard.slice(0, 8).map((entity) => (
+                  {Array.from({ length: 4 }).map((_, index) => (
                     <div
-                      key={entity.entityId}
-                      className="bg-muted/20 rounded-xl border p-3"
+                      key={`domains-${index}`}
+                      className="grid grid-cols-[minmax(0,1fr)_80px] gap-3"
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <div>
-                          <p className="font-medium">{entity.name}</p>
-                          <p className="text-muted-foreground text-xs">
-                            {entity.kind} across {entity.responseCount}{" "}
-                            responses
-                          </p>
-                        </div>
-                        <Badge variant="secondary">
-                          {entity.mentionCount} mentions
-                        </Badge>
+                      <div className="space-y-2">
+                        <div className="bg-muted/60 h-4 w-32 animate-pulse rounded-sm" />
+                        <div className="bg-muted/50 h-3 w-16 animate-pulse rounded-sm" />
                       </div>
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        <Badge variant="outline">
-                          {entity.citationCount} linked citations
-                        </Badge>
-                        <Badge variant="outline">
-                          {entity.responseCount} responses
-                        </Badge>
-                      </div>
+                      <div className="bg-muted/60 h-4 w-full animate-pulse rounded-sm" />
                     </div>
                   ))}
                 </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="bg-muted/60 h-3 w-28 animate-pulse rounded-sm" />
+                <div className="space-y-3">
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <div
+                      key={`variance-${index}`}
+                      className="grid grid-cols-[minmax(0,1fr)_80px] gap-3"
+                    >
+                      <div className="space-y-2">
+                        <div className="bg-muted/60 h-4 w-40 animate-pulse rounded-sm" />
+                        <div className="bg-muted/50 h-3 w-20 animate-pulse rounded-sm" />
+                      </div>
+                      <div className="bg-muted/60 h-4 w-full animate-pulse rounded-sm" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </DashboardCardSkeleton>
+          ) : (
+            <Card className="shadow-none">
+              <CardHeader>
+                <CardTitle>What changed</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div>
+                  <p className="text-muted-foreground mb-3 text-[11px] font-medium tracking-[0.18em] uppercase">
+                    Top domains
+                  </p>
+                  {sources.length === 0 ? (
+                    <InlineEmpty text="No source data yet." />
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Domain</TableHead>
+                          <TableHead className="text-right">Used</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sources.slice(0, 4).map((source) => (
+                          <TableRow key={source.domain}>
+                            <TableCell>
+                              <div className="space-y-1">
+                                <p className="font-medium">{source.domain}</p>
+                                <p className="text-muted-foreground text-xs">
+                                  {source.type}
+                                </p>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {formatPercent(source.usedShare)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </div>
+
+                <div>
+                  <p className="text-muted-foreground mb-3 text-[11px] font-medium tracking-[0.18em] uppercase">
+                    Prompt variance
+                  </p>
+                  {(overview?.promptComparison?.length ?? 0) === 0 ? (
+                    <InlineEmpty text="No prompt comparison data yet." />
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Prompt</TableHead>
+                          <TableHead className="text-right">Drift</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {overview?.promptComparison.slice(0, 4).map((row) => (
+                          <TableRow key={row.promptId}>
+                            <TableCell>
+                              <div className="space-y-1">
+                                <p className="font-medium">{row.name}</p>
+                                <p className="text-muted-foreground text-xs">
+                                  {row.responseCount} responses
+                                </p>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {formatPercent(row.responseDrift)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        {loading ? (
+          <DashboardTableCardSkeleton
+            titleWidth="w-24"
+            showControls={false}
+            rows={4}
+            columns={5}
+          />
+        ) : (
+          <Card className="shadow-none">
+            <CardHeader>
+              <CardTitle>Recent runs</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {recentRuns.length === 0 ? (
+                <InlineEmpty text="No runs captured yet." />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Started</TableHead>
+                      <TableHead>Prompt</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Runtime</TableHead>
+                      <TableHead className="text-right">Sources</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {recentRuns.slice(0, 4).map((run) => (
+                      <TableRow key={run.id}>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <p className="font-medium">
+                              {formatFreshness(run.startedAt)}
+                            </p>
+                            <p className="text-muted-foreground text-xs">
+                              {formatTimestamp(run.startedAt)}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {run.promptName}
+                        </TableCell>
+                        <TableCell>
+                          <span className={statusClassName(run.status)}>
+                            {titleCase(run.status)}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatRuntime(run)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {run.sourceCount ?? run.citationCount}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               )}
             </CardContent>
           </Card>
-
-          <SourceMixChart sourceMix={sourceMix} />
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Coverage Signals</CardTitle>
-              <CardDescription>
-                Read the overview as prompt quality, source quality, and brand
-                presence.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <SignalTile
-                title="Prompt variance"
-                description="High drift means the same prompt is producing materially different answers across runs."
-              />
-              <SignalTile
-                title="Source concentration"
-                description="Watch whether a small set of domains dominates citations or whether source coverage is broadening."
-              />
-              <SignalTile
-                title="Brand surfacing"
-                description="If tracked brands stop appearing in responses or citations, that is a content and visibility signal."
-              />
-            </CardContent>
-          </Card>
-        </div>
+        )}
       </div>
     </div>
   );
 }
 
-function SignalTile({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="bg-muted/20 rounded-xl border p-3">
-      <p className="text-sm font-medium">{title}</p>
-      <p className="text-muted-foreground mt-1 text-sm leading-6">
-        {description}
-      </p>
-    </div>
-  );
+function getRuntimeMs(
+  run: Pick<OverviewRun, "latencyMs" | "startedAt" | "finishedAt">
+) {
+  if (typeof run.latencyMs === "number") {
+    return run.latencyMs;
+  }
+  if (typeof run.finishedAt === "number") {
+    return Math.max(0, run.finishedAt - run.startedAt);
+  }
+  return undefined;
+}
+
+function formatRuntime(
+  run: Pick<OverviewRun, "latencyMs" | "startedAt" | "finishedAt">
+) {
+  const value = getRuntimeMs(run);
+  if (value === undefined) return "-";
+  if (value < 1000) return `${Math.round(value)}ms`;
+  const seconds = value / 1000;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = Math.round(seconds % 60);
+  return `${minutes}m ${remainder}s`;
+}
+
+function statusClassName(status: string) {
+  if (status === "success") {
+    return "text-sm font-medium text-emerald-700 dark:text-emerald-300";
+  }
+  if (status === "failed") {
+    return "text-sm font-medium text-rose-700 dark:text-rose-300";
+  }
+  if (status === "running") {
+    return "text-sm font-medium text-blue-700 dark:text-blue-300";
+  }
+  if (status === "queued") {
+    return "text-sm font-medium text-amber-700 dark:text-amber-300";
+  }
+  return "text-sm font-medium";
+}
+
+function titleCase(value: string) {
+  return value
+    .split("_")
+    .map((item) => item.charAt(0).toUpperCase() + item.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function formatFreshness(timestamp: number) {
+  const minutes = Math.max(1, Math.round((Date.now() - timestamp) / 60000));
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+function formatTimestamp(timestamp: number) {
+  return new Date(timestamp).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }

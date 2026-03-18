@@ -1,5 +1,6 @@
 import { ThemeProvider } from "./components/ThemeProvider";
 import { TooltipProvider } from "./components/ui/tooltip";
+import { Toaster } from "./components/ui/sonner";
 import { MonitoringDashboard } from "./components/dashboard/MonitoringDashboard";
 
 export default function App() {
@@ -8,6 +9,7 @@ export default function App() {
       <TooltipProvider>
         <MonitoringDashboard />
       </TooltipProvider>
+      <Toaster />
     </ThemeProvider>
   );
 }

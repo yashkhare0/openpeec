@@ -41,6 +41,16 @@ Turn `openpeec` into a local-first internal monitoring product focused on:
 - [pending] Redesign the dashboard shell and analytics pages based on the reference UI
 - [pending] Verify build/test/lint and summarize remaining gaps
 
+## Active Request Scope (2026-03-18)
+
+- [complete] `/prompts`: three-dot row actions and add-to-group secondary flow
+- [complete] `/prompts`: remove Prompt Groups and Execution Plans cards
+- [complete] `/runs`: add runs list and run detail read-only view with evidence and links
+- [complete] `/groups`: add groups grid with prompts and add-more affordance
+- [complete] `/responses`: add responses table view
+- [complete] Remove `/models` from navigation and page rendering
+- [complete] Validate with format/lint/typecheck/tests and fix regressions
+
 ## Cross-Device Continuation Plan (2026-03-18)
 
 - [in_progress] Standardize machine bootstrap and verification
@@ -93,3 +103,4 @@ Turn `openpeec` into a local-first internal monitoring product focused on:
 
 - `npm install` failed because this repo is actually `pnpm`-managed and contains `link:` dependencies that npm 11 would not reify.
 - Initial runner implementation hard-pinned `npx playwright@1.53.1` internally and failed against the installed browser payload; fixed by switching to the direct Playwright API.
+- Parallel agent edits caused transient dashboard file drift (`MonitoringDashboard.tsx` / `RunDetailPage.tsx` naming mismatch); resolved by consolidating on `RunDetailsPage.tsx` and re-running full checks.

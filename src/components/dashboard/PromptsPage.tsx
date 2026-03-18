@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { FolderPlus, MoreHorizontal, Play, Plus } from "lucide-react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -11,6 +12,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -19,7 +30,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   Table,
   TableBody,
@@ -29,8 +46,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 import { InlineEmpty } from "./components/EmptyState";
+import { DashboardTableCardSkeleton } from "./components/LoadingState";
 
 function formatPercent(value: number | undefined): string {
   if (value === undefined) return "-";
@@ -66,39 +83,22 @@ const statusTone: Record<string, string> = {
 };
 
 export function PromptsPage({
+  loading = false,
   groups,
   selectedGroup,
   onSelectGroup,
   rows,
   selectedPromptId,
   onSelectPrompt,
-  promptJobs,
-  queueSummary,
   search,
   onSearch,
-  newGroupName,
-  onNewGroupName,
-  newPromptName,
-  onNewPromptName,
-  newPromptText,
-  onNewPromptText,
-  newPromptModel,
-  onNewPromptModel,
-  newPromptGroup,
-  onNewPromptGroup,
   onCreateGroup,
-  onUpdateGroup,
-  onDeleteGroup,
   onCreatePrompt,
   onUpdatePrompt,
   onDeletePrompt,
-  onCreatePromptJob,
-  onUpdatePromptJob,
-  onDeletePromptJob,
   onTriggerSelectedNow,
-  onTriggerPromptJobNow,
-  onNotice,
 }: {
+  loading?: boolean;
   groups: Array<{ _id: Id<"promptGroups">; name: string }>;
   selectedGroup: Id<"promptGroups"> | "all";
   onSelectGroup: (value: Id<"promptGroups"> | "all") => void;
@@ -107,7 +107,6 @@ export function PromptsPage({
     name: string;
     group: string;
     model: string;
-    latestVisibility?: number;
     latestCitationQuality?: number;
     latestRunAt?: number;
     latestRunId?: Id<"promptRuns">;
@@ -124,46 +123,9 @@ export function PromptsPage({
   }>;
   selectedPromptId: Id<"prompts"> | null;
   onSelectPrompt: (value: Id<"prompts"> | null) => void;
-  promptJobs: Array<{
-    _id: Id<"promptJobs">;
-    name: string;
-    promptIds: Array<Id<"prompts">>;
-    promptCount: number;
-    schedule?: string;
-    enabled: boolean;
-    lastTriggeredAt?: number;
-    lastQueuedCount?: number;
-    prompts: Array<{
-      id: Id<"prompts">;
-      name: string;
-      model: string;
-    }>;
-  }>;
-  queueSummary: {
-    queuedCount: number;
-    runningCount: number;
-    latestCompletedAt?: number;
-  };
   search: string;
   onSearch: (value: string) => void;
-  newGroupName: string;
-  onNewGroupName: (value: string) => void;
-  newPromptName: string;
-  onNewPromptName: (value: string) => void;
-  newPromptText: string;
-  onNewPromptText: (value: string) => void;
-  newPromptModel: string;
-  onNewPromptModel: (value: string) => void;
-  newPromptGroup: Id<"promptGroups"> | "none";
-  onNewPromptGroup: (value: Id<"promptGroups"> | "none") => void;
   onCreateGroup: (args: { name: string }) => Promise<Id<"promptGroups">>;
-  onUpdateGroup: (args: {
-    id: Id<"promptGroups">;
-    name?: string;
-  }) => Promise<Id<"promptGroups">>;
-  onDeleteGroup: (args: {
-    id: Id<"promptGroups">;
-  }) => Promise<Id<"promptGroups">>;
   onCreatePrompt: (args: {
     name: string;
     promptText: string;
@@ -173,67 +135,86 @@ export function PromptsPage({
   onUpdatePrompt: (args: {
     id: Id<"prompts">;
     active?: boolean;
+    groupId?: Id<"promptGroups">;
   }) => Promise<Id<"prompts">>;
   onDeletePrompt: (args: { id: Id<"prompts"> }) => Promise<Id<"prompts">>;
-  onCreatePromptJob: (args: {
-    name: string;
-    promptIds: Array<Id<"prompts">>;
-    schedule?: string;
-    enabled?: boolean;
-  }) => Promise<Id<"promptJobs">>;
-  onUpdatePromptJob: (args: {
-    id: Id<"promptJobs">;
-    name?: string;
-    promptIds?: Array<Id<"prompts">>;
-    schedule?: string;
-    enabled?: boolean;
-  }) => Promise<Id<"promptJobs">>;
-  onDeletePromptJob: (args: {
-    id: Id<"promptJobs">;
-  }) => Promise<Id<"promptJobs">>;
   onTriggerSelectedNow: (args: {
     promptIds: Array<Id<"prompts">>;
     label?: string;
   }) => Promise<{ queuedCount: number }>;
-  onTriggerPromptJobNow: (args: {
-    id: Id<"promptJobs">;
-  }) => Promise<{ queuedCount: number }>;
-  onNotice: (text: string) => void;
 }) {
-  const [selectedPromptIds, setSelectedPromptIds] = useState<
-    Array<Id<"prompts">>
-  >([]);
-  const [jobName, setJobName] = useState("");
-  const [jobSchedule, setJobSchedule] = useState("0 9 * * 1-5");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [groupPickerPromptId, setGroupPickerPromptId] =
+    useState<Id<"prompts"> | null>(null);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [newPromptName, setNewPromptName] = useState("");
+  const [newPromptText, setNewPromptText] = useState("");
+  const [newPromptModel, setNewPromptModel] = useState("gpt-5");
+  const [newPromptGroup, setNewPromptGroup] = useState<
+    Id<"promptGroups"> | "none"
+  >("none");
 
-  useEffect(() => {
-    setSelectedPromptIds((current) =>
-      current.filter((id) => rows.some((row) => row.id === id))
-    );
-  }, [rows]);
+  const topGroups = groups.slice(0, 5);
+  const selectedRow =
+    rows.find((row) => row.id === groupPickerPromptId) ?? null;
 
-  const allVisibleSelected =
-    rows.length > 0 && rows.every((row) => selectedPromptIds.includes(row.id));
-  const selectedCount = selectedPromptIds.length;
-  const selectedRows = useMemo(
-    () => rows.filter((row) => selectedPromptIds.includes(row.id)),
-    [rows, selectedPromptIds]
-  );
-
-  const createGroup = async () => {
-    if (!newGroupName.trim()) return onNotice("Group name is required.");
+  const queuePrompt = async (promptId: Id<"prompts">, label: string) => {
     try {
-      await onCreateGroup({ name: newGroupName.trim() });
-      onNewGroupName("");
-      onNotice("Prompt group created.");
+      const result = await onTriggerSelectedNow({
+        promptIds: [promptId],
+        label,
+      });
+      toast.success(
+        result.queuedCount === 1
+          ? "Prompt queued."
+          : `${result.queuedCount} prompts queued.`
+      );
     } catch (error) {
-      onNotice(errorMessage(error));
+      toast.error(errorMessage(error));
+    }
+  };
+
+  const assignPromptToGroup = async (
+    promptId: Id<"prompts">,
+    groupId?: Id<"promptGroups">,
+    successMessage?: string
+  ) => {
+    try {
+      await onUpdatePrompt({ id: promptId, groupId });
+      toast.success(
+        successMessage ??
+          (groupId ? "Prompt added to group." : "Prompt removed from group.")
+      );
+      setGroupPickerPromptId(null);
+      setNewGroupName("");
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
+  };
+
+  const createGroupAndAssign = async () => {
+    if (!groupPickerPromptId) return;
+    if (!newGroupName.trim()) {
+      toast.error("Group name is required.");
+      return;
+    }
+    try {
+      const groupId = await onCreateGroup({ name: newGroupName.trim() });
+      setNewGroupName("");
+      await assignPromptToGroup(
+        groupPickerPromptId,
+        groupId,
+        "Group created and prompt assigned."
+      );
+    } catch (error) {
+      toast.error(errorMessage(error));
     }
   };
 
   const createPrompt = async () => {
     if (!newPromptName.trim() || !newPromptText.trim()) {
-      return onNotice("Prompt name and prompt text are required.");
+      toast.error("Prompt name and prompt text are required.");
+      return;
     }
     try {
       await onCreatePrompt({
@@ -242,113 +223,278 @@ export function PromptsPage({
         targetModel: newPromptModel,
         groupId: newPromptGroup === "none" ? undefined : newPromptGroup,
       });
-      onNewPromptName("");
-      onNewPromptText("");
-      onNotice("Prompt created.");
+      setNewPromptName("");
+      setNewPromptText("");
+      setNewPromptModel("gpt-5");
+      setNewPromptGroup("none");
+      setCreateOpen(false);
+      toast.success("Prompt created.");
     } catch (error) {
-      onNotice(errorMessage(error));
-    }
-  };
-
-  const renameGroup = async (id: Id<"promptGroups">, currentName: string) => {
-    const next = window.prompt("New group name", currentName);
-    if (!next || next.trim() === currentName) return;
-    try {
-      await onUpdateGroup({ id, name: next.trim() });
-      onNotice("Prompt group updated.");
-    } catch (error) {
-      onNotice(errorMessage(error));
-    }
-  };
-
-  const togglePrompt = (id: Id<"prompts">, checked: boolean) => {
-    setSelectedPromptIds((current) =>
-      checked
-        ? [...new Set([...current, id])]
-        : current.filter((item) => item !== id)
-    );
-  };
-
-  const toggleAllVisible = (checked: boolean) => {
-    setSelectedPromptIds((current) => {
-      if (checked) {
-        return [...new Set([...current, ...rows.map((row) => row.id)])];
-      }
-      return current.filter((id) => !rows.some((row) => row.id === id));
-    });
-  };
-
-  const queueSelectedNow = async () => {
-    if (!selectedCount) {
-      onNotice("Select at least one prompt to queue.");
-      return;
-    }
-    try {
-      const result = await onTriggerSelectedNow({
-        promptIds: selectedPromptIds,
-        label: jobName.trim() || "Manual run",
-      });
-      onNotice(`${result.queuedCount} prompt runs queued.`);
-    } catch (error) {
-      onNotice(errorMessage(error));
-    }
-  };
-
-  const savePromptPlan = async () => {
-    if (!selectedCount) {
-      onNotice("Select at least one prompt to schedule.");
-      return;
-    }
-    try {
-      await onCreatePromptJob({
-        name: jobName.trim() || `Prompt batch (${selectedCount})`,
-        promptIds: selectedPromptIds,
-        schedule: jobSchedule.trim() || undefined,
-        enabled: true,
-      });
-      setJobName("");
-      onNotice("Execution plan saved.");
-    } catch (error) {
-      onNotice(errorMessage(error));
+      toast.error(errorMessage(error));
     }
   };
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="grid gap-4 px-4 lg:px-6 xl:grid-cols-[minmax(0,1.15fr)_360px]">
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <CardTitle>Prompts</CardTitle>
-                <CardDescription>
-                  Select a prompt to inspect its response history, source mix,
-                  and brand/entity mentions.
-                </CardDescription>
+      <div className="px-4 lg:px-6">
+        {loading ? (
+          <DashboardTableCardSkeleton
+            titleWidth="w-24"
+            controlsWidth="w-[420px]"
+            rows={6}
+            columns={7}
+          />
+        ) : (
+          <Card>
+            <CardHeader>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <CardTitle>Prompts</CardTitle>
+                  <CardDescription>
+                    One row per prompt, with the latest response and a compact
+                    actions menu.
+                  </CardDescription>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Select
+                    value={selectedGroup}
+                    onValueChange={(value) =>
+                      onSelectGroup(value as Id<"promptGroups"> | "all")
+                    }
+                  >
+                    <SelectTrigger className="h-8 w-[180px]">
+                      <SelectValue placeholder="All groups" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All groups</SelectItem>
+                      {groups.map((group) => (
+                        <SelectItem key={String(group._id)} value={group._id}>
+                          {group.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    value={search}
+                    onChange={(e) => onSearch(e.target.value)}
+                    placeholder="Search prompts..."
+                    className="h-8 w-[240px]"
+                  />
+                  <Button size="sm" onClick={() => setCreateOpen(true)}>
+                    <Plus className="size-4" />
+                    New prompt
+                  </Button>
+                </div>
               </div>
-              <Input
-                value={search}
-                onChange={(e) => onSearch(e.target.value)}
-                placeholder="Search prompts, sources, or entities..."
-                className="h-8 w-[280px]"
-              />
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="bg-muted/30 grid gap-2 rounded-xl border p-3 md:grid-cols-[1fr_1.6fr_120px_150px_auto]">
-              <Input
-                value={newPromptName}
-                onChange={(e) => onNewPromptName(e.target.value)}
-                placeholder="Prompt name"
-                className="h-8"
-              />
-              <Textarea
-                value={newPromptText}
-                onChange={(e) => onNewPromptText(e.target.value)}
-                placeholder="Prompt text"
-                className="min-h-8 py-2 text-sm"
-              />
-              <Select value={newPromptModel} onValueChange={onNewPromptModel}>
+            </CardHeader>
+            <CardContent>
+              {rows.length === 0 ? (
+                <InlineEmpty text="No prompts yet. Add one to start capturing real responses and source evidence." />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Prompt</TableHead>
+                      <TableHead>Group</TableHead>
+                      <TableHead>Latest run</TableHead>
+                      <TableHead className="text-right">Responses</TableHead>
+                      <TableHead className="text-right">Sources</TableHead>
+                      <TableHead className="text-right">Drift</TableHead>
+                      <TableHead className="w-12 text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map((row) => (
+                      <TableRow
+                        key={String(row.id)}
+                        className={
+                          selectedPromptId === row.id ? "bg-muted/40" : ""
+                        }
+                        onClick={() => onSelectPrompt(row.id)}
+                      >
+                        <TableCell>
+                          <div className="space-y-1">
+                            <p className="font-medium">{row.name}</p>
+                            <p className="text-muted-foreground text-xs">
+                              {row.model}
+                            </p>
+                            {!row.active ? (
+                              <Badge variant="outline">Paused</Badge>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm">{row.group}</TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <Badge
+                              variant="secondary"
+                              className={
+                                statusTone[row.latestStatus ?? ""] ?? ""
+                              }
+                            >
+                              {titleCase(row.latestStatus ?? "not_run")}
+                            </Badge>
+                            <p className="text-muted-foreground text-xs">
+                              {row.latestRunAt
+                                ? formatFreshness(row.latestRunAt)
+                                : "No run yet"}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {row.responseCount}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {row.sourceDiversity}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatPercent(row.responseDrift)}
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <div className="flex justify-end">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  aria-label={`Actions for ${row.name}`}
+                                >
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-52">
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    void queuePrompt(row.id, row.name)
+                                  }
+                                >
+                                  <Play className="mr-2 h-4 w-4" />
+                                  Run
+                                </DropdownMenuItem>
+                                <DropdownMenuSub>
+                                  <DropdownMenuSubTrigger>
+                                    <FolderPlus className="mr-2 h-4 w-4" />
+                                    Add to group
+                                  </DropdownMenuSubTrigger>
+                                  <DropdownMenuSubContent className="w-56">
+                                    {topGroups.map((group) => (
+                                      <DropdownMenuItem
+                                        key={String(group._id)}
+                                        onClick={() =>
+                                          void assignPromptToGroup(
+                                            row.id,
+                                            group._id
+                                          )
+                                        }
+                                      >
+                                        {group.name}
+                                      </DropdownMenuItem>
+                                    ))}
+                                    {groups.length > topGroups.length ? (
+                                      <DropdownMenuItem
+                                        onClick={() =>
+                                          setGroupPickerPromptId(row.id)
+                                        }
+                                      >
+                                        View all
+                                      </DropdownMenuItem>
+                                    ) : null}
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        setGroupPickerPromptId(row.id)
+                                      }
+                                    >
+                                      Create a new group
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        void assignPromptToGroup(
+                                          row.id,
+                                          undefined
+                                        )
+                                      }
+                                    >
+                                      Remove from group
+                                    </DropdownMenuItem>
+                                  </DropdownMenuSubContent>
+                                </DropdownMenuSub>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    void onUpdatePrompt({
+                                      id: row.id,
+                                      active: !row.active,
+                                    })
+                                      .then(() =>
+                                        toast.success(
+                                          row.active
+                                            ? "Prompt paused."
+                                            : "Prompt resumed."
+                                        )
+                                      )
+                                      .catch((error: unknown) =>
+                                        toast.error(errorMessage(error))
+                                      )
+                                  }
+                                >
+                                  {row.active ? "Pause" : "Resume"}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  onClick={() =>
+                                    void onDeletePrompt({ id: row.id })
+                                      .then(() => {
+                                        if (selectedPromptId === row.id) {
+                                          onSelectPrompt(null);
+                                        }
+                                        toast.success("Prompt deleted.");
+                                      })
+                                      .catch((error: unknown) =>
+                                        toast.error(errorMessage(error))
+                                      )
+                                  }
+                                >
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      <Sheet open={createOpen} onOpenChange={setCreateOpen}>
+        <SheetContent className="w-full sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>New prompt</SheetTitle>
+            <SheetDescription>
+              Create a prompt with only the fields the backend actually uses.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="space-y-3 p-4 pt-0">
+            <Input
+              value={newPromptName}
+              onChange={(e) => setNewPromptName(e.target.value)}
+              placeholder="Prompt name"
+              className="h-8"
+            />
+            <Textarea
+              value={newPromptText}
+              onChange={(e) => setNewPromptText(e.target.value)}
+              placeholder="Prompt text"
+              className="min-h-24 text-sm"
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Select value={newPromptModel} onValueChange={setNewPromptModel}>
                 <SelectTrigger className="h-8">
                   <SelectValue />
                 </SelectTrigger>
@@ -362,8 +508,8 @@ export function PromptsPage({
               </Select>
               <Select
                 value={newPromptGroup}
-                onValueChange={(v) =>
-                  onNewPromptGroup(v as Id<"promptGroups"> | "none")
+                onValueChange={(value) =>
+                  setNewPromptGroup(value as Id<"promptGroups"> | "none")
                 }
               >
                 <SelectTrigger className="h-8">
@@ -371,452 +517,78 @@ export function PromptsPage({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">No group</SelectItem>
-                  {groups.map((g) => (
-                    <SelectItem key={String(g._id)} value={g._id}>
-                      {g.name}
+                  {groups.map((group) => (
+                    <SelectItem key={String(group._id)} value={group._id}>
+                      {group.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <Button size="sm" onClick={() => void createPrompt()}>
-                Add prompt
+            </div>
+            <Button className="w-full" onClick={() => void createPrompt()}>
+              Create prompt
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet
+        open={groupPickerPromptId !== null}
+        onOpenChange={(open) => !open && setGroupPickerPromptId(null)}
+      >
+        <SheetContent className="w-full sm:max-w-sm">
+          <SheetHeader>
+            <SheetTitle>Add to group</SheetTitle>
+            <SheetDescription>
+              {selectedRow
+                ? `Assign "${selectedRow.name}" to an existing group or create a new one.`
+                : "Assign this prompt to a group."}
+            </SheetDescription>
+          </SheetHeader>
+          <div className="space-y-3 p-4 pt-0">
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={() =>
+                groupPickerPromptId
+                  ? void assignPromptToGroup(groupPickerPromptId, undefined)
+                  : undefined
+              }
+            >
+              No group
+            </Button>
+            {groups.map((group) => (
+              <Button
+                key={String(group._id)}
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() =>
+                  groupPickerPromptId
+                    ? void assignPromptToGroup(groupPickerPromptId, group._id)
+                    : undefined
+                }
+              >
+                {group.name}
+              </Button>
+            ))}
+            <div className="space-y-3 rounded-xl border p-3">
+              <p className="text-sm font-medium">Create new group</p>
+              <Input
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                placeholder="Group name"
+                className="h-8"
+              />
+              <Button
+                className="w-full"
+                onClick={() => void createGroupAndAssign()}
+              >
+                Create and assign
               </Button>
             </div>
-
-            {rows.length === 0 ? (
-              <InlineEmpty text="No prompts yet. Add one above, then run the local monitor to collect real responses and source evidence." />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10">
-                      <Checkbox
-                        checked={allVisibleSelected}
-                        onCheckedChange={(checked) =>
-                          toggleAllVisible(checked === true)
-                        }
-                        aria-label="Select all prompts"
-                      />
-                    </TableHead>
-                    <TableHead>Prompt</TableHead>
-                    <TableHead>Latest response</TableHead>
-                    <TableHead>Top sources</TableHead>
-                    <TableHead>Brands</TableHead>
-                    <TableHead className="text-right">Variance</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((row) => (
-                    <TableRow
-                      key={String(row.id)}
-                      className={cn(
-                        "cursor-pointer",
-                        selectedPromptId === row.id && "bg-muted/40"
-                      )}
-                      onClick={() => onSelectPrompt(row.id)}
-                    >
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <Checkbox
-                          checked={selectedPromptIds.includes(row.id)}
-                          onCheckedChange={(checked) =>
-                            togglePrompt(row.id, checked === true)
-                          }
-                          aria-label={`Select ${row.name}`}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="font-medium">{row.name}</p>
-                            <Badge variant="secondary">{row.model}</Badge>
-                            <Badge variant="outline">{row.group}</Badge>
-                            {!row.active ? (
-                              <Badge variant="outline">Paused</Badge>
-                            ) : null}
-                          </div>
-                          <p className="text-muted-foreground text-xs">
-                            {row.responseCount} responses captured
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap gap-1.5">
-                            <Badge
-                              variant="secondary"
-                              className={
-                                statusTone[row.latestStatus ?? ""] ?? ""
-                              }
-                            >
-                              {titleCase(row.latestStatus ?? "not_run")}
-                            </Badge>
-                            {row.latestVisibility !== undefined ? (
-                              <Badge variant="outline">
-                                Visibility {formatPercent(row.latestVisibility)}
-                              </Badge>
-                            ) : null}
-                          </div>
-                          <p className="text-muted-foreground line-clamp-2 text-xs">
-                            {row.latestResponseSummary ||
-                              "No completed response yet."}
-                          </p>
-                          <p className="text-muted-foreground text-xs">
-                            {row.latestRunAt
-                              ? `Last response ${formatFreshness(row.latestRunAt)}`
-                              : "No response yet"}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap gap-1.5">
-                            <Badge variant="outline">
-                              {row.sourceDiversity} domains
-                            </Badge>
-                            <Badge variant="outline">
-                              {row.latestSourceCount ?? 0} in latest
-                            </Badge>
-                          </div>
-                          <p className="text-muted-foreground line-clamp-2 text-xs">
-                            {row.topSources.length
-                              ? row.topSources.join(", ")
-                              : "No sources extracted yet."}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1.5">
-                          {row.topEntities.length ? (
-                            row.topEntities.slice(0, 3).map((entity) => (
-                              <Badge
-                                key={`${row.id}-${entity}`}
-                                variant="outline"
-                              >
-                                {entity}
-                              </Badge>
-                            ))
-                          ) : (
-                            <Badge variant="outline">No tracked mentions</Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="space-y-1 tabular-nums">
-                          <p>{formatPercent(row.responseDrift)}</p>
-                          <p className="text-muted-foreground text-xs">
-                            source {formatPercent(row.sourceVariance)}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <div className="flex justify-end gap-1">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs"
-                            onClick={() => onSelectPrompt(row.id)}
-                          >
-                            Open
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs"
-                            onClick={() =>
-                              void onUpdatePrompt({
-                                id: row.id,
-                                active: !row.active,
-                              })
-                                .then(() =>
-                                  onNotice(
-                                    row.active
-                                      ? "Prompt paused."
-                                      : "Prompt resumed."
-                                  )
-                                )
-                                .catch((e: unknown) =>
-                                  onNotice(errorMessage(e))
-                                )
-                            }
-                          >
-                            {row.active ? "Pause" : "Resume"}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-destructive h-7 text-xs"
-                            onClick={() =>
-                              void onDeletePrompt({ id: row.id })
-                                .then(() => {
-                                  if (selectedPromptId === row.id)
-                                    onSelectPrompt(null);
-                                  onNotice("Prompt deleted.");
-                                })
-                                .catch((e: unknown) =>
-                                  onNotice(errorMessage(e))
-                                )
-                            }
-                          >
-                            Delete
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-
-        <div className="flex flex-col gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Prompt Groups</CardTitle>
-              <CardDescription>
-                Group prompts for scoped reporting and analysis.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex gap-2">
-                <Input
-                  value={newGroupName}
-                  onChange={(e) => onNewGroupName(e.target.value)}
-                  placeholder="New group name"
-                  className="h-8"
-                />
-                <Button size="sm" onClick={() => void createGroup()}>
-                  Add
-                </Button>
-              </div>
-              <Separator />
-              <button
-                type="button"
-                onClick={() => onSelectGroup("all")}
-                className={cn(
-                  "flex w-full items-center rounded-md px-3 py-2 text-left text-sm transition-colors",
-                  selectedGroup === "all"
-                    ? "bg-primary text-primary-foreground"
-                    : "hover:bg-muted"
-                )}
-              >
-                All prompts
-              </button>
-              {groups.map((g) => (
-                <div key={String(g._id)} className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => onSelectGroup(g._id)}
-                    className={cn(
-                      "flex-1 rounded-md px-3 py-2 text-left text-sm transition-colors",
-                      selectedGroup === g._id
-                        ? "bg-primary text-primary-foreground"
-                        : "hover:bg-muted"
-                    )}
-                  >
-                    {g.name}
-                  </button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => void renameGroup(g._id, g.name)}
-                  >
-                    Rename
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive h-7 text-xs"
-                    onClick={() =>
-                      void onDeleteGroup({ id: g._id })
-                        .then(() => onNotice("Group deleted."))
-                        .catch((e: unknown) => onNotice(errorMessage(e)))
-                    }
-                  >
-                    Del
-                  </Button>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Execution Plans</CardTitle>
-              <CardDescription>
-                Queue one run per prompt now, or save a recurring prompt batch.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="bg-muted/20 rounded-xl border p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-medium">
-                      {selectedCount} prompt{selectedCount === 1 ? "" : "s"}{" "}
-                      selected
-                    </p>
-                    <p className="text-muted-foreground text-xs">
-                      {selectedRows.length
-                        ? selectedRows
-                            .slice(0, 3)
-                            .map((row) => row.name)
-                            .join(", ")
-                        : "Select prompt rows to build a batch."}
-                      {selectedRows.length > 3 ? "..." : ""}
-                    </p>
-                  </div>
-                  <Badge variant="secondary">
-                    {selectedRows.length
-                      ? selectedRows.map((row) => row.model).join(" / ")
-                      : "No selection"}
-                  </Badge>
-                </div>
-                <div className="mt-3 grid gap-2">
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline">
-                      {queueSummary.queuedCount} queued
-                    </Badge>
-                    <Badge variant="outline">
-                      {queueSummary.runningCount} running
-                    </Badge>
-                    <Badge variant="secondary">
-                      {queueSummary.latestCompletedAt
-                        ? `Last completion ${formatFreshness(queueSummary.latestCompletedAt)}`
-                        : "No completed runs yet"}
-                    </Badge>
-                  </div>
-                  <Input
-                    value={jobName}
-                    onChange={(e) => setJobName(e.target.value)}
-                    placeholder="Batch name"
-                    className="h-8"
-                  />
-                  <Input
-                    value={jobSchedule}
-                    onChange={(e) => setJobSchedule(e.target.value)}
-                    placeholder="Cron schedule, e.g. 0 9 * * 1-5"
-                    className="h-8 font-mono text-xs"
-                  />
-                  <p className="text-muted-foreground text-[11px] leading-5">
-                    Leave the cron field blank to save a manual batch only.{" "}
-                    <span className="font-mono">pnpm dev</span> starts the queue
-                    worker automatically. If you run services separately, use{" "}
-                    <span className="font-mono">pnpm runner:queue</span>.
-                  </p>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button size="sm" onClick={() => void queueSelectedNow()}>
-                    Queue now
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void savePromptPlan()}
-                  >
-                    Save plan
-                  </Button>
-                </div>
-              </div>
-
-              {promptJobs.length === 0 ? (
-                <InlineEmpty text="No saved execution plans yet." />
-              ) : (
-                <div className="space-y-2">
-                  {promptJobs.map((job) => (
-                    <div
-                      key={String(job._id)}
-                      className="rounded-xl border p-3"
-                    >
-                      <div className="space-y-1">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <p className="text-sm font-medium">{job.name}</p>
-                          <Badge
-                            variant={job.enabled ? "default" : "secondary"}
-                          >
-                            {job.enabled ? "Live" : "Paused"}
-                          </Badge>
-                          <Badge variant="outline">
-                            {job.schedule || "Manual"}
-                          </Badge>
-                        </div>
-                        <p className="text-muted-foreground text-xs">
-                          {job.promptCount} prompts
-                          {job.lastTriggeredAt
-                            ? ` | Last trigger ${formatFreshness(job.lastTriggeredAt)}`
-                            : " | Never triggered"}
-                          {job.lastQueuedCount
-                            ? ` | Queued ${job.lastQueuedCount}`
-                            : ""}
-                        </p>
-                        <p className="text-muted-foreground text-xs">
-                          {job.prompts.map((prompt) => prompt.name).join(", ")}
-                        </p>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            void onTriggerPromptJobNow({ id: job._id })
-                              .then((result) =>
-                                onNotice(
-                                  `${result.queuedCount} prompt runs queued.`
-                                )
-                              )
-                              .catch((error: unknown) =>
-                                onNotice(errorMessage(error))
-                              )
-                          }
-                        >
-                          Run now
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() =>
-                            void onUpdatePromptJob({
-                              id: job._id,
-                              enabled: !job.enabled,
-                            })
-                              .then(() =>
-                                onNotice(
-                                  job.enabled
-                                    ? "Execution plan paused."
-                                    : "Execution plan resumed."
-                                )
-                              )
-                              .catch((error: unknown) =>
-                                onNotice(errorMessage(error))
-                              )
-                          }
-                        >
-                          {job.enabled ? "Pause" : "Resume"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-destructive"
-                          onClick={() =>
-                            void onDeletePromptJob({ id: job._id })
-                              .then(() => onNotice("Execution plan deleted."))
-                              .catch((error: unknown) =>
-                                onNotice(errorMessage(error))
-                              )
-                          }
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

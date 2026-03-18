@@ -795,6 +795,7 @@ export async function runMonitor(config, options = {}) {
       status = "failed";
       fallbackUsed = true;
       summary = "ChatGPT access was blocked before the prompt could run.";
+      responseSummary = summary;
       warnings.push(
         "Access blocker detected on chatgpt.com; metrics are not treated as a valid monitoring run."
       );
