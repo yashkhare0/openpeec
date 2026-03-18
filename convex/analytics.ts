@@ -1,4 +1,3 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { Crons } from "@convex-dev/crons";
 import { v } from "convex/values";
 
@@ -36,12 +35,10 @@ const vCitationType = v.union(
   v.literal("other")
 );
 
-type UserId = Id<"users">;
 type PromptDoc = Doc<"prompts">;
 type PromptRunDoc = Doc<"promptRuns">;
 type CitationDoc = Doc<"citations">;
 type TrackedEntityDoc = Doc<"trackedEntities">;
-type UserCtx = QueryCtx | MutationCtx;
 type PatchObject = Record<string, unknown>;
 
 const crons = new Crons(components.crons);
@@ -50,14 +47,6 @@ function compactPatch<T extends PatchObject>(patch: T): PatchObject {
   return Object.fromEntries(
     Object.entries(patch).filter(([, value]) => value !== undefined)
   );
-}
-
-async function requireUserId(ctx: UserCtx): Promise<UserId> {
-  const userId = await getAuthUserId(ctx);
-  if (userId == null) {
-    throw new Error("User not found");
-  }
-  return userId;
 }
 
 function sanitizeSlug(input: string): string {
@@ -388,7 +377,9 @@ export const listPrompts = query({
     if (args.groupId) {
       prompts = await ctx.db
         .query("prompts")
-        .withIndex("userId_groupId", (q) => q.eq("userId", userId).eq("groupId", args.groupId))
+        .withIndex("userId_groupId", (q) =>
+          q.eq("userId", userId).eq("groupId", args.groupId)
+        )
         .collect();
     } else {
       prompts = await ctx.db
@@ -570,18 +561,14 @@ export const updatePromptJob = mutation({
     enabled: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const job = await ctx.db.get(args.id);
     if (job == null) {
       throw new Error("Execution plan not found");
     }
-    if (job.userId !== userId) {
-      throw new Error("User not authorized to update this execution plan");
-    }
 
     const prompts = args.promptIds
-      ? await assertPromptIdsOwned(ctx, userId, args.promptIds)
-      : await assertPromptIdsOwned(ctx, userId, job.promptIds);
+      ? await assertPromptIdsOwned(ctx, args.promptIds)
+      : await assertPromptIdsOwned(ctx, job.promptIds);
     const promptIds = prompts.map((prompt) => prompt._id);
     const schedule =
       args.schedule !== undefined ? args.schedule.trim() || undefined : job.schedule;
@@ -608,13 +595,9 @@ export const updatePromptJob = mutation({
 export const deletePromptJob = mutation({
   args: { id: v.id("promptJobs") },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const job = await ctx.db.get(args.id);
     if (job == null) {
       throw new Error("Execution plan not found");
-    }
-    if (job.userId !== userId) {
-      throw new Error("User not authorized to delete this execution plan");
     }
 
     await deletePromptJobCron(ctx, job.cronId);
@@ -629,11 +612,9 @@ export const triggerSelectedPromptsNow = mutation({
     label: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
-    const prompts = await assertPromptIdsOwned(ctx, userId, args.promptIds);
+    const prompts = await assertPromptIdsOwned(ctx, args.promptIds);
     const queuedCount = await enqueuePromptRunDocs(
       ctx,
-      userId,
       prompts,
       args.label?.trim() || "Manual run"
     );
@@ -644,17 +625,13 @@ export const triggerSelectedPromptsNow = mutation({
 export const triggerPromptJobNow = mutation({
   args: { id: v.id("promptJobs") },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const job = await ctx.db.get(args.id);
     if (job == null) {
       throw new Error("Execution plan not found");
     }
-    if (job.userId !== userId) {
-      throw new Error("User not authorized to run this execution plan");
-    }
 
-    const prompts = await assertPromptIdsOwned(ctx, userId, job.promptIds);
-    const queuedCount = await enqueuePromptRunDocs(ctx, userId, prompts, job.name);
+    const prompts = await assertPromptIdsOwned(ctx, job.promptIds);
+    const queuedCount = await enqueuePromptRunDocs(ctx, prompts, job.name);
     await ctx.db.patch(args.id, {
       lastTriggeredAt: Date.now(),
       lastQueuedCount: queuedCount,
@@ -688,7 +665,6 @@ export const triggerPromptJob = internalMutation({
     }
     const queuedCount = await enqueuePromptRunDocs(
       ctx,
-      job.userId,
       validPrompts,
       job.name
     );
@@ -712,7 +688,6 @@ export const createTrackedEntity = mutation({
     active: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const slug = sanitizeSlug(args.slug ?? args.name);
     if (!slug) {
       throw new Error("Tracked entity slug cannot be empty");
@@ -720,14 +695,13 @@ export const createTrackedEntity = mutation({
 
     const existing = await ctx.db
       .query("trackedEntities")
-      .withIndex("userId_slug", (q) => q.eq("userId", userId).eq("slug", slug))
+      .withIndex("slug", (q) => q.eq("slug", slug))
       .collect();
     if (existing.length > 0) {
       throw new Error("Tracked entity slug already exists");
     }
 
     return await ctx.db.insert("trackedEntities", {
-      userId,
       name: args.name.trim(),
       slug,
       kind: args.kind,
@@ -746,10 +720,8 @@ export const listTrackedEntities = query({
     active: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     let entities = await ctx.db
       .query("trackedEntities")
-      .withIndex("userId", (q) => q.eq("userId", userId))
       .collect();
     if (args.active !== undefined) {
       entities = entities.filter((entity) => entity.active === args.active);
@@ -770,13 +742,9 @@ export const updateTrackedEntity = mutation({
     active: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const entity = await ctx.db.get(args.id);
     if (entity == null) {
       throw new Error("Tracked entity not found");
-    }
-    if (entity.userId !== userId) {
-      throw new Error("User not authorized to update this tracked entity");
     }
 
     let nextSlug: string | undefined;
@@ -787,7 +755,7 @@ export const updateTrackedEntity = mutation({
       }
       const existing = await ctx.db
         .query("trackedEntities")
-        .withIndex("userId_slug", (q) => q.eq("userId", userId).eq("slug", candidate))
+        .withIndex("slug", (q) => q.eq("slug", candidate))
         .collect();
       const conflict = existing.some((item) => item._id !== args.id);
       if (conflict) {
@@ -817,13 +785,9 @@ export const updateTrackedEntity = mutation({
 export const deleteTrackedEntity = mutation({
   args: { id: v.id("trackedEntities") },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const entity = await ctx.db.get(args.id);
     if (entity == null) {
       throw new Error("Tracked entity not found");
-    }
-    if (entity.userId !== userId) {
-      throw new Error("User not authorized to delete this tracked entity");
     }
     await ctx.db.delete(args.id);
     return args.id;
@@ -868,19 +832,13 @@ export const ingestPromptRun = mutation({
       throw new Error("Prompt not found");
     }
 
-    const authUserId = await getAuthUserId(ctx);
     const requiredIngestKey = process.env.PEEC_RUN_INGEST_KEY;
-    if (authUserId == null) {
-      if (!requiredIngestKey || args.ingestKey !== requiredIngestKey) {
-        throw new Error("Unauthorized ingest");
-      }
-    } else if (authUserId !== prompt.userId) {
-      throw new Error("User not authorized for this prompt");
+    if (requiredIngestKey && args.ingestKey !== requiredIngestKey) {
+      throw new Error("Unauthorized ingest");
     }
 
     const trackedEntities = await ctx.db
       .query("trackedEntities")
-      .withIndex("userId", (q) => q.eq("userId", prompt.userId))
       .collect();
     const trackedEntityById = new Map(trackedEntities.map((entity) => [entity._id, entity]));
     const trackedEntityByDomain = new Map<string, TrackedEntityDoc>();
@@ -913,7 +871,6 @@ export const ingestPromptRun = mutation({
         : clamp(100 - (derivedAveragePosition - 1) * 8, 0, 100);
 
     const runId = await ctx.db.insert("promptRuns", {
-      userId: prompt.userId,
       promptId: args.promptId,
       model: args.model.trim(),
       status: args.status,
@@ -947,7 +904,6 @@ export const ingestPromptRun = mutation({
           (matchedEntity ? inferOwnedFromKind(matchedEntity.kind) : false);
 
         await ctx.db.insert("citations", {
-          userId: prompt.userId,
           promptRunId: runId,
           domain: normalizedDomain,
           url: citation.url,
@@ -974,22 +930,20 @@ export const listPromptRuns = query({
     limit: v.optional(v.float64()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const limit = clamp(Math.floor(args.limit ?? 30), 1, 100);
 
     let runs: PromptRunDoc[];
     if (args.promptId) {
-      await assertPromptOwnership(ctx, userId, args.promptId);
+      await assertPromptOwnership(ctx, args.promptId);
       runs = await ctx.db
         .query("promptRuns")
         .withIndex("promptId_startedAt", (q) => q.eq("promptId", args.promptId!))
         .order("desc")
         .take(limit * 3);
-      runs = runs.filter((run) => run.userId === userId);
     } else {
       runs = await ctx.db
         .query("promptRuns")
-        .withIndex("userId_startedAt", (q) => q.eq("userId", userId))
+        .withIndex("startedAt")
         .order("desc")
         .take(limit * 3);
     }
@@ -1004,7 +958,6 @@ export const listPromptRuns = query({
 
     const prompts = await ctx.db
       .query("prompts")
-      .withIndex("userId", (q) => q.eq("userId", userId))
       .collect();
     const promptNameById = new Map(prompts.map((prompt) => [prompt._id, prompt.name]));
 
@@ -1030,13 +983,9 @@ export const listPromptRuns = query({
 export const getPromptRun = query({
   args: { id: v.id("promptRuns") },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const run = await ctx.db.get(args.id);
     if (run == null) {
       throw new Error("Prompt run not found");
-    }
-    if (run.userId !== userId) {
-      throw new Error("User not authorized to access this run");
     }
 
     const prompt = await ctx.db.get(run.promptId);
@@ -1081,10 +1030,9 @@ export const listSources = query({
     limit: v.optional(v.float64()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const runs = await ctx.db
       .query("promptRuns")
-      .withIndex("userId_startedAt", (q) => q.eq("userId", userId))
+      .withIndex("startedAt")
       .order("desc")
       .take(600);
 
@@ -1187,13 +1135,12 @@ export const getOverview = query({
     model: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const rangeDays = args.rangeDays ?? 30;
     const rangeMs = rangeDays * 24 * 60 * 60 * 1000;
 
     const runs = await ctx.db
       .query("promptRuns")
-      .withIndex("userId_startedAt", (q) => q.eq("userId", userId))
+      .withIndex("startedAt")
       .order("desc")
       .take(800);
     const referenceTime = getReferenceTimeFromRuns(runs);

@@ -8,10 +8,7 @@
  * @module
  */
 
-import type * as ResendOTP from "../ResendOTP.js";
-import type * as VerificationCodeEmail from "../VerificationCodeEmail.js";
 import type * as analytics from "../analytics.js";
-import type * as auth from "../auth.js";
 import type * as cronvex from "../cronvex.js";
 import type * as http from "../http.js";
 import type * as monitoring from "../monitoring.js";
@@ -23,10 +20,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  ResendOTP: typeof ResendOTP;
-  VerificationCodeEmail: typeof VerificationCodeEmail;
   analytics: typeof analytics;
-  auth: typeof auth;
   cronvex: typeof cronvex;
   http: typeof http;
   monitoring: typeof monitoring;

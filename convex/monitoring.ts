@@ -1,6 +1,4 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
 
 const vPlatform = v.union(
@@ -25,14 +23,6 @@ function compactPatch<T extends PatchObject>(patch: T): PatchObject {
   );
 }
 
-async function requireUserId(ctx: any): Promise<Id<"users">> {
-  const userId = await getAuthUserId(ctx);
-  if (userId == null) {
-    throw new Error("User not found");
-  }
-  return userId;
-}
-
 function assertChatGptClient(client: string) {
   if (client !== "chatgpt") {
     throw new Error("Only chatgpt is supported in v0");
@@ -41,15 +31,12 @@ function assertChatGptClient(client: string) {
 
 async function unsetDefaultAuthProfiles(
   ctx: any,
-  userId: Id<"users">,
   client: string,
-  exceptId?: Id<"authProfiles">
+  exceptId?: string
 ) {
   const profiles = await ctx.db
     .query("authProfiles")
-    .withIndex("userId_client", (q: any) =>
-      q.eq("userId", userId).eq("client", client)
-    )
+    .withIndex("client", (q: any) => q.eq("client", client))
     .collect();
   await Promise.all(
     (profiles as any[])
@@ -60,15 +47,14 @@ async function unsetDefaultAuthProfiles(
 
 async function unsetDefaultDeepLinks(
   ctx: any,
-  userId: Id<"users">,
   client: string,
   platform: "web" | "desktop" | "ios" | "android",
-  exceptId?: Id<"deepLinkTemplates">
+  exceptId?: string
 ) {
   const templates = await ctx.db
     .query("deepLinkTemplates")
-    .withIndex("userId_client_platform", (q: any) =>
-      q.eq("userId", userId).eq("client", client).eq("platform", platform)
+    .withIndex("client_platform", (q: any) =>
+      q.eq("client", client).eq("platform", platform)
     )
     .collect();
   await Promise.all(
@@ -92,9 +78,7 @@ export const createMonitor = mutation({
   },
   handler: async (ctx, args) => {
     assertChatGptClient(args.client);
-    const userId = await requireUserId(ctx);
     return await ctx.db.insert("monitors", {
-      userId,
       name: args.name,
       description: args.description,
       client: args.client,
@@ -110,10 +94,8 @@ export const createMonitor = mutation({
 
 export const listMonitors = query({
   handler: async (ctx) => {
-    const userId = await requireUserId(ctx);
     return await ctx.db
       .query("monitors")
-      .withIndex("userId", (q) => q.eq("userId", userId))
       .order("desc")
       .collect();
   },
@@ -132,13 +114,9 @@ export const updateMonitor = mutation({
     checkConfig: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const monitor = await ctx.db.get(args.id);
     if (monitor == null) {
       throw new Error("Monitor not found");
-    }
-    if (monitor.userId !== userId) {
-      throw new Error("User not authorized to update monitor");
     }
 
     const patch = compactPatch({
@@ -160,13 +138,9 @@ export const updateMonitor = mutation({
 export const deleteMonitor = mutation({
   args: { id: v.id("monitors") },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const monitor = await ctx.db.get(args.id);
     if (monitor == null) {
       throw new Error("Monitor not found");
-    }
-    if (monitor.userId !== userId) {
-      throw new Error("User not authorized to delete monitor");
     }
 
     const monitorRuns = await ctx.db
@@ -191,14 +165,12 @@ export const createAuthProfile = mutation({
   },
   handler: async (ctx, args) => {
     assertChatGptClient(args.client);
-    const userId = await requireUserId(ctx);
 
     if (args.isDefault ?? false) {
-      await unsetDefaultAuthProfiles(ctx, userId, args.client);
+      await unsetDefaultAuthProfiles(ctx, args.client);
     }
 
     return await ctx.db.insert("authProfiles", {
-      userId,
       client: args.client,
       name: args.name,
       authType: args.authType,
@@ -215,19 +187,15 @@ export const listAuthProfiles = query({
     client: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     if (args.client) {
       return await ctx.db
         .query("authProfiles")
-        .withIndex("userId_client", (q) =>
-          q.eq("userId", userId).eq("client", args.client!)
-        )
+        .withIndex("client", (q) => q.eq("client", args.client!))
         .order("desc")
         .collect();
     }
     return await ctx.db
       .query("authProfiles")
-      .withIndex("userId", (q) => q.eq("userId", userId))
       .order("desc")
       .collect();
   },
@@ -246,17 +214,13 @@ export const updateAuthProfile = mutation({
     isDefault: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const profile = await ctx.db.get(args.id);
     if (profile == null) {
       throw new Error("Auth profile not found");
     }
-    if (profile.userId !== userId) {
-      throw new Error("User not authorized to update auth profile");
-    }
 
     if (args.isDefault === true) {
-      await unsetDefaultAuthProfiles(ctx, userId, profile.client, args.id);
+      await unsetDefaultAuthProfiles(ctx, profile.client, args.id);
     }
 
     const patch = compactPatch({
@@ -276,13 +240,9 @@ export const updateAuthProfile = mutation({
 export const deleteAuthProfile = mutation({
   args: { id: v.id("authProfiles") },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const profile = await ctx.db.get(args.id);
     if (profile == null) {
       throw new Error("Auth profile not found");
-    }
-    if (profile.userId !== userId) {
-      throw new Error("User not authorized to delete auth profile");
     }
     await ctx.db.delete(args.id);
     return args.id;
@@ -300,14 +260,12 @@ export const createDeepLinkTemplate = mutation({
   },
   handler: async (ctx, args) => {
     assertChatGptClient(args.client);
-    const userId = await requireUserId(ctx);
 
     if (args.isDefault ?? false) {
-      await unsetDefaultDeepLinks(ctx, userId, args.client, args.platform);
+      await unsetDefaultDeepLinks(ctx, args.client, args.platform);
     }
 
     return await ctx.db.insert("deepLinkTemplates", {
-      userId,
       client: args.client,
       name: args.name,
       platform: args.platform,
@@ -324,10 +282,8 @@ export const listDeepLinkTemplates = query({
     platform: v.optional(vPlatform),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     let templates = await ctx.db
       .query("deepLinkTemplates")
-      .withIndex("userId", (q) => q.eq("userId", userId))
       .order("desc")
       .collect();
 
@@ -353,18 +309,14 @@ export const updateDeepLinkTemplate = mutation({
     isDefault: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const template = await ctx.db.get(args.id);
     if (template == null) {
       throw new Error("Deep link template not found");
     }
-    if (template.userId !== userId) {
-      throw new Error("User not authorized to update deep link template");
-    }
 
     const nextPlatform = args.platform ?? template.platform;
     if (args.isDefault === true) {
-      await unsetDefaultDeepLinks(ctx, userId, template.client, nextPlatform, args.id);
+      await unsetDefaultDeepLinks(ctx, template.client, nextPlatform, args.id);
     }
 
     const patch = compactPatch({
@@ -383,13 +335,9 @@ export const updateDeepLinkTemplate = mutation({
 export const deleteDeepLinkTemplate = mutation({
   args: { id: v.id("deepLinkTemplates") },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const template = await ctx.db.get(args.id);
     if (template == null) {
       throw new Error("Deep link template not found");
-    }
-    if (template.userId !== userId) {
-      throw new Error("User not authorized to delete deep link template");
     }
     await ctx.db.delete(args.id);
     return args.id;
@@ -412,17 +360,12 @@ export const createMonitorRun = mutation({
     runner: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const monitor = await ctx.db.get(args.monitorId);
     if (monitor == null) {
       throw new Error("Monitor not found");
     }
-    if (monitor.userId !== userId) {
-      throw new Error("User not authorized to create run for monitor");
-    }
 
     return await ctx.db.insert("monitorRuns", {
-      userId,
       monitorId: args.monitorId,
       client: args.client ?? monitor.client,
       platform: args.platform ?? monitor.platform,
@@ -469,7 +412,6 @@ export const ingestMonitorRun = mutation({
     }
 
     return await ctx.db.insert("monitorRuns", {
-      userId: monitor.userId,
       monitorId: args.monitorId,
       client: args.client ?? monitor.client,
       platform: args.platform ?? monitor.platform,
@@ -492,17 +434,9 @@ export const listMonitorRuns = query({
     limit: v.optional(v.float64()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx);
     const limit = Math.max(1, Math.min(100, Math.floor(args.limit ?? 20)));
 
     if (args.monitorId) {
-      const monitor = await ctx.db.get(args.monitorId);
-      if (monitor == null) {
-        throw new Error("Monitor not found");
-      }
-      if (monitor.userId !== userId) {
-        throw new Error("User not authorized to list runs for monitor");
-      }
       return await ctx.db
         .query("monitorRuns")
         .withIndex("monitorId_startedAt", (q) => q.eq("monitorId", args.monitorId!))
@@ -512,7 +446,7 @@ export const listMonitorRuns = query({
 
     return await ctx.db
       .query("monitorRuns")
-      .withIndex("userId_startedAt", (q) => q.eq("userId", userId))
+      .withIndex("startedAt")
       .order("desc")
       .take(limit);
   },

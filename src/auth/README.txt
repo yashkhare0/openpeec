@@ -1,1 +1,0 @@
-These auth components are just lifted from https://github.com/get-convex/convex-auth-example.

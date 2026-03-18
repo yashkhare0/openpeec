@@ -1,6 +1,5 @@
-import { Download, GraduationCap, RefreshCw } from "lucide-react";
+import { GraduationCap, RefreshCw } from "lucide-react";
 
-import { Profile } from "@/components/Profile";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -95,14 +94,9 @@ export function SiteHeader({
       </div>
 
       <div className="flex items-center gap-2">
-        <div data-tour="auth-area"><Profile /></div>
         <Button data-tour="tutorial-btn" variant="outline" size="sm" onClick={onStartTutorial}>
           <GraduationCap className="mr-1.5 size-4" />
           Run Tutorial
-        </Button>
-        <Button data-tour="export-btn" variant="outline" size="sm">
-          <Download className="mr-1.5 size-4" />
-          Export
         </Button>
       </div>
     </header>

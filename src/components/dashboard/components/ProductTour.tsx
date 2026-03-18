@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { driver, type DriveStep, type Driver } from "driver.js";
 import "driver.js/dist/driver.css";
 
-type PageKey = "overview" | "prompts" | "sources" | "models" | "settings";
+type PageKey = "overview" | "prompts" | "sources" | "models";
 
 function buildSteps(onNavigate: (page: PageKey) => void): DriveStep[] {
   return [
@@ -17,16 +17,6 @@ function buildSteps(onNavigate: (page: PageKey) => void): DriveStep[] {
       },
     },
     {
-      element: "[data-tour='client-badge']",
-      popover: {
-        title: "Active Client",
-        description:
-          "This shows which AI platform you're currently monitoring. OpenPeec tracks how your brand appears in ChatGPT, Perplexity, Gemini, and others.",
-        side: "bottom",
-        align: "start",
-      },
-    },
-    {
       element: "[data-tour='header-filters']",
       popover: {
         title: "Filter Your Data",
@@ -34,16 +24,6 @@ function buildSteps(onNavigate: (page: PageKey) => void): DriveStep[] {
           "Narrow your analytics by time range (7, 30, or 90 days) and by specific AI model. Changes apply across all dashboard views.",
         side: "bottom",
         align: "start",
-      },
-    },
-    {
-      element: "[data-tour='auth-area']",
-      popover: {
-        title: "Sign In",
-        description:
-          "Sign in with GitHub, Google, or email to load your analytics data. All monitoring data is tied to your account.",
-        side: "bottom",
-        align: "end",
       },
     },
     {
@@ -70,21 +50,11 @@ function buildSteps(onNavigate: (page: PageKey) => void): DriveStep[] {
       },
     },
     {
-      element: "[data-tour='export-btn']",
-      popover: {
-        title: "Export Data",
-        description:
-          "Download your analytics data for stakeholder reports and presentations.",
-        side: "bottom",
-        align: "end",
-      },
-    },
-    {
       element: "[data-tour='tutorial-btn']",
       popover: {
         title: "You're All Set!",
         description:
-          "That's the tour! Start by signing in, then configure your monitor in Settings. You can restart this tutorial anytime by clicking this button.",
+          "That's the tour! Configure your monitor and run the local runner to populate the dashboard with real data. You can restart this tutorial anytime by clicking this button.",
         side: "bottom",
         align: "end",
       },

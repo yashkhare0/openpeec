@@ -1,13 +1,9 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { authTables } from "@convex-dev/auth/server";
 
 export default defineSchema({
-  ...authTables,
-
   // Registered http request-sending jobs.
   jobs: defineTable({
-    userId: v.id("users"),
     // This name is unrelated to the name of the actual cron itself. The latter
     // is an optional unique identifier across all crons whereas the name in
     // this table is just a convenient per-user name for showing in their UI.
@@ -17,22 +13,20 @@ export default defineSchema({
     headers: v.optional(v.string()), // TODO: migrate to Record type when we add it
     body: v.optional(v.string()),
     cronId: v.optional(v.string()),
-  }).index("userId", ["userId"]),
+  }),
 
   // Web logs from outgoing requests.
   weblogs: defineTable({
-    userId: v.id("users"),
     url: v.string(),
     method: v.string(),
     headers: v.optional(v.string()),
     body: v.optional(v.string()),
     status: v.float64(),
     response: v.string(),
-  }).index("userId", ["userId"]),
+  }),
 
   // Product-domain entities for local-first monitoring.
   monitors: defineTable({
-    userId: v.id("users"),
     name: v.string(),
     description: v.optional(v.string()),
     // ChatGPT is the only real client in v0.
@@ -48,12 +42,9 @@ export default defineSchema({
     authProfileId: v.optional(v.id("authProfiles")),
     deepLinkTemplateId: v.optional(v.id("deepLinkTemplates")),
     checkConfig: v.optional(v.string()),
-  })
-    .index("userId", ["userId"])
-    .index("userId_client", ["userId", "client"]),
+  }).index("client", ["client"]),
 
   authProfiles: defineTable({
-    userId: v.id("users"),
     // Local-only reference to credentials. Raw secrets do not live in Convex.
     client: v.string(),
     name: v.string(),
@@ -62,12 +53,9 @@ export default defineSchema({
     notes: v.optional(v.string()),
     metadata: v.optional(v.string()),
     isDefault: v.boolean(),
-  })
-    .index("userId", ["userId"])
-    .index("userId_client", ["userId", "client"]),
+  }).index("client", ["client"]),
 
   deepLinkTemplates: defineTable({
-    userId: v.id("users"),
     client: v.string(),
     name: v.string(),
     platform: v.union(
@@ -80,12 +68,10 @@ export default defineSchema({
     purpose: v.optional(v.string()),
     isDefault: v.boolean(),
   })
-    .index("userId", ["userId"])
-    .index("userId_client", ["userId", "client"])
-    .index("userId_client_platform", ["userId", "client", "platform"]),
+    .index("client", ["client"])
+    .index("client_platform", ["client", "platform"]),
 
   monitorRuns: defineTable({
-    userId: v.id("users"),
     monitorId: v.id("monitors"),
     client: v.string(),
     platform: v.union(
@@ -109,23 +95,18 @@ export default defineSchema({
     output: v.optional(v.string()),
     runner: v.optional(v.string()),
   })
-    .index("userId", ["userId"])
-    .index("userId_startedAt", ["userId", "startedAt"])
+    .index("startedAt", ["startedAt"])
     .index("monitorId_startedAt", ["monitorId", "startedAt"]),
 
   // Analytics domain entities for visibility/citation monitoring.
   promptGroups: defineTable({
-    userId: v.id("users"),
     name: v.string(),
     description: v.optional(v.string()),
     color: v.optional(v.string()),
     sortOrder: v.float64(),
-  })
-    .index("userId", ["userId"])
-    .index("userId_sortOrder", ["userId", "sortOrder"]),
+  }).index("sortOrder", ["sortOrder"]),
 
   prompts: defineTable({
-    userId: v.id("users"),
     groupId: v.optional(v.id("promptGroups")),
     name: v.string(),
     promptText: v.string(),
@@ -134,12 +115,10 @@ export default defineSchema({
     active: v.boolean(),
     notes: v.optional(v.string()),
   })
-    .index("userId", ["userId"])
-    .index("userId_groupId", ["userId", "groupId"])
-    .index("userId_active", ["userId", "active"]),
+    .index("groupId", ["groupId"])
+    .index("active", ["active"]),
 
   promptJobs: defineTable({
-    userId: v.id("users"),
     name: v.string(),
     promptIds: v.array(v.id("prompts")),
     schedule: v.optional(v.string()),
@@ -149,12 +128,9 @@ export default defineSchema({
     lastQueuedCount: v.optional(v.float64()),
     createdAt: v.float64(),
     updatedAt: v.float64(),
-  })
-    .index("userId", ["userId"])
-    .index("userId_enabled", ["userId", "enabled"]),
+  }).index("enabled", ["enabled"]),
 
   trackedEntities: defineTable({
-    userId: v.id("users"),
     name: v.string(),
     slug: v.string(),
     kind: v.union(
@@ -169,12 +145,10 @@ export default defineSchema({
     color: v.optional(v.string()),
     active: v.boolean(),
   })
-    .index("userId", ["userId"])
-    .index("userId_slug", ["userId", "slug"])
-    .index("userId_active", ["userId", "active"]),
+    .index("slug", ["slug"])
+    .index("active", ["active"]),
 
   promptRuns: defineTable({
-    userId: v.id("users"),
     promptId: v.id("prompts"),
     model: v.string(),
     status: v.union(
@@ -194,13 +168,11 @@ export default defineSchema({
     runLabel: v.optional(v.string()),
     sourceCount: v.optional(v.float64()),
   })
-    .index("userId", ["userId"])
-    .index("userId_startedAt", ["userId", "startedAt"])
+    .index("startedAt", ["startedAt"])
     .index("promptId_startedAt", ["promptId", "startedAt"])
-    .index("userId_model_startedAt", ["userId", "model", "startedAt"]),
+    .index("model_startedAt", ["model", "startedAt"]),
 
   citations: defineTable({
-    userId: v.id("users"),
     promptRunId: v.id("promptRuns"),
     domain: v.string(),
     url: v.string(),
@@ -219,8 +191,7 @@ export default defineSchema({
     trackedEntityId: v.optional(v.id("trackedEntities")),
     isOwned: v.boolean(),
   })
-    .index("userId", ["userId"])
     .index("promptRunId", ["promptRunId"])
-    .index("userId_domain", ["userId", "domain"])
-    .index("userId_type", ["userId", "type"]),
+    .index("domain", ["domain"])
+    .index("type", ["type"]),
 });

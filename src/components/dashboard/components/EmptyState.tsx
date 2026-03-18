@@ -13,8 +13,8 @@ export function EmptyState({
 }: {
   title: string;
   description: string;
-  actionLabel: string;
-  onAction: () => Promise<void>;
+  actionLabel?: string;
+  onAction?: () => void;
   compact?: boolean;
 }) {
   return (
@@ -32,9 +32,11 @@ export function EmptyState({
         <p className="mt-1 max-w-md text-sm text-muted-foreground">
           {description}
         </p>
-        <Button className="mt-4" onClick={() => void onAction()}>
-          {actionLabel}
-        </Button>
+        {actionLabel && onAction && (
+          <Button className="mt-4" onClick={onAction}>
+            {actionLabel}
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

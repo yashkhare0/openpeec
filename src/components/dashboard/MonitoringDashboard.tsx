@@ -1,5 +1,5 @@
 import { useDeferredValue, useMemo, useState } from "react";
-import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 
 import type { Id } from "../../../convex/_generated/dataModel";
 import { api } from "../../../convex/_generated/api";
@@ -15,9 +15,8 @@ import { OverviewPage } from "./OverviewPage";
 import { PromptsPage } from "./PromptsPage";
 import { SourcesPage } from "./SourcesPage";
 import { ModelsPage } from "./ModelsPage";
-import { SettingsPage } from "./SettingsPage";
 
-type PageKey = "overview" | "prompts" | "sources" | "models" | "settings";
+type PageKey = "overview" | "prompts" | "sources" | "models";
 type Tone = "positive" | "negative" | "neutral";
 type TrackedKind = "brand" | "competitor" | "product" | "feature" | "other";
 
@@ -47,41 +46,20 @@ export function MonitoringDashboard() {
   const [newEntityKind, setNewEntityKind] = useState<TrackedKind>("brand");
   const [newEntityDomain, setNewEntityDomain] = useState("");
 
-  const { isAuthenticated } = useConvexAuth();
-  const live = isAuthenticated;
   const model = modelFilter === "all" ? undefined : modelFilter;
   const promptArgs =
     selectedGroup === "all" ? {} : { groupId: selectedGroup };
 
-  const overview = useQuery(
-    api.analytics.getOverview,
-    live ? { rangeDays, model } : "skip"
-  );
-  const promptGroups = useQuery(
-    api.analytics.listPromptGroups,
-    live ? {} : "skip"
-  );
-  const prompts = useQuery(
-    api.analytics.listPrompts,
-    live ? promptArgs : "skip"
-  );
-  const promptJobs = useQuery(
-    api.analytics.listPromptJobs,
-    live ? {} : "skip"
-  );
-  const runs = useQuery(
-    api.analytics.listPromptRuns,
-    live ? { limit: 200, model } : "skip"
-  );
-  const sources = useQuery(
-    api.analytics.listSources,
-    live ? { rangeDays, model, limit: 80 } : "skip"
-  );
-  const entities =
-    useQuery(api.analytics.listTrackedEntities, live ? {} : "skip") ?? [];
+  const overview = useQuery(api.analytics.getOverview, { rangeDays, model });
+  const promptGroups = useQuery(api.analytics.listPromptGroups, {});
+  const prompts = useQuery(api.analytics.listPrompts, promptArgs);
+  const promptJobs = useQuery(api.analytics.listPromptJobs, {});
+  const runs = useQuery(api.analytics.listPromptRuns, { limit: 200, model });
+  const sources = useQuery(api.analytics.listSources, { rangeDays, model, limit: 80 });
+  const entities = useQuery(api.analytics.listTrackedEntities, {}) ?? [];
   const runDetail = useQuery(
     api.analytics.getPromptRun,
-    live && selectedRunId ? { id: selectedRunId } : "skip"
+    selectedRunId ? { id: selectedRunId } : "skip"
   );
 
   const createPromptGroup = useMutation(api.analytics.createPromptGroup);
@@ -102,12 +80,11 @@ export function MonitoringDashboard() {
   const deleteTrackedEntity = useMutation(api.analytics.deleteTrackedEntity);
 
   const loading =
-    live &&
-    (overview === undefined ||
-      prompts === undefined ||
-      promptJobs === undefined ||
-      runs === undefined ||
-      sources === undefined);
+    overview === undefined ||
+    prompts === undefined ||
+    promptJobs === undefined ||
+    runs === undefined ||
+    sources === undefined;
   const hasData = !!overview && overview.kpis.totalRuns > 0;
 
   const rollups = useMemo(
@@ -166,10 +143,6 @@ export function MonitoringDashboard() {
     [overview, sources?.meta.totalDomains]
   );
 
-  const openSettings = async () => {
-    setPage("settings");
-  };
-
   const refreshAnalytics = () => {
     window.location.reload();
   };
@@ -196,11 +169,8 @@ export function MonitoringDashboard() {
 
           <div className="flex flex-1 flex-col">
             {/* Notices */}
-            {(!live || loading || notice) && (
+            {(loading || notice) && (
               <div className="flex flex-col gap-2 px-4 pt-4 lg:px-6">
-                {!live && (
-                  <StatusBanner text="Sign in to load analytics data." />
-                )}
                 {loading && (
                   <StatusBanner text="Loading analytics data..." />
                 )}
@@ -218,7 +188,6 @@ export function MonitoringDashboard() {
                 overview={overview}
                 sources={sources?.items ?? []}
                 sourceMix={sources?.domainTypeBreakdown ?? []}
-                onOpenSettings={openSettings}
               />
             )}
             {page === "prompts" && (
@@ -274,10 +243,7 @@ export function MonitoringDashboard() {
               />
             )}
             {page === "models" && (
-              <ModelsPage rows={modelRows} onOpenSettings={openSettings} />
-            )}
-            {page === "settings" && (
-              <SettingsPage />
+              <ModelsPage rows={modelRows} />
             )}
           </div>
         </SidebarInset>

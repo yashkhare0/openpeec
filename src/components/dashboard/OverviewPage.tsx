@@ -21,7 +21,6 @@ export function OverviewPage({
   overview,
   sources,
   sourceMix,
-  onOpenSettings,
 }: {
   loading: boolean;
   hasData: boolean;
@@ -46,7 +45,6 @@ export function OverviewPage({
     avgQualityScore: number | undefined;
   }>;
   sourceMix: Array<{ type: string; share: number }>;
-  onOpenSettings: () => Promise<void>;
 }) {
   if (!loading && !hasData) {
     return (
@@ -55,8 +53,6 @@ export function OverviewPage({
           <EmptyState
             title="No analytics runs yet"
             description="Run the local ChatGPT monitor once and ingest the result to populate visibility, citation quality, and source coverage."
-            actionLabel="Review runner setup"
-            onAction={onOpenSettings}
           />
         </div>
       </div>

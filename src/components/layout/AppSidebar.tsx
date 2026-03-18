@@ -4,7 +4,6 @@ import {
   Bot,
   FileText,
   Link2,
-  Settings2,
 } from "lucide-react";
 
 import { ModeToggle } from "@/components/ModeToggle";
@@ -20,7 +19,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 
-type PageKey = "overview" | "prompts" | "sources" | "models" | "settings";
+type PageKey = "overview" | "prompts" | "sources" | "models";
 
 const mainPages: Array<{ key: PageKey; label: string; icon: typeof Activity }> =
   [
@@ -82,16 +81,6 @@ export function AppSidebar({
         <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
             <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={page === "settings"}
-                  onClick={() => startTransition(() => onPage("settings"))}
-                  tooltip="Settings"
-                >
-                  <Settings2 />
-                  <span>Settings</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
               <SidebarMenuItem>
                 <ModeToggle />
               </SidebarMenuItem>

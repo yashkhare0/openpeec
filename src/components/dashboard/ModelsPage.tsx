@@ -23,7 +23,6 @@ function formatPercent(value: number | undefined): string {
 
 export function ModelsPage({
   rows,
-  onOpenSettings,
 }: {
   rows: Array<{
     model: string;
@@ -32,7 +31,6 @@ export function ModelsPage({
     position: number | undefined;
     runSuccess: number | undefined;
   }>;
-  onOpenSettings: () => Promise<void>;
 }) {
   if (rows.length === 0) {
     return (
@@ -41,8 +39,6 @@ export function ModelsPage({
           <EmptyState
             title="No model analytics yet"
             description="Once real prompt runs are ingested, model-level visibility and citation comparisons will appear here."
-            actionLabel="Review runner setup"
-            onAction={onOpenSettings}
             compact
           />
         </div>
