@@ -700,9 +700,10 @@ export function PromptsPage({
                     className="h-8 font-mono text-xs"
                   />
                   <p className="text-muted-foreground text-[11px] leading-5">
-                    Leave the cron field blank to save a manual batch only. Run{" "}
-                    <span className="font-mono">pnpm runner:queue</span> locally
-                    to process queued prompts.
+                    Leave the cron field blank to save a manual batch only.{" "}
+                    <span className="font-mono">pnpm dev</span> starts the queue
+                    worker automatically. If you run services separately, use{" "}
+                    <span className="font-mono">pnpm runner:queue</span>.
                   </p>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">

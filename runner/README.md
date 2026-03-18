@@ -29,6 +29,9 @@ This is an operator tool for recurring checks, not a generic browser automation 
    `status`, `warnings`, `responseText`, `citations`, `visibilityScore`, `citationQualityScore`, `network.json`, `console.json`, `page.html`, `response.html`, `trace.zip`, and the recorded video.
 7. If you need ingestion, run with `--ingest` and set `VITE_CONVEX_URL`.
 
+`pnpm dev` now starts the queue worker automatically (`dev:runner`) so queued
+prompt jobs are picked up without manual worker startup.
+
 ## Prompt-Oriented Config Contract
 
 `runner/example.monitor.json`:
@@ -175,6 +178,9 @@ For queued prompt execution:
 1. The dashboard creates `promptRuns` with `status: "queued"`.
 2. `pnpm runner:queue` claims the next queued run, launches Playwright locally, and patches that same record to `running`, then `success` or `failed`.
 3. Citations, warnings, screenshot/video/trace paths, and the final deep link are written back onto the original queued run so the dashboard can inspect the evidence.
+
+Queue execution is strictly sequential. Only one run can be in `running` state
+at a time; the next queued run starts after the previous run is completed.
 
 Optional hardening:
 
