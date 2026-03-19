@@ -95,11 +95,13 @@ export function PromptDetailPage({
           startedAt: number;
           finishedAt?: number;
           model: string;
+          attempt?: number;
           citationQualityScore?: number;
           averageCitationPosition?: number;
+          visibilityScore?: number;
           responseSummary?: string;
           responseTextPreview: string;
-          sourceCount: number;
+          sourceCount?: number;
           sourceDomains: string[];
           mentionNames: string[];
           warnings: string[];
@@ -120,7 +122,7 @@ export function PromptDetailPage({
           }>;
         }>;
         entityBreakdown: Array<{
-          entityId: Id<"trackedEntities">;
+          entityId?: Id<"trackedEntities">;
           name: string;
           kind: string;
           mentionCount: number;

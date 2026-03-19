@@ -87,20 +87,20 @@
 
 ## Technical Decisions
 
-| Decision | Rationale |
-|----------|-----------|
-| Treat blocked/preflight failures as first-class product states | ChatGPT/Cloudflare failures are common enough that "failed" is too coarse and too misleading. |
-| Stabilize semantics before rebuilding metrics | A metric layer on top of incorrect source/run truth will not be trusted. |
-| Prefer persistent authenticated local browser context over fresh headless bootstrap | This matches the local-first requirement and is the most realistic path to stable ChatGPT execution. |
-| Move to routed drill-downs before more dashboard expansion | Analytics products need durable URLs and refresh-safe navigation. |
-| Define analytics contribution rules explicitly | The product promise depends on knowing exactly which run states feed sources, citations, and summary views. |
+| Decision                                                                            | Rationale                                                                                                   |
+| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Treat blocked/preflight failures as first-class product states                      | ChatGPT/Cloudflare failures are common enough that "failed" is too coarse and too misleading.               |
+| Stabilize semantics before rebuilding metrics                                       | A metric layer on top of incorrect source/run truth will not be trusted.                                    |
+| Prefer persistent authenticated local browser context over fresh headless bootstrap | This matches the local-first requirement and is the most realistic path to stable ChatGPT execution.        |
+| Move to routed drill-downs before more dashboard expansion                          | Analytics products need durable URLs and refresh-safe navigation.                                           |
+| Define analytics contribution rules explicitly                                      | The product promise depends on knowing exactly which run states feed sources, citations, and summary views. |
 
 ## Issues Encountered
 
-| Issue | Resolution |
-|-------|------------|
+| Issue                                                         | Resolution                                                                    |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | Existing planning files reflected an earlier build-first mode | Replaced them with a stabilization-first plan based on the seven-scope audit. |
-| Seventh reviewer returned after initial audit consolidation | Folded those additional findings into this plan and issue inventory. |
+| Seventh reviewer returned after initial audit consolidation   | Folded those additional findings into this plan and issue inventory.          |
 
 ## Resources
 
@@ -143,4 +143,4 @@
 
 ---
 
-*These findings are meant to guide implementation order, not just describe defects.*
+_These findings are meant to guide implementation order, not just describe defects._

@@ -109,11 +109,14 @@ export function ResponseDetailPage({
   onBack,
   backLabel = "Back to prompt",
   onOpenPrompt,
+  onRetryRun,
+  onCancelRun,
 }: {
   loading?: boolean;
   runDetail:
     | {
         run: {
+          _id: Id<"promptRuns">;
           promptId?: Id<"prompts">;
           status: string;
           startedAt: number;
@@ -133,7 +136,7 @@ export function ResponseDetailPage({
           promptText: string;
         } | null;
         mentions?: Array<{
-          entityId: Id<"trackedEntities">;
+          entityId?: Id<"trackedEntities">;
           name: string;
           slug: string;
           kind: string;
@@ -161,6 +164,8 @@ export function ResponseDetailPage({
   onBack: () => void;
   backLabel?: string;
   onOpenPrompt?: () => void;
+  onRetryRun?: (runId: Id<"promptRuns">) => void | Promise<void>;
+  onCancelRun?: (runId: Id<"promptRuns">) => void | Promise<void>;
 }) {
   if (loading) {
     return (
@@ -231,6 +236,18 @@ export function ResponseDetailPage({
     );
   }
 
+  const runStatus = runDetail.run.status.toLowerCase();
+  const isSuccessfulRun = runStatus === "success";
+  const isRetryable = runStatus === "failed" || runStatus === "blocked";
+  const isCancelable = runStatus === "queued" || runStatus === "running";
+  const runSummaryLabel = isSuccessfulRun ? "Response Summary" : "Run Summary";
+  const noCitationMessage =
+    runStatus === "blocked"
+      ? "This run was blocked before ChatGPT produced a valid response, so no citations were recorded."
+      : runStatus === "failed"
+        ? "This run failed before a valid response could be analyzed, so no citations were recorded."
+        : "No citations were captured for this response.";
+
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
       <div className="flex items-center gap-2 px-4 lg:px-6">
@@ -240,6 +257,28 @@ export function ResponseDetailPage({
         {onOpenPrompt ? (
           <Button variant="ghost" size="sm" onClick={onOpenPrompt}>
             Open prompt
+          </Button>
+        ) : null}
+        {isRetryable && onRetryRun ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              void onRetryRun(runDetail.run._id);
+            }}
+          >
+            Retry run
+          </Button>
+        ) : null}
+        {isCancelable && onCancelRun ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              void onCancelRun(runDetail.run._id);
+            }}
+          >
+            Cancel run
           </Button>
         ) : null}
       </div>
@@ -258,10 +297,16 @@ export function ResponseDetailPage({
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-wrap gap-2">
-                <Badge variant="secondary">
-                  {runDetail.run.sourceCount ?? runDetail.citations.length}{" "}
-                  sources
-                </Badge>
+                {isSuccessfulRun ? (
+                  <Badge variant="secondary">
+                    {runDetail.run.sourceCount ?? runDetail.citations.length}{" "}
+                    sources
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary">
+                    {titleCase(runDetail.run.status)}
+                  </Badge>
+                )}
                 {runDetail.run.citationQualityScore !== undefined ? (
                   <Badge variant="outline">
                     Citation {formatScore(runDetail.run.citationQualityScore)}
@@ -291,7 +336,7 @@ export function ResponseDetailPage({
               {runDetail.run.responseSummary ? (
                 <section className="bg-muted/20 rounded-xl border p-4">
                   <p className="text-muted-foreground text-[11px] font-medium tracking-[0.16em] uppercase">
-                    Response Summary
+                    {runSummaryLabel}
                   </p>
                   <p className="text-foreground/90 mt-2 text-sm leading-6">
                     {runDetail.run.responseSummary}
@@ -300,7 +345,7 @@ export function ResponseDetailPage({
               ) : null}
 
               {runDetail.citations.length === 0 ? (
-                <InlineEmpty text="No citations were captured for this response." />
+                <InlineEmpty text={noCitationMessage} />
               ) : (
                 <Card className="border-dashed shadow-none">
                   <CardHeader>
@@ -391,7 +436,7 @@ export function ResponseDetailPage({
               {runDetail.mentions?.length ? (
                 runDetail.mentions.map((mention) => (
                   <div
-                    key={String(mention.entityId)}
+                    key={String(mention.entityId ?? mention.slug)}
                     className="rounded-xl border p-3"
                   >
                     <div className="flex items-center justify-between gap-3">
@@ -455,9 +500,6 @@ export function ResponseDetailPage({
                     Deep link: {runDetail.run.deeplinkUsed}
                   </p>
                 ) : null}
-                {screenshotPath ? (
-                  <p className="break-all">Screenshot: {screenshotPath}</p>
-                ) : null}
               </div>
 
               <details className="rounded-xl border p-3 text-xs">
@@ -465,53 +507,85 @@ export function ResponseDetailPage({
                   Technical artifacts
                 </summary>
                 <div className="text-muted-foreground mt-3 space-y-2">
-                  {outputPayload?.artifacts?.video ? (
-                    <p className="break-all">
-                      Video: {outputPayload.artifacts.video}
-                    </p>
-                  ) : null}
-                  {outputPayload?.artifacts?.trace ? (
-                    <p className="break-all">
-                      Trace: {outputPayload.artifacts.trace}
-                    </p>
-                  ) : null}
-                  {outputPayload?.artifacts?.pageHtml ? (
-                    <p className="break-all">
-                      Page HTML: {outputPayload.artifacts.pageHtml}
-                    </p>
-                  ) : null}
-                  {outputPayload?.artifacts?.responseHtml ? (
-                    <p className="break-all">
-                      Response HTML: {outputPayload.artifacts.responseHtml}
-                    </p>
-                  ) : null}
-                  {outputPayload?.artifacts?.sources ? (
-                    <p className="break-all">
-                      Sources JSON: {outputPayload.artifacts.sources}
-                    </p>
-                  ) : null}
-                  {outputPayload?.artifacts?.network ? (
-                    <p className="break-all">
-                      Network JSON: {outputPayload.artifacts.network}
-                    </p>
-                  ) : null}
-                  {outputPayload?.artifacts?.console ? (
-                    <p className="break-all">
-                      Console JSON: {outputPayload.artifacts.console}
-                    </p>
-                  ) : null}
+                  <ArtifactRow label="Screenshot" filePath={screenshotPath} />
+                  <ArtifactRow
+                    label="Video"
+                    filePath={outputPayload?.artifacts?.video ?? undefined}
+                  />
+                  <ArtifactRow
+                    label="Trace"
+                    filePath={outputPayload?.artifacts?.trace}
+                  />
+                  <ArtifactRow
+                    label="Page HTML"
+                    filePath={outputPayload?.artifacts?.pageHtml}
+                  />
+                  <ArtifactRow
+                    label="Response HTML"
+                    filePath={outputPayload?.artifacts?.responseHtml}
+                  />
+                  <ArtifactRow
+                    label="Sources JSON"
+                    filePath={outputPayload?.artifacts?.sources}
+                  />
+                  <ArtifactRow
+                    label="Network JSON"
+                    filePath={outputPayload?.artifacts?.network}
+                  />
+                  <ArtifactRow
+                    label="Console JSON"
+                    filePath={outputPayload?.artifacts?.console}
+                  />
                 </div>
               </details>
 
               {runDetail.run.warnings?.length ? (
-                <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900">
-                  {runDetail.run.warnings.join(" | ")}
-                </div>
+                <details className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900">
+                  <summary className="cursor-pointer font-medium">
+                    Runner warnings
+                  </summary>
+                  <div className="mt-2 space-y-2">
+                    {runDetail.run.warnings.map((warning, index) => (
+                      <p key={`${warning}-${index}`}>{warning}</p>
+                    ))}
+                  </div>
+                </details>
               ) : null}
             </CardContent>
           </Card>
         </div>
       </div>
     </div>
+  );
+}
+
+function ArtifactRow({
+  label,
+  filePath,
+}: {
+  label: string;
+  filePath: string | undefined;
+}) {
+  if (!filePath) {
+    return null;
+  }
+
+  const servedUrl = artifactUrlFromPath(filePath);
+  return (
+    <p className="break-all">
+      {label}:{" "}
+      {servedUrl ? (
+        <a
+          href={servedUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="text-foreground underline underline-offset-2"
+        >
+          Open artifact
+        </a>
+      ) : (
+        filePath
+      )}
+    </p>
   );
 }

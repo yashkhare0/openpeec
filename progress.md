@@ -28,16 +28,16 @@
 
 ## Test Results
 
-| Test | Input | Expected | Actual | Status |
-|------|-------|----------|--------|--------|
-| Planning file review | Existing planning files present | Continue/update rather than replace blindly | Existing files found and used as continuation context | pass |
-| Session catchup script | `session-catchup.py` against project root | Prior-session context if any | No actionable catchup output returned | pass |
+| Test                   | Input                                     | Expected                                    | Actual                                                | Status |
+| ---------------------- | ----------------------------------------- | ------------------------------------------- | ----------------------------------------------------- | ------ |
+| Planning file review   | Existing planning files present           | Continue/update rather than replace blindly | Existing files found and used as continuation context | pass   |
+| Session catchup script | `session-catchup.py` against project root | Prior-session context if any                | No actionable catchup output returned                 | pass   |
 
 ## Error Log
 
-| Timestamp | Error | Attempt | Resolution |
-|-----------|-------|---------|------------|
-| 2026-03-19 | Seventh review scope returned after initial consolidation | 1 | Incorporated the extra operational findings into the planning artifacts instead of keeping the initial summary frozen |
+| Timestamp  | Error                                                     | Attempt | Resolution                                                                                                            |
+| ---------- | --------------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------- |
+| 2026-03-19 | Seventh review scope returned after initial consolidation | 1       | Incorporated the extra operational findings into the planning artifacts instead of keeping the initial summary frozen |
 
 ## Current Repo State Notes
 
@@ -54,14 +54,14 @@
 
 ## 5-Question Reboot Check
 
-| Question | Answer |
-|----------|--------|
-| Where am I? | Planning is complete; implementation has not started yet. |
-| Where am I going? | Into Phases 2-8 of `task_plan.md`, starting with product truth, runner preflight, and queue hardening. |
-| What's the goal? | Stabilize OpenPeec into a trustworthy local-first internal monitoring product for ChatGPT-first prompt monitoring. |
-| What have I learned? | The major risks are runner posture, queue semantics, analytics truth, routing/error UX, and tooling/docs drift. |
-| What have I done? | Rewrote the planning artifacts so the full remediation program is persisted on disk. |
+| Question             | Answer                                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Where am I?          | Planning is complete; implementation has not started yet.                                                          |
+| Where am I going?    | Into Phases 2-8 of `task_plan.md`, starting with product truth, runner preflight, and queue hardening.             |
+| What's the goal?     | Stabilize OpenPeec into a trustworthy local-first internal monitoring product for ChatGPT-first prompt monitoring. |
+| What have I learned? | The major risks are runner posture, queue semantics, analytics truth, routing/error UX, and tooling/docs drift.    |
+| What have I done?    | Rewrote the planning artifacts so the full remediation program is persisted on disk.                               |
 
 ---
 
-*This session was planning-only. No product code was changed as part of this request.*
+_This session was planning-only. No product code was changed as part of this request._

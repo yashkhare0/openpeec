@@ -30,48 +30,199 @@ type PageKey =
 type Tone = "positive" | "negative" | "neutral";
 type TrackedKind = "brand" | "competitor" | "product" | "feature" | "other";
 type RunDetailContext = "prompts" | "runs" | "responses" | null;
+const DASHBOARD_PAGES: PageKey[] = [
+  "overview",
+  "prompts",
+  "runs",
+  "groups",
+  "responses",
+  "sources",
+];
+
+function isPageKey(value: string | null): value is PageKey {
+  return value !== null && DASHBOARD_PAGES.includes(value as PageKey);
+}
+
+function parseDashboardUrlState(): {
+  page: PageKey;
+  rangeDays: number;
+  modelFilter: string;
+  promptSearch: string;
+  selectedGroup: Id<"promptGroups"> | "all";
+  selectedPromptId: Id<"prompts"> | null;
+  selectedRunId: Id<"promptRuns"> | null;
+  runDetailContext: RunDetailContext;
+} {
+  const params = new URLSearchParams(window.location.search);
+  const rangeValue = Number(params.get("range"));
+  const pageValue = params.get("page");
+  const contextValue = params.get("context");
+
+  return {
+    page: isPageKey(pageValue) ? pageValue : "overview",
+    rangeDays: Number.isFinite(rangeValue) && rangeValue > 0 ? rangeValue : 7,
+    modelFilter: params.get("model")?.trim() || "all",
+    promptSearch: params.get("search")?.trim() || "",
+    selectedGroup: (params.get("group")?.trim() ?? "all") as
+      | Id<"promptGroups">
+      | "all",
+    selectedPromptId:
+      (params.get("prompt")?.trim() as Id<"prompts"> | null) ?? null,
+    selectedRunId:
+      (params.get("run")?.trim() as Id<"promptRuns"> | null) ?? null,
+    runDetailContext: (contextValue === "prompts" ||
+    contextValue === "runs" ||
+    contextValue === "responses"
+      ? contextValue
+      : null) as RunDetailContext,
+  };
+}
+
+function writeDashboardUrlState(state: {
+  page: PageKey;
+  rangeDays: number;
+  modelFilter: string;
+  promptSearch: string;
+  selectedGroup: Id<"promptGroups"> | "all";
+  selectedPromptId: Id<"prompts"> | null;
+  selectedRunId: Id<"promptRuns"> | null;
+  runDetailContext: RunDetailContext;
+}) {
+  const params = new URLSearchParams();
+  if (state.page !== "overview") {
+    params.set("page", state.page);
+  }
+  if (state.rangeDays !== 7) {
+    params.set("range", String(state.rangeDays));
+  }
+  if (state.modelFilter !== "all") {
+    params.set("model", state.modelFilter);
+  }
+  if (state.promptSearch) {
+    params.set("search", state.promptSearch);
+  }
+  if (state.selectedGroup !== "all") {
+    params.set("group", String(state.selectedGroup));
+  }
+  if (state.selectedPromptId) {
+    params.set("prompt", String(state.selectedPromptId));
+  }
+  if (state.selectedRunId) {
+    params.set("run", String(state.selectedRunId));
+  }
+  if (state.runDetailContext) {
+    params.set("context", state.runDetailContext);
+  }
+
+  const search = params.toString();
+  const nextUrl = `${window.location.pathname}${search ? `?${search}` : ""}`;
+  if (nextUrl !== `${window.location.pathname}${window.location.search}`) {
+    window.history.replaceState(null, "", nextUrl);
+  }
+}
 
 export function MonitoringDashboard() {
-  const [page, setPage] = useState<PageKey>("overview");
-  const [rangeDays, setRangeDays] = useState(7);
-  const [modelFilter, setModelFilter] = useState("all");
-  const [promptSearch, setPromptSearch] = useState("");
+  const initialUrlState = useMemo(() => parseDashboardUrlState(), []);
+  const [page, setPage] = useState<PageKey>(initialUrlState.page);
+  const [rangeDays, setRangeDays] = useState(initialUrlState.rangeDays);
+  const [modelFilter, setModelFilter] = useState(initialUrlState.modelFilter);
+  const [promptSearch, setPromptSearch] = useState(
+    initialUrlState.promptSearch
+  );
   const [selectedGroup, setSelectedGroup] = useState<
     Id<"promptGroups"> | "all"
-  >("all");
+  >(initialUrlState.selectedGroup);
   const [selectedPromptId, setSelectedPromptId] =
-    useState<Id<"prompts"> | null>(null);
+    useState<Id<"prompts"> | null>(initialUrlState.selectedPromptId);
   const [selectedRunId, setSelectedRunId] = useState<Id<"promptRuns"> | null>(
-    null
+    initialUrlState.selectedRunId
   );
-  const [runDetailContext, setRunDetailContext] =
-    useState<RunDetailContext>(null);
+  const [runDetailContext, setRunDetailContext] = useState<RunDetailContext>(
+    initialUrlState.runDetailContext
+  );
   const search = useDeferredValue(promptSearch.trim().toLowerCase());
   const [newEntityName, setNewEntityName] = useState("");
   const [newEntityKind, setNewEntityKind] = useState<TrackedKind>("brand");
   const [newEntityDomain, setNewEntityDomain] = useState("");
 
+  const promptView =
+    page === "prompts"
+      ? selectedRunId && runDetailContext === "prompts"
+        ? "response"
+        : selectedPromptId
+          ? "prompt"
+          : "list"
+      : "list";
+  const isOverviewPage = page === "overview";
+  const isPromptsPage = page === "prompts";
+  const isGroupsPage = page === "groups";
+  const isRunsPage = page === "runs";
+  const isResponsesPage = page === "responses";
+  const isSourcesPage = page === "sources";
+  const showingRunDetailForRuns =
+    page === "runs" && runDetailContext === "runs" && selectedRunId !== null;
+  const showingRunDetailForResponses =
+    page === "responses" &&
+    runDetailContext === "responses" &&
+    selectedRunId !== null;
+  const shouldLoadPromptAnalytics = isPromptsPage && promptView === "list";
+  const shouldLoadRunsList =
+    isOverviewPage ||
+    (isRunsPage && !showingRunDetailForRuns) ||
+    (isResponsesPage && !showingRunDetailForResponses);
+
   const model = modelFilter === "all" ? undefined : modelFilter;
-  const overview = useQuery(api.analytics.getOverview, { rangeDays, model });
-  const promptGroups = useQuery(api.analytics.listPromptGroups, {});
-  const prompts = useQuery(api.analytics.listPrompts, {});
-  const promptAnalytics = useQuery(api.analytics.listPromptResponseAnalytics, {
-    groupId: selectedGroup === "all" ? undefined : selectedGroup,
-    model,
-    rangeDays,
-  });
+  const overview = useQuery(
+    api.analytics.getOverview,
+    isOverviewPage ? { rangeDays, model } : "skip"
+  );
+  const promptGroups = useQuery(
+    api.analytics.listPromptGroups,
+    isPromptsPage || isGroupsPage ? {} : "skip"
+  );
+  const prompts = useQuery(
+    api.analytics.listPrompts,
+    isGroupsPage ? {} : "skip"
+  );
+  const promptAnalytics = useQuery(
+    api.analytics.listPromptResponseAnalytics,
+    shouldLoadPromptAnalytics
+      ? {
+          groupId: selectedGroup === "all" ? undefined : selectedGroup,
+          model,
+          rangeDays,
+        }
+      : "skip"
+  );
   const queueStatus = useQuery(api.analytics.getQueueStatus, {});
-  const runs = useQuery(api.analytics.listPromptRuns, { limit: 200, model });
-  const sources = useQuery(api.analytics.listSources, {
-    rangeDays,
-    model,
-    limit: 80,
-  });
+  const availableModels = useQuery(api.analytics.listAvailableModels, {});
+  const runs = useQuery(
+    api.analytics.listPromptRuns,
+    shouldLoadRunsList
+      ? {
+          limit: isOverviewPage ? 4 : 200,
+          model,
+        }
+      : "skip"
+  );
+  const sources = useQuery(
+    api.analytics.listSources,
+    isOverviewPage || isSourcesPage
+      ? {
+          rangeDays,
+          model,
+          limit: isOverviewPage ? 8 : 80,
+        }
+      : "skip"
+  );
   const promptAnalysis = useQuery(
     api.analytics.getPromptAnalysis,
     selectedPromptId ? { promptId: selectedPromptId, model, rangeDays } : "skip"
   );
-  const entities = useQuery(api.analytics.listTrackedEntities, {});
+  const entities = useQuery(
+    api.analytics.listTrackedEntities,
+    isSourcesPage ? {} : "skip"
+  );
   const runDetail = useQuery(
     api.analytics.getPromptRun,
     selectedRunId ? { id: selectedRunId } : "skip"
@@ -84,22 +235,30 @@ export function MonitoringDashboard() {
   const triggerSelectedPromptsNow = useMutation(
     api.analytics.triggerSelectedPromptsNow
   );
+  const retryPromptRun = useMutation(api.analytics.retryPromptRun);
+  const cancelPromptRun = useMutation(api.analytics.cancelPromptRun);
   const createTrackedEntity = useMutation(api.analytics.createTrackedEntity);
   const updateTrackedEntity = useMutation(api.analytics.updateTrackedEntity);
   const deleteTrackedEntity = useMutation(api.analytics.deleteTrackedEntity);
 
-  const loading =
-    overview === undefined ||
-    promptGroups === undefined ||
-    prompts === undefined ||
-    promptAnalytics === undefined ||
-    runs === undefined ||
-    sources === undefined;
-  const sourcesPageLoading = loading || entities === undefined;
+  const overviewLoading =
+    isOverviewPage &&
+    (overview === undefined || runs === undefined || sources === undefined);
+  const promptsPageLoading =
+    isPromptsPage &&
+    promptView === "list" &&
+    (promptGroups === undefined || promptAnalytics === undefined);
+  const groupsPageLoading =
+    isGroupsPage && (promptGroups === undefined || prompts === undefined);
+  const runsPageLoading = isRunsPage && runs === undefined;
+  const responsesPageLoading = isResponsesPage && runs === undefined;
+  const sourcesPageLoading =
+    isSourcesPage && (sources === undefined || entities === undefined);
   const hasData = !!overview && overview.kpis.totalRuns > 0;
   const queueStatusHydratedRef = useRef(false);
   const lastFinishedRunIdRef = useRef<Id<"promptRuns"> | null>(null);
-  const runningToastIdRef = useRef<string | number | null>(null);
+  const queueToastIdRef = useRef<string | number | null>(null);
+  const previousActiveQueueCountRef = useRef(0);
 
   const promptRows = useMemo(
     () =>
@@ -113,7 +272,70 @@ export function MonitoringDashboard() {
     [promptAnalytics, search]
   );
 
+  const modelOptions = useMemo(
+    () => [
+      { label: "All models", value: "all" },
+      ...((availableModels ?? []).map((modelName) => ({
+        label: formatModelLabel(modelName),
+        value: modelName,
+      })) ?? []),
+    ],
+    [availableModels]
+  );
+
   useEffect(() => {
+    const validModels = new Set(modelOptions.map((option) => option.value));
+    if (!validModels.has(modelFilter)) {
+      setModelFilter("all");
+    }
+  }, [modelFilter, modelOptions]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const next = parseDashboardUrlState();
+      setPage(next.page);
+      setRangeDays(next.rangeDays);
+      setModelFilter(next.modelFilter);
+      setPromptSearch(next.promptSearch);
+      setSelectedGroup(next.selectedGroup);
+      setSelectedPromptId(next.selectedPromptId);
+      setSelectedRunId(next.selectedRunId);
+      setRunDetailContext(next.runDetailContext);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, []);
+
+  useEffect(() => {
+    writeDashboardUrlState({
+      page,
+      rangeDays,
+      modelFilter,
+      promptSearch,
+      selectedGroup,
+      selectedPromptId,
+      selectedRunId,
+      runDetailContext,
+    });
+  }, [
+    modelFilter,
+    page,
+    promptSearch,
+    rangeDays,
+    runDetailContext,
+    selectedGroup,
+    selectedPromptId,
+    selectedRunId,
+  ]);
+
+  useEffect(() => {
+    if (promptView !== "list") {
+      return;
+    }
+
     if (!promptRows.length) {
       setSelectedPromptId(null);
       if (runDetailContext === "prompts") {
@@ -135,41 +357,53 @@ export function MonitoringDashboard() {
       setSelectedRunId(null);
       setRunDetailContext(null);
     }
-  }, [promptRows, selectedPromptId, runDetailContext]);
+  }, [promptRows, promptView, selectedPromptId, runDetailContext]);
 
   useEffect(() => {
     if (!queueStatus) {
       return;
     }
 
+    const activeQueueCount = queueStatus.queuedCount + queueStatus.runningCount;
     const latestFinishedRunId = queueStatus.latestFinishedRun?.id ?? null;
     if (!queueStatusHydratedRef.current) {
       queueStatusHydratedRef.current = true;
       lastFinishedRunIdRef.current = latestFinishedRunId;
+      previousActiveQueueCountRef.current = activeQueueCount;
       return;
     }
 
-    if (queueStatus.runningCount > 0 && runningToastIdRef.current == null) {
-      runningToastIdRef.current = toast.loading("Run in progress...");
-    }
-
-    if (queueStatus.runningCount === 0 && runningToastIdRef.current != null) {
-      toast.dismiss(runningToastIdRef.current);
-      runningToastIdRef.current = null;
+    if (activeQueueCount > 0) {
+      queueToastIdRef.current = toast.loading(
+        formatQueueToastMessage(queueStatus),
+        queueToastIdRef.current != null
+          ? { id: queueToastIdRef.current }
+          : undefined
+      );
+    } else if (queueToastIdRef.current != null) {
+      toast.dismiss(queueToastIdRef.current);
+      queueToastIdRef.current = null;
     }
 
     if (
       latestFinishedRunId &&
-      latestFinishedRunId !== lastFinishedRunIdRef.current
+      latestFinishedRunId !== lastFinishedRunIdRef.current &&
+      previousActiveQueueCountRef.current > 0
     ) {
-      lastFinishedRunIdRef.current = latestFinishedRunId;
       const label = queueStatus.latestFinishedRun?.runLabel ?? "Run";
       if (queueStatus.latestFinishedRun?.status === "success") {
         toast.success(`${label} completed.`);
+      } else if (queueStatus.latestFinishedRun?.status === "blocked") {
+        toast.warning(
+          `${label} was blocked before a valid response was captured.`
+        );
       } else {
         toast.error(`${label} failed.`);
       }
     }
+
+    lastFinishedRunIdRef.current = latestFinishedRunId;
+    previousActiveQueueCountRef.current = activeQueueCount;
   }, [queueStatus]);
 
   const trend = useMemo(() => {
@@ -229,10 +463,6 @@ export function MonitoringDashboard() {
     setRunDetailContext(null);
   };
 
-  const refreshAnalytics = () => {
-    window.location.reload();
-  };
-
   const openPrompt = (promptId: Id<"prompts"> | null) => {
     setPage("prompts");
     setSelectedPromptId(promptId);
@@ -254,23 +484,33 @@ export function MonitoringDashboard() {
     setRunDetailContext(runId ? nextPage : null);
   };
 
-  const promptView =
-    selectedRunId && runDetailContext === "prompts"
-      ? "response"
-      : selectedPromptId
-        ? "prompt"
-        : "list";
-  const showingRunDetailForRuns =
-    page === "runs" && runDetailContext === "runs" && selectedRunId !== null;
-  const showingRunDetailForResponses =
-    page === "responses" &&
-    runDetailContext === "responses" &&
-    selectedRunId !== null;
   const promptDetailLoading =
     promptView === "prompt" &&
     selectedPromptId !== null &&
     promptAnalysis === undefined;
   const runDetailLoading = selectedRunId !== null && runDetail === undefined;
+
+  const handleRetryRun = async (runId: Id<"promptRuns">) => {
+    const result = await retryPromptRun({ runId });
+    toast.success("Run requeued.", {
+      description: `Queued ${String(result.runId)}.`,
+    });
+  };
+
+  const handleCancelRun = async (runId: Id<"promptRuns">) => {
+    await cancelPromptRun({ runId });
+    toast.success("Run cancelled.");
+  };
+
+  const pageLoading =
+    overviewLoading ||
+    promptsPageLoading ||
+    groupsPageLoading ||
+    runsPageLoading ||
+    responsesPageLoading ||
+    sourcesPageLoading ||
+    promptDetailLoading ||
+    runDetailLoading;
 
   const breadcrumbs = (() => {
     if (page === "prompts") {
@@ -334,12 +574,12 @@ export function MonitoringDashboard() {
             onRangeDays={setRangeDays}
             modelFilter={modelFilter}
             onModelFilter={setModelFilter}
-            onRefresh={refreshAnalytics}
+            modelOptions={modelOptions}
             breadcrumbs={breadcrumbs}
           />
 
           <div className="flex flex-1 flex-col">
-            {loading && (
+            {pageLoading && (
               <div className="flex flex-col gap-2 px-4 pt-4 lg:px-6">
                 <StatusBanner text="Loading analytics data..." />
               </div>
@@ -347,7 +587,7 @@ export function MonitoringDashboard() {
 
             {page === "overview" && (
               <OverviewPage
-                loading={loading}
+                loading={overviewLoading}
                 hasData={hasData}
                 kpis={kpis}
                 trend={trend}
@@ -361,7 +601,7 @@ export function MonitoringDashboard() {
               <>
                 {promptView === "list" && (
                   <PromptsPage
-                    loading={loading}
+                    loading={promptsPageLoading}
                     groups={promptGroups ?? []}
                     selectedGroup={selectedGroup}
                     onSelectGroup={setSelectedGroup}
@@ -392,6 +632,8 @@ export function MonitoringDashboard() {
                     loading={runDetailLoading}
                     runDetail={runDetail}
                     onBack={() => openRunFromPromptDetail(null)}
+                    onRetryRun={handleRetryRun}
+                    onCancelRun={handleCancelRun}
                   />
                 )}
               </>
@@ -404,6 +646,8 @@ export function MonitoringDashboard() {
                   runDetail={runDetail}
                   backLabel="Back to runs"
                   onBack={() => openGlobalRunDetail("runs", null)}
+                  onRetryRun={handleRetryRun}
+                  onCancelRun={handleCancelRun}
                   onOpenPrompt={
                     runDetail?.run.promptId
                       ? () => openPrompt(runDetail.run.promptId)
@@ -412,7 +656,7 @@ export function MonitoringDashboard() {
                 />
               ) : (
                 <RunsPage
-                  loading={loading}
+                  loading={runsPageLoading}
                   runs={runs ?? []}
                   selectedRunId={selectedRunId}
                   onOpenRun={(runId) => openGlobalRunDetail("runs", runId)}
@@ -422,7 +666,7 @@ export function MonitoringDashboard() {
 
             {page === "groups" && (
               <GroupsPage
-                loading={loading}
+                loading={groupsPageLoading}
                 groups={promptGroups ?? []}
                 prompts={prompts ?? []}
                 onOpenPrompt={openPrompt}
@@ -440,6 +684,8 @@ export function MonitoringDashboard() {
                   runDetail={runDetail}
                   backLabel="Back to responses"
                   onBack={() => openGlobalRunDetail("responses", null)}
+                  onRetryRun={handleRetryRun}
+                  onCancelRun={handleCancelRun}
                   onOpenPrompt={
                     runDetail?.run.promptId
                       ? () => openPrompt(runDetail.run.promptId)
@@ -448,7 +694,7 @@ export function MonitoringDashboard() {
                 />
               ) : (
                 <ResponsesPage
-                  loading={loading}
+                  loading={responsesPageLoading}
                   runs={responseRows}
                   selectedRunId={selectedRunId}
                   onOpenRun={(runId) => openGlobalRunDetail("responses", runId)}
@@ -477,6 +723,18 @@ export function MonitoringDashboard() {
       </SidebarProvider>
     </TooltipProvider>
   );
+}
+
+function formatModelLabel(value: string) {
+  return value
+    .split(/[-_]/g)
+    .map((part) => {
+      if (/^(gpt|o\d+|claude|gemini)$/i.test(part)) {
+        return part.toUpperCase();
+      }
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    })
+    .join(" ");
 }
 
 type Kpi = { label: string; value: string; delta: string; tone: Tone };
@@ -533,6 +791,23 @@ function mapKpis(
           : "negative",
     },
   ];
+}
+
+function formatQueueToastMessage(queueStatus: {
+  queuedCount: number;
+  runningCount: number;
+}) {
+  if (queueStatus.runningCount > 0 && queueStatus.queuedCount > 0) {
+    return `${formatRunCount(queueStatus.runningCount)} in progress, ${formatRunCount(queueStatus.queuedCount)} queued...`;
+  }
+  if (queueStatus.runningCount > 0) {
+    return `${formatRunCount(queueStatus.runningCount)} in progress...`;
+  }
+  return `${formatRunCount(queueStatus.queuedCount)} queued...`;
+}
+
+function formatRunCount(count: number) {
+  return `${count} run${count === 1 ? "" : "s"}`;
 }
 
 function clamp(value: number, min: number, max: number): number {

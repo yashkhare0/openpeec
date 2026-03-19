@@ -1,6 +1,3 @@
-import { RefreshCw } from "lucide-react";
-
-import { Button } from "@/components/ui/button";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -28,27 +25,19 @@ const rangeOptions: RangeOption[] = [
   { label: "Last 90 days", days: 90 },
 ];
 
-const modelFilterOptions: ModelOption[] = [
-  { label: "All Models", value: "all" },
-  { label: "GPT-5", value: "gpt-5" },
-  { label: "GPT-4.1", value: "gpt-4.1" },
-  { label: "o3", value: "o3" },
-  { label: "ChatGPT web", value: "chatgpt-web" },
-];
-
 export function SiteHeader({
   rangeDays,
   onRangeDays,
   modelFilter,
   onModelFilter,
-  onRefresh,
+  modelOptions,
   breadcrumbs,
 }: {
   rangeDays: number;
   onRangeDays: (value: number) => void;
   modelFilter: string;
   onModelFilter: (value: string) => void;
-  onRefresh: () => void;
+  modelOptions: ModelOption[];
   breadcrumbs?: Array<{ label: string; onClick?: () => void }>;
 }) {
   return (
@@ -107,22 +96,13 @@ export function SiteHeader({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {modelFilterOptions.map((opt) => (
+              {modelOptions.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value}>
                   {opt.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-8"
-            onClick={onRefresh}
-          >
-            <RefreshCw className="size-4" />
-          </Button>
         </div>
       </div>
     </header>

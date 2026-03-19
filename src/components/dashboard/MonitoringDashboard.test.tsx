@@ -7,6 +7,11 @@ import { MonitoringDashboard } from "./MonitoringDashboard";
 const mocks = vi.hoisted(() => ({
   query: vi.fn(),
   mutation: vi.fn(),
+  toastLoading: vi.fn(),
+  toastDismiss: vi.fn(),
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
+  toastWarning: vi.fn(),
 }));
 
 vi.mock("convex/react", () => ({
@@ -27,6 +32,7 @@ vi.mock("../../../convex/_generated/api", () => ({
       getPromptAnalysis: "getPromptAnalysis",
       listTrackedEntities: "listTrackedEntities",
       getPromptRun: "getPromptRun",
+      listAvailableModels: "listAvailableModels",
       listPrompts: "listPrompts",
       createPromptGroup: "createPromptGroup",
       updatePromptGroup: "updatePromptGroup",
@@ -38,11 +44,23 @@ vi.mock("../../../convex/_generated/api", () => ({
       updatePromptJob: "updatePromptJob",
       deletePromptJob: "deletePromptJob",
       triggerSelectedPromptsNow: "triggerSelectedPromptsNow",
+      retryPromptRun: "retryPromptRun",
+      cancelPromptRun: "cancelPromptRun",
       triggerPromptJobNow: "triggerPromptJobNow",
       createTrackedEntity: "createTrackedEntity",
       updateTrackedEntity: "updateTrackedEntity",
       deleteTrackedEntity: "deleteTrackedEntity",
     },
+  },
+}));
+
+vi.mock("sonner", () => ({
+  toast: {
+    loading: mocks.toastLoading,
+    dismiss: mocks.toastDismiss,
+    success: mocks.toastSuccess,
+    error: mocks.toastError,
+    warning: mocks.toastWarning,
   },
 }));
 
@@ -200,6 +218,23 @@ const overviewData = {
 };
 
 const promptGroups = [{ _id: "group_1", name: "Acquisition" }];
+let queueStatusValue: {
+  queuedCount: number;
+  runningCount: number;
+  latestFinishedRun: {
+    id: string;
+    status: string;
+    startedAt: number;
+    finishedAt?: number;
+    runLabel?: string;
+  } | null;
+  latestQueuedRun: {
+    id: string;
+    queuedAt: number;
+    runLabel?: string;
+    model?: string;
+  } | null;
+};
 
 const promptRows = [
   {
@@ -382,10 +417,28 @@ describe("MonitoringDashboard", () => {
   beforeEach(() => {
     mocks.query.mockReset();
     mocks.mutation.mockReset();
+    mocks.toastLoading.mockReset();
+    mocks.toastDismiss.mockReset();
+    mocks.toastSuccess.mockReset();
+    mocks.toastError.mockReset();
+    mocks.toastWarning.mockReset();
 
     mocks.mutation.mockImplementation(() =>
       vi.fn().mockResolvedValue({ queuedCount: 1 })
     );
+    mocks.toastLoading.mockImplementation(() => "queue-toast-id");
+    queueStatusValue = {
+      queuedCount: 0,
+      runningCount: 0,
+      latestFinishedRun: {
+        id: "run_0",
+        status: "success",
+        startedAt: now - 15 * 60 * 1000,
+        finishedAt: now - 14 * 60 * 1000,
+        runLabel: "Earlier run",
+      },
+      latestQueuedRun: null,
+    };
     mocks.query.mockImplementation((ref: string, args?: unknown) => {
       switch (ref) {
         case "getOverview":
@@ -403,14 +456,12 @@ describe("MonitoringDashboard", () => {
               active: true,
             },
           ];
+        case "listAvailableModels":
+          return ["gpt-5", "chatgpt-web"];
         case "listPromptJobs":
           return [];
         case "getQueueStatus":
-          return {
-            queuedCount: 0,
-            runningCount: 0,
-            latestFinishedRun: { startedAt: now - 5 * 60 * 1000 },
-          };
+          return queueStatusValue;
         case "listPromptRuns":
           return [{ model: "gpt-5", status: "success" }];
         case "listSources":
@@ -453,5 +504,97 @@ describe("MonitoringDashboard", () => {
       await screen.findByRole("button", { name: "Back to prompts" })
     );
     expect(screen.getByText("Best AI visibility tools")).toBeTruthy();
+  });
+
+  it("keeps queue toasts aligned with queue transitions", () => {
+    const view = render(<MonitoringDashboard />);
+
+    expect(mocks.toastLoading).not.toHaveBeenCalled();
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+    expect(mocks.toastError).not.toHaveBeenCalled();
+
+    queueStatusValue = {
+      queuedCount: 1,
+      runningCount: 0,
+      latestFinishedRun: queueStatusValue.latestFinishedRun,
+      latestQueuedRun: {
+        id: "run_1",
+        queuedAt: now,
+        runLabel: "Manual run",
+        model: "gpt-5",
+      },
+    };
+    view.rerender(<MonitoringDashboard />);
+
+    expect(mocks.toastLoading).toHaveBeenLastCalledWith(
+      "1 run queued...",
+      undefined
+    );
+
+    queueStatusValue = {
+      queuedCount: 0,
+      runningCount: 1,
+      latestFinishedRun: queueStatusValue.latestFinishedRun,
+      latestQueuedRun: null,
+    };
+    view.rerender(<MonitoringDashboard />);
+
+    expect(mocks.toastLoading).toHaveBeenLastCalledWith(
+      "1 run in progress...",
+      { id: "queue-toast-id" }
+    );
+
+    queueStatusValue = {
+      queuedCount: 0,
+      runningCount: 0,
+      latestFinishedRun: {
+        id: "run_1",
+        status: "failed",
+        startedAt: now - 2 * 60 * 1000,
+        finishedAt: now - 60 * 1000,
+        runLabel: "Manual run",
+      },
+      latestQueuedRun: null,
+    };
+    view.rerender(<MonitoringDashboard />);
+
+    expect(mocks.toastDismiss).toHaveBeenCalledWith("queue-toast-id");
+    expect(mocks.toastError).toHaveBeenCalledWith("Manual run failed.");
+  });
+
+  it("shows a warning toast when a run is blocked", () => {
+    const view = render(<MonitoringDashboard />);
+
+    queueStatusValue = {
+      queuedCount: 1,
+      runningCount: 0,
+      latestFinishedRun: queueStatusValue.latestFinishedRun,
+      latestQueuedRun: {
+        id: "run_1",
+        queuedAt: now,
+        runLabel: "Manual run",
+        model: "gpt-5",
+      },
+    };
+    view.rerender(<MonitoringDashboard />);
+
+    queueStatusValue = {
+      queuedCount: 0,
+      runningCount: 0,
+      latestFinishedRun: {
+        id: "run_1",
+        status: "blocked",
+        startedAt: now - 2 * 60 * 1000,
+        finishedAt: now - 60 * 1000,
+        runLabel: "Manual run",
+      },
+      latestQueuedRun: null,
+    };
+    view.rerender(<MonitoringDashboard />);
+
+    expect(mocks.toastDismiss).toHaveBeenCalledWith("queue-toast-id");
+    expect(mocks.toastWarning).toHaveBeenCalledWith(
+      "Manual run was blocked before a valid response was captured."
+    );
   });
 });

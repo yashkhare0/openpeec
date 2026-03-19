@@ -443,7 +443,14 @@ export function PromptsPage({
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   className="text-destructive focus:text-destructive"
-                                  onClick={() =>
+                                  onClick={() => {
+                                    if (
+                                      !window.confirm(
+                                        `Delete "${row.name}" and all of its recorded runs?`
+                                      )
+                                    ) {
+                                      return;
+                                    }
                                     void onDeletePrompt({ id: row.id })
                                       .then(() => {
                                         if (selectedPromptId === row.id) {
@@ -453,8 +460,8 @@ export function PromptsPage({
                                       })
                                       .catch((error: unknown) =>
                                         toast.error(errorMessage(error))
-                                      )
-                                  }
+                                      );
+                                  }}
                                 >
                                   Delete
                                 </DropdownMenuItem>

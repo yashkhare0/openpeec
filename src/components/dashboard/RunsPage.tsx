@@ -94,6 +94,7 @@ export function RunsPage({
                       <SelectItem value="all">All statuses</SelectItem>
                       <SelectItem value="queued">Queued</SelectItem>
                       <SelectItem value="running">Running</SelectItem>
+                      <SelectItem value="blocked">Blocked</SelectItem>
                       <SelectItem value="success">Success</SelectItem>
                       <SelectItem value="failed">Failed</SelectItem>
                     </SelectContent>
@@ -123,7 +124,14 @@ export function RunsPage({
                         className={
                           selectedRunId === run._id ? "bg-muted/30" : ""
                         }
+                        tabIndex={0}
                         onClick={() => onOpenRun(run._id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            onOpenRun(run._id);
+                          }
+                        }}
                       >
                         <TableCell>
                           <div className="space-y-1">
@@ -224,6 +232,9 @@ function statusClassName(status: string) {
   }
   if (status === "failed") {
     return "text-sm font-medium text-rose-700 dark:text-rose-300";
+  }
+  if (status === "blocked") {
+    return "text-sm font-medium text-amber-700 dark:text-amber-300";
   }
   if (status === "running") {
     return "text-sm font-medium text-blue-700 dark:text-blue-300";

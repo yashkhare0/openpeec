@@ -104,7 +104,14 @@ export function ResponsesPage({
                         className={
                           selectedRunId === run._id ? "bg-muted/30" : ""
                         }
+                        tabIndex={0}
                         onClick={() => onOpenRun(run._id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            onOpenRun(run._id);
+                          }
+                        }}
                       >
                         <TableCell>
                           <div className="space-y-1">

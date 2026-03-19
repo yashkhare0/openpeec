@@ -179,13 +179,13 @@ Phase 1
 
 ## Workstreams and Ownership
 
-| Workstream | Primary Focus | Key Files |
-|-----------|---------------|-----------|
-| Runner hardening | auth/session, preflight, extraction, artifacts | `runner/run-monitor.mjs`, `runner/process-queued-runs.mjs`, `runner/example.monitor.json`, `runner/example.auth-profile.json` |
-| Queue/backend | claim/recovery/retry semantics, run lifecycle | `convex/analytics.ts`, `convex/schema.ts` |
-| Frontend product state | routing, detail states, recovery UX | `src/components/dashboard/*`, `src/components/layout/*` |
-| Tooling/docs | bootstrap, dev scripts, README, preview/dev parity | `package.json`, `scripts/*`, `README.md`, `runner/README.md`, `vite.config.ts` |
-| Verification | unit/integration/e2e/harness | `src/**/*.test.*`, `convex/**/*.test.ts`, `e2e/*`, `playwright.config.ts`, `vitest.config.mts` |
+| Workstream             | Primary Focus                                      | Key Files                                                                                                                     |
+| ---------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Runner hardening       | auth/session, preflight, extraction, artifacts     | `runner/run-monitor.mjs`, `runner/process-queued-runs.mjs`, `runner/example.monitor.json`, `runner/example.auth-profile.json` |
+| Queue/backend          | claim/recovery/retry semantics, run lifecycle      | `convex/analytics.ts`, `convex/schema.ts`                                                                                     |
+| Frontend product state | routing, detail states, recovery UX                | `src/components/dashboard/*`, `src/components/layout/*`                                                                       |
+| Tooling/docs           | bootstrap, dev scripts, README, preview/dev parity | `package.json`, `scripts/*`, `README.md`, `runner/README.md`, `vite.config.ts`                                                |
+| Verification           | unit/integration/e2e/harness                       | `src/**/*.test.*`, `convex/**/*.test.ts`, `e2e/*`, `playwright.config.ts`, `vitest.config.mts`                                |
 
 ## Acceptance Gates Per Phase
 
@@ -233,17 +233,17 @@ Phase 1
 
 ## Decisions Made
 
-| Decision | Rationale |
-|----------|-----------|
-| Plan stabilization before more feature work | The current issues are structural; adding more UI/features will compound incorrect behavior. |
-| Sequence runner/queue before UI polish | The biggest product failures are operational truth failures, not presentation gaps. |
-| Keep this plan in project files | The user explicitly wants continuity across sessions/devices; this plan must persist on disk. |
+| Decision                                    | Rationale                                                                                     |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Plan stabilization before more feature work | The current issues are structural; adding more UI/features will compound incorrect behavior.  |
+| Sequence runner/queue before UI polish      | The biggest product failures are operational truth failures, not presentation gaps.           |
+| Keep this plan in project files             | The user explicitly wants continuity across sessions/devices; this plan must persist on disk. |
 
 ## Errors Encountered
 
-| Error | Attempt | Resolution |
-|-------|---------|------------|
-| Seventh review scope returned after initial consolidation | 1 | Incorporated the additional findings into the stabilization plan and findings files. |
+| Error                                                     | Attempt | Resolution                                                                           |
+| --------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------ |
+| Seventh review scope returned after initial consolidation | 1       | Incorporated the additional findings into the stabilization plan and findings files. |
 
 ## Notes
 
