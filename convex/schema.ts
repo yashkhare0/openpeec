@@ -83,6 +83,7 @@ export default defineSchema({
     status: v.union(
       v.literal("queued"),
       v.literal("running"),
+      v.literal("blocked"),
       v.literal("success"),
       v.literal("failed")
     ),
@@ -155,9 +156,12 @@ export default defineSchema({
     status: v.union(
       v.literal("queued"),
       v.literal("running"),
+      v.literal("blocked"),
       v.literal("success"),
       v.literal("failed")
     ),
+    attempt: v.optional(v.float64()),
+    retryOfRunId: v.optional(v.id("promptRuns")),
     queuedAt: v.optional(v.float64()),
     startedAt: v.float64(),
     finishedAt: v.optional(v.float64()),
@@ -174,11 +178,13 @@ export default defineSchema({
     output: v.optional(v.string()),
     warnings: v.optional(v.array(v.string())),
     runner: v.optional(v.string()),
+    ingestId: v.optional(v.string()),
   })
     .index("startedAt", ["startedAt"])
     .index("status_startedAt", ["status", "startedAt"])
     .index("promptId_startedAt", ["promptId", "startedAt"])
-    .index("model_startedAt", ["model", "startedAt"]),
+    .index("model_startedAt", ["model", "startedAt"])
+    .index("ingestId", ["ingestId"]),
 
   citations: defineTable({
     promptRunId: v.id("promptRuns"),
@@ -197,9 +203,40 @@ export default defineSchema({
     position: v.float64(),
     qualityScore: v.optional(v.float64()),
     trackedEntityId: v.optional(v.id("trackedEntities")),
+    trackedEntityName: v.optional(v.string()),
+    trackedEntitySlug: v.optional(v.string()),
+    trackedEntityKind: v.optional(
+      v.union(
+        v.literal("brand"),
+        v.literal("competitor"),
+        v.literal("product"),
+        v.literal("feature"),
+        v.literal("other")
+      )
+    ),
     isOwned: v.boolean(),
   })
     .index("promptRunId", ["promptRunId"])
     .index("domain", ["domain"])
     .index("type", ["type"]),
+
+  runEntityMentions: defineTable({
+    promptRunId: v.id("promptRuns"),
+    trackedEntityId: v.optional(v.id("trackedEntities")),
+    name: v.string(),
+    slug: v.string(),
+    kind: v.union(
+      v.literal("brand"),
+      v.literal("competitor"),
+      v.literal("product"),
+      v.literal("feature"),
+      v.literal("other")
+    ),
+    mentionCount: v.float64(),
+    citationCount: v.float64(),
+    ownedCitationCount: v.float64(),
+    matchedTerms: v.array(v.string()),
+  })
+    .index("promptRunId", ["promptRunId"])
+    .index("trackedEntityId", ["trackedEntityId"]),
 });

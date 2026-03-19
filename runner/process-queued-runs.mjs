@@ -1,11 +1,13 @@
-import process from "node:process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import process from "node:process";
+import { pathToFileURL } from "node:url";
 
 import { ConvexHttpClient } from "convex/browser";
 
 import { api } from "../convex/_generated/api.js";
 import {
+  getRunnerPreflight,
   readJsonFile,
   resolvePathIfRelative,
   runMonitor,
@@ -17,6 +19,10 @@ function parseArgs(argv) {
     once: false,
     headed: false,
     pollIntervalMs: 10000,
+    maxConcurrent: undefined,
+    maxAttempts: undefined,
+    staleThresholdMs: undefined,
+    staleRecoveryIntervalMs: undefined,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -36,6 +42,26 @@ function parseArgs(argv) {
     }
     if (token === "--poll-interval-ms") {
       args.pollIntervalMs = Number(argv[index + 1] ?? args.pollIntervalMs);
+      index += 1;
+      continue;
+    }
+    if (token === "--max-concurrent") {
+      args.maxConcurrent = Number(argv[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (token === "--max-attempts") {
+      args.maxAttempts = Number(argv[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (token === "--stale-threshold-ms") {
+      args.staleThresholdMs = Number(argv[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (token === "--stale-recovery-interval-ms") {
+      args.staleRecoveryIntervalMs = Number(argv[index + 1]);
       index += 1;
     }
   }
@@ -127,9 +153,50 @@ async function waitForBackendReady(client, cliArgs) {
   }
 }
 
+function isChatGptUrl(url) {
+  return typeof url === "string" && /chatgpt\.com/i.test(url);
+}
+
+function resolveWorkerConfig(baseConfig, cliArgs) {
+  const worker = baseConfig.worker ?? {};
+
+  return {
+    maxConcurrent: Math.max(
+      1,
+      Math.floor(cliArgs.maxConcurrent ?? worker.maxConcurrent ?? 2)
+    ),
+    maxAttempts: Math.max(
+      1,
+      Math.floor(cliArgs.maxAttempts ?? worker.maxAttempts ?? 2)
+    ),
+    staleThresholdMs: Math.max(
+      60_000,
+      Math.floor(
+        cliArgs.staleThresholdMs ?? worker.staleThresholdMs ?? 10 * 60_000
+      )
+    ),
+    staleRecoveryIntervalMs: Math.max(
+      5_000,
+      Math.floor(
+        cliArgs.staleRecoveryIntervalMs ??
+          worker.staleRecoveryIntervalMs ??
+          30_000
+      )
+    ),
+  };
+}
+
 function buildRunConfig(baseConfig, claimedRun) {
   const configuredResponseTimeout =
     baseConfig?.timing?.responseTimeoutMs ?? 300000;
+  const navigationUrl =
+    baseConfig.navigation?.url ??
+    baseConfig.deepLink?.url ??
+    "https://chatgpt.com/";
+  const promptQueryParam =
+    baseConfig.navigation?.promptQueryParam ??
+    baseConfig.deepLink?.promptQueryParam ??
+    (isChatGptUrl(navigationUrl) ? "q" : undefined);
 
   return {
     ...baseConfig,
@@ -138,8 +205,8 @@ function buildRunConfig(baseConfig, claimedRun) {
     model: claimedRun.prompt.targetModel || baseConfig.model || "chatgpt-web",
     navigation: {
       ...(baseConfig.navigation ?? {}),
-      url: baseConfig.navigation?.url ?? "https://chatgpt.com/",
-      promptQueryParam: baseConfig.navigation?.promptQueryParam,
+      url: navigationUrl,
+      promptQueryParam,
     },
     prompt: {
       ...(baseConfig.prompt ?? {}),
@@ -150,21 +217,52 @@ function buildRunConfig(baseConfig, claimedRun) {
     },
     timing: {
       ...(baseConfig.timing ?? {}),
-      responseTimeoutMs: Math.max(300000, configuredResponseTimeout),
+      responseTimeoutMs: configuredResponseTimeout,
     },
   };
 }
 
-function shouldAutoRetry(result, runLabel) {
+function stripRetrySuffix(runLabel) {
+  return String(runLabel ?? "")
+    .replace(/\s+\[retry\s+\d+\]\s*$/i, "")
+    .trim();
+}
+
+export function buildRetryLabel(runLabel, attempt) {
+  const baseLabel = stripRetrySuffix(runLabel) || "Manual run";
+  return `${baseLabel} [retry ${attempt}]`;
+}
+
+export function shouldAutoRetry(result, runContext, maxAttempts = 2) {
   if (result.status !== "failed") {
     return false;
   }
-  if (/\[retry\s+\d+\]/i.test(runLabel)) {
+
+  const attempt =
+    typeof runContext === "object" && runContext !== null
+      ? (runContext.attempt ?? 1)
+      : 1;
+  if (attempt >= maxAttempts) {
     return false;
   }
 
   const haystack =
     `${result.summary ?? ""} ${(result.warnings ?? []).join(" ")}`.toLowerCase();
+  const nonRetriablePatterns = [
+    "access blocker detected",
+    "access was blocked before the prompt could run",
+    "security verification process",
+    "verify you are human",
+    "checking your browser",
+    "just a moment",
+    "challenges.cloudflare.com",
+    "storage state not found",
+    "no local chatgpt session material is configured",
+  ];
+  if (nonRetriablePatterns.some((pattern) => haystack.includes(pattern))) {
+    return false;
+  }
+
   return (
     haystack.includes("response container not found after submit") ||
     haystack.includes("did not produce a usable assistant response") ||
@@ -172,28 +270,22 @@ function shouldAutoRetry(result, runLabel) {
   );
 }
 
-function buildRetryLabel(runLabel) {
-  return `${runLabel} [retry 1]`;
-}
-
 async function queueRetry(client, claimedRun) {
-  const queued = await client.mutation(
-    api.analytics.triggerSelectedPromptsNow,
-    {
-      promptIds: [claimedRun.prompt.id],
-      label: buildRetryLabel(claimedRun.runLabel),
-    }
-  );
-  return queued.queuedCount > 0;
+  const nextAttempt = (claimedRun.attempt ?? 1) + 1;
+  return await client.mutation(api.analytics.retryPromptRun, {
+    runId: claimedRun.runId,
+    label: buildRetryLabel(claimedRun.runLabel, nextAttempt),
+  });
 }
 
 async function completeRunFromError(client, claimedRun, error) {
   const message = errorMessage(error);
+  const finishedAt = Date.now();
   await client.mutation(api.analytics.completePromptRun, {
     runId: claimedRun.runId,
     status: "failed",
-    finishedAt: Date.now(),
-    latencyMs: 0,
+    finishedAt,
+    latencyMs: Math.max(0, finishedAt - claimedRun.startedAt),
     responseSummary: message,
     warnings: [message],
     citations: [],
@@ -202,7 +294,57 @@ async function completeRunFromError(client, claimedRun, error) {
   });
 }
 
-async function processClaimedRun(client, baseConfig, claimedRun, cliArgs) {
+async function maybeRecoverStaleRuns(client, workerConfig, state) {
+  const now = Date.now();
+  if (
+    state.lastRecoveryAt &&
+    now - state.lastRecoveryAt < workerConfig.staleRecoveryIntervalMs
+  ) {
+    return;
+  }
+
+  state.lastRecoveryAt = now;
+  const recovered = await client.mutation(
+    api.analytics.recoverStaleRunningPromptRuns,
+    {
+      olderThanMs: workerConfig.staleThresholdMs,
+      runner: "local-playwright-worker",
+      summary:
+        "Recovered stale running job after worker interruption or timeout watchdog.",
+    }
+  );
+  if (recovered.recoveredCount > 0) {
+    console.warn(
+      `[queue-worker] Recovered ${recovered.recoveredCount} stale running run(s).`
+    );
+  }
+}
+
+async function claimNextRun(client, workerConfig, cliArgs) {
+  try {
+    return await client.mutation(api.analytics.claimNextQueuedPromptRun, {
+      runner: "local-playwright-worker",
+      maxConcurrent: workerConfig.maxConcurrent,
+    });
+  } catch (error) {
+    if (cliArgs.once || !isTransientConvexError(error)) {
+      throw error;
+    }
+    console.warn(
+      `[queue-worker] Claim failed: ${errorMessage(error)}. Waiting for Convex and retrying.`
+    );
+    await waitForBackendReady(client, cliArgs);
+    return null;
+  }
+}
+
+async function processClaimedRun(
+  client,
+  baseConfig,
+  claimedRun,
+  cliArgs,
+  workerConfig
+) {
   const runConfig = buildRunConfig(baseConfig, claimedRun);
 
   try {
@@ -235,31 +377,30 @@ async function processClaimedRun(client, baseConfig, claimedRun, cliArgs) {
       `[queue-worker] ${claimedRun.prompt.name}: ${result.status} with ${result.citations.length} citations`
     );
 
-    if (shouldAutoRetry(result, claimedRun.runLabel)) {
-      const retried = await queueRetry(client, claimedRun);
-      if (retried) {
-        console.log(
-          `[queue-worker] ${claimedRun.prompt.name}: auto-requeued after response timeout/stall`
-        );
-      }
+    if (shouldAutoRetry(result, claimedRun, workerConfig.maxAttempts)) {
+      const retryRun = await queueRetry(client, claimedRun);
+      console.log(
+        `[queue-worker] ${claimedRun.prompt.name}: auto-requeued as attempt ${retryRun.runId ? (claimedRun.attempt ?? 1) + 1 : "unknown"}`
+      );
     }
 
     return result.status === "success";
   } catch (error) {
     await completeRunFromError(client, claimedRun, error);
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     console.error(`[queue-worker] ${claimedRun.prompt.name}: ${message}`);
 
     if (
-      !/\[retry\s+\d+\]/i.test(claimedRun.runLabel) &&
-      /timeout/i.test(message)
+      shouldAutoRetry(
+        { status: "failed", summary: message, warnings: [message] },
+        claimedRun,
+        workerConfig.maxAttempts
+      )
     ) {
-      const retried = await queueRetry(client, claimedRun);
-      if (retried) {
-        console.log(
-          `[queue-worker] ${claimedRun.prompt.name}: auto-requeued after worker timeout`
-        );
-      }
+      await queueRetry(client, claimedRun);
+      console.log(
+        `[queue-worker] ${claimedRun.prompt.name}: auto-requeued after worker error`
+      );
     }
     return false;
   }
@@ -275,46 +416,70 @@ async function main() {
   }
 
   const baseConfig = await readJsonFile(resolvePathIfRelative(cliArgs.config));
+  const workerConfig = resolveWorkerConfig(baseConfig, cliArgs);
   const client = new ConvexHttpClient(convexUrl);
+  const activeTasks = new Set();
+  const workerState = {
+    lastRecoveryAt: 0,
+    lastPreflightReason: null,
+  };
   let hadFailure = false;
 
   await waitForBackendReady(client, cliArgs);
-  await client.mutation(api.analytics.recoverStaleRunningPromptRuns, {
-    olderThanMs: 10 * 60 * 1000,
-    runner: "local-playwright-worker",
-    summary: "Recovered stale running job after worker interruption.",
-  });
 
   while (true) {
-    let claimedRun;
-    try {
-      claimedRun = await client.mutation(
-        api.analytics.claimNextQueuedPromptRun,
-        {
-          runner: "local-playwright-worker",
-        }
-      );
-    } catch (error) {
-      if (cliArgs.once || !isTransientConvexError(error)) {
-        throw error;
-      }
-      console.warn(
-        `[queue-worker] Claim failed: ${errorMessage(error)}. Waiting for Convex and retrying.`
-      );
-      await waitForBackendReady(client, cliArgs);
-      continue;
-    }
+    await maybeRecoverStaleRuns(client, workerConfig, workerState);
 
-    if (!claimedRun) {
-      if (cliArgs.once) {
+    let claimedAny = false;
+    while (activeTasks.size < workerConfig.maxConcurrent) {
+      const preflight = await getRunnerPreflight(baseConfig);
+      if (!preflight.ok) {
+        if (cliArgs.once) {
+          console.error(`[queue-worker] ${preflight.reason}`);
+          hadFailure = true;
+          break;
+        }
+        if (workerState.lastPreflightReason !== preflight.reason) {
+          console.warn(`[queue-worker] ${preflight.reason}`);
+          workerState.lastPreflightReason = preflight.reason;
+        }
         break;
       }
-      await sleep(cliArgs.pollIntervalMs);
+
+      workerState.lastPreflightReason = null;
+      const claimedRun = await claimNextRun(client, workerConfig, cliArgs);
+      if (!claimedRun) {
+        break;
+      }
+
+      claimedAny = true;
+      let task;
+      task = processClaimedRun(
+        client,
+        baseConfig,
+        claimedRun,
+        cliArgs,
+        workerConfig
+      )
+        .then((ok) => {
+          hadFailure = hadFailure || !ok;
+        })
+        .finally(() => {
+          activeTasks.delete(task);
+        });
+      activeTasks.add(task);
+    }
+
+    if (cliArgs.once && activeTasks.size === 0 && !claimedAny) {
+      break;
+    }
+
+    if (activeTasks.size > 0) {
+      await Promise.race(activeTasks);
       continue;
     }
 
-    const ok = await processClaimedRun(client, baseConfig, claimedRun, cliArgs);
-    hadFailure = hadFailure || !ok;
+    await sleep(cliArgs.pollIntervalMs);
   }
 
   if (hadFailure) {
@@ -322,8 +487,13 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  const message = errorMessage(error);
-  console.error(`[queue-worker] ${message}`);
-  process.exit(1);
-});
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  main().catch((error) => {
+    const message = errorMessage(error);
+    console.error(`[queue-worker] ${message}`);
+    process.exit(1);
+  });
+}

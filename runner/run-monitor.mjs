@@ -54,7 +54,7 @@ export function resolvePathIfRelative(inputPath) {
   return path.resolve(process.cwd(), inputPath);
 }
 
-async function loadAuthProfileMaterial(authProfileConfig) {
+export async function loadAuthProfileMaterial(authProfileConfig) {
   if (!authProfileConfig) {
     return {};
   }
@@ -172,6 +172,24 @@ function detectAccessBlocker(title, responseText) {
   return patterns.some((pattern) => haystack.includes(pattern));
 }
 
+function resolvePromptReadyTimeoutMs(config) {
+  const responseTimeoutMs = config.timing.responseTimeoutMs ?? 300000;
+  const configuredTimeout = config.timing.promptReadyTimeoutMs;
+  const defaultTimeout = Math.min(responseTimeoutMs, 15000);
+  return clamp(
+    Math.floor(configuredTimeout ?? defaultTimeout),
+    3000,
+    responseTimeoutMs
+  );
+}
+
+async function snapshotPageGateState(page) {
+  return await page.evaluate(() => ({
+    title: document.title,
+    bodyText: document.body?.innerText ?? "",
+  }));
+}
+
 function classifySourceType(domain) {
   const host = domain.toLowerCase();
   if (!host || host === "unknown") {
@@ -243,6 +261,9 @@ export function normalizeRunnerConfig(rawConfig) {
   const assertions = rawConfig.assertions ?? {};
   const timing = rawConfig.timing ?? {};
   const ingest = rawConfig.ingest ?? {};
+  const navigationUrl = deepLink.url;
+  const isChatGptNavigation =
+    typeof navigationUrl === "string" && /chatgpt\.com/i.test(navigationUrl);
 
   return {
     schemaVersion: 2,
@@ -258,8 +279,9 @@ export function normalizeRunnerConfig(rawConfig) {
     },
     authProfile: rawConfig.authProfile,
     navigation: {
-      url: deepLink.url,
-      promptQueryParam: deepLink.promptQueryParam ?? null,
+      url: navigationUrl,
+      promptQueryParam:
+        deepLink.promptQueryParam ?? (isChatGptNavigation ? "q" : null),
       waitUntil: deepLink.waitUntil ?? "domcontentloaded",
       timeoutMs: deepLink.timeoutMs ?? 30000,
     },
@@ -298,6 +320,7 @@ export function normalizeRunnerConfig(rawConfig) {
     },
     timing: {
       responseTimeoutMs: timing.responseTimeoutMs ?? 300000,
+      promptReadyTimeoutMs: timing.promptReadyTimeoutMs,
       settleDelayMs: timing.settleDelayMs ?? 1500,
     },
     ingest: {
@@ -329,6 +352,42 @@ async function pathExists(filePath) {
   }
 }
 
+export async function getRunnerPreflight(config) {
+  const normalizedConfig = normalizeRunnerConfig(config);
+  const authMaterial = await loadAuthProfileMaterial(
+    normalizedConfig.authProfile
+  );
+
+  if (authMaterial.storageStatePath) {
+    const storageStatePath = resolvePathIfRelative(
+      authMaterial.storageStatePath
+    );
+    if (!(await pathExists(storageStatePath))) {
+      return {
+        ok: false,
+        status: "blocked",
+        reason: `Storage state not found at ${storageStatePath}. Capture a ChatGPT session before running queued monitoring jobs.`,
+      };
+    }
+  } else if (
+    !authMaterial.storageState &&
+    !(
+      authMaterial.cookies &&
+      Array.isArray(authMaterial.cookies) &&
+      authMaterial.cookies.length
+    )
+  ) {
+    return {
+      ok: false,
+      status: "blocked",
+      reason:
+        "No local ChatGPT session material is configured. Capture a session or provide storage state before queue execution.",
+    };
+  }
+
+  return { ok: true, status: "success" };
+}
+
 async function extractResponseAndCitations(page, config) {
   const payload = await page.evaluate(
     ({
@@ -338,8 +397,11 @@ async function extractResponseAndCitations(page, config) {
       maxCitations,
     }) => {
       const fallbackContainer = document.querySelector("main") ?? document.body;
-      const responseContainer =
-        document.querySelector(responseContainerSelector) ?? fallbackContainer;
+      const explicitResponseContainer = document.querySelector(
+        responseContainerSelector
+      );
+      const responseContainer = explicitResponseContainer ?? fallbackContainer;
+      const responseContainerFound = Boolean(explicitResponseContainer);
 
       const responseTextNode = responseContainer.matches?.(responseTextSelector)
         ? responseContainer
@@ -347,9 +409,11 @@ async function extractResponseAndCitations(page, config) {
           responseContainer);
 
       const responseText = (responseTextNode?.innerText ?? "").trim();
-      const rawLinks = Array.from(
-        responseContainer.querySelectorAll(citationLinkSelector)
-      ).slice(0, maxCitations);
+      const rawLinks = responseContainerFound
+        ? Array.from(
+            responseContainer.querySelectorAll(citationLinkSelector)
+          ).slice(0, maxCitations)
+        : [];
 
       const citations = rawLinks.map((anchor, index) => {
         const href = anchor.getAttribute("href") ?? "";
@@ -377,6 +441,7 @@ async function extractResponseAndCitations(page, config) {
       return {
         pageTitle: document.title,
         finalUrl: window.location.href,
+        responseContainerFound,
         responseText: responseText || fallbackContainer.innerText || "",
         responseHtml: responseContainer.outerHTML ?? "",
         citations,
@@ -429,6 +494,7 @@ async function extractResponseAndCitations(page, config) {
   return {
     pageTitle: payload.pageTitle,
     finalUrl: payload.finalUrl,
+    responseContainerFound: payload.responseContainerFound,
     responseText: normalizeText(payload.responseText),
     responseHtml: payload.responseHtml,
     citations,
@@ -570,6 +636,44 @@ async function ingestRunIfRequested(config, result, shouldIngest) {
 
 export async function runMonitor(config, options = {}) {
   const normalizedConfig = normalizeRunnerConfig(config);
+  const preflight = await getRunnerPreflight(normalizedConfig);
+  if (!preflight.ok) {
+    const finishedAt = Date.now();
+    const result = {
+      schemaVersion: 2,
+      monitorId: normalizedConfig.monitorId,
+      promptId: normalizedConfig.promptId,
+      runLabel: normalizedConfig.runLabel,
+      client: normalizedConfig.client,
+      platform: normalizedConfig.platform,
+      model: normalizedConfig.model,
+      status: "blocked",
+      startedAt: finishedAt,
+      finishedAt,
+      latencyMs: 0,
+      summary: preflight.reason,
+      deeplinkUsed: buildDeepLinkUrl(normalizedConfig),
+      evidencePath: null,
+      fallbackUsed: true,
+      warnings: [preflight.reason],
+      responseText: "",
+      responseSummary: preflight.reason,
+      sourceCount: undefined,
+      citations: [],
+      visibilityScore: undefined,
+      citationQualityScore: undefined,
+      averageCitationPosition: undefined,
+      output: {
+        preflight: preflight.reason,
+      },
+    };
+    const ingest = await ingestRunIfRequested(
+      normalizedConfig,
+      result,
+      options.ingest
+    );
+    return { ...result, ingest };
+  }
 
   const startedAt = Date.now();
   let status = "success";
@@ -580,10 +684,10 @@ export async function runMonitor(config, options = {}) {
   let citations = [];
   let sourceArtifacts = [];
   let responseSummary = "";
-  let sourceCount = 0;
-  let visibilityScore = 0;
-  let citationQualityScore = 0;
-  let averageCitationPosition = null;
+  let sourceCount = undefined;
+  let visibilityScore = undefined;
+  let citationQualityScore = undefined;
+  let averageCitationPosition = undefined;
   let fallbackUsed = false;
   const warnings = [];
   const networkEvents = [];
@@ -598,6 +702,7 @@ export async function runMonitor(config, options = {}) {
   const authMaterial = await loadAuthProfileMaterial(
     normalizedConfig.authProfile
   );
+  const promptReadyTimeoutMs = resolvePromptReadyTimeoutMs(normalizedConfig);
   const browser = await chromium.launch({
     channel: normalizedConfig.browser.channel ?? undefined,
     headless: options.headed ? false : normalizedConfig.browser.headless,
@@ -634,9 +739,11 @@ export async function runMonitor(config, options = {}) {
       if (await pathExists(storageStatePath)) {
         contextOptions.storageState = storageStatePath;
       } else {
-        warnings.push(
-          `Storage state not found at ${storageStatePath}; continuing with a fresh browser session.`
-        );
+        status = "blocked";
+        fallbackUsed = true;
+        summary = `Storage state disappeared before browser launch at ${storageStatePath}.`;
+        responseSummary = summary;
+        warnings.push(summary);
       }
     } else if (authMaterial.storageState) {
       contextOptions.storageState = authMaterial.storageState;
@@ -693,12 +800,28 @@ export async function runMonitor(config, options = {}) {
       });
     }
 
+    const initialGateState = await snapshotPageGateState(page);
+    if (
+      detectAccessBlocker(initialGateState.title, initialGateState.bodyText)
+    ) {
+      fallbackUsed = true;
+      status = "blocked";
+      summary = "ChatGPT access was blocked before the prompt could run.";
+      responseText = "";
+      responseSummary = summary;
+      warnings.push(
+        "Access blocker detected on chatgpt.com before prompt submission; metrics are not treated as a valid monitoring run."
+      );
+    }
+
     let promptSubmitted = Boolean(
       normalizedConfig.prompt.text &&
       normalizedConfig.navigation.promptQueryParam
     );
 
-    if (!normalizedConfig.prompt.text) {
+    if (status !== "success") {
+      promptSubmitted = false;
+    } else if (!normalizedConfig.prompt.text) {
       warnings.push("No prompt text configured; running extraction-only mode.");
     } else if (!promptSubmitted) {
       try {
@@ -707,11 +830,9 @@ export async function runMonitor(config, options = {}) {
           .first();
         await input.waitFor({
           state: "visible",
-          timeout: normalizedConfig.timing.responseTimeoutMs,
+          timeout: promptReadyTimeoutMs,
         });
-        await input.click({
-          timeout: normalizedConfig.timing.responseTimeoutMs,
-        });
+        await input.click({ timeout: promptReadyTimeoutMs });
 
         const existingInputText = normalizeText(
           await input
@@ -781,9 +902,6 @@ export async function runMonitor(config, options = {}) {
     responseText = extracted.responseText;
     citations = extracted.citations;
     sourceArtifacts = extracted.sourceArtifacts ?? [];
-    await writeText(pageHtmlPath, await page.content());
-    await writeText(responseHtmlPath, extracted.responseHtml ?? "");
-    await writeJson(sourcesPath, sourceArtifacts);
     output = {
       title: extracted.pageTitle,
       finalUrl: extracted.finalUrl,
@@ -791,14 +909,20 @@ export async function runMonitor(config, options = {}) {
         normalizedConfig.extraction.responseContainerSelector,
     };
 
-    if (detectAccessBlocker(extracted.pageTitle, extracted.responseText)) {
-      status = "failed";
+    if (
+      status === "success" &&
+      detectAccessBlocker(extracted.pageTitle, extracted.responseText)
+    ) {
+      status = "blocked";
       fallbackUsed = true;
       summary = "ChatGPT access was blocked before the prompt could run.";
+      responseText = "";
       responseSummary = summary;
       warnings.push(
         "Access blocker detected on chatgpt.com; metrics are not treated as a valid monitoring run."
       );
+      citations = [];
+      sourceArtifacts = [];
     }
 
     if (
@@ -827,12 +951,16 @@ export async function runMonitor(config, options = {}) {
       warnings.push("No response text extracted from assistant output.");
     }
 
-    const metrics = computeAnalytics({ responseText, citations });
-    responseSummary = metrics.responseSummary;
-    sourceCount = metrics.sourceCount;
-    visibilityScore = metrics.visibilityScore;
-    citationQualityScore = metrics.citationQualityScore;
-    averageCitationPosition = metrics.averageCitationPosition;
+    if (status === "success") {
+      const metrics = computeAnalytics({ responseText, citations });
+      if (!responseSummary) {
+        responseSummary = metrics.responseSummary;
+      }
+      sourceCount = metrics.sourceCount;
+      visibilityScore = metrics.visibilityScore;
+      citationQualityScore = metrics.citationQualityScore;
+      averageCitationPosition = metrics.averageCitationPosition;
+    }
 
     const missingUsableAssistantResponse = warnings.some((warning) =>
       warning.startsWith("Response container not found after submit:")
@@ -867,6 +995,9 @@ export async function runMonitor(config, options = {}) {
       responseSummary = summary;
     }
 
+    await writeText(pageHtmlPath, await page.content());
+    await writeText(responseHtmlPath, extracted.responseHtml ?? "");
+    await writeJson(sourcesPath, sourceArtifacts);
     await page.screenshot({ path: screenshotPath, fullPage: true });
     evidencePath = screenshotPath;
     output.screenshot = screenshotPath;

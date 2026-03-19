@@ -11,6 +11,7 @@
   },
   "navigation": {
     "url": "https://chatgpt.com/",
+    "promptQueryParam": "q",
     "waitUntil": "domcontentloaded",
     "timeoutMs": 30000
   },
@@ -37,6 +38,12 @@
   "timing": {
     "responseTimeoutMs": 300000,
     "settleDelayMs": 1500
+  },
+  "worker": {
+    "maxConcurrent": 2,
+    "maxAttempts": 2,
+    "staleThresholdMs": 600000,
+    "staleRecoveryIntervalMs": 30000
   },
   "ingest": {
     "target": "auto"
