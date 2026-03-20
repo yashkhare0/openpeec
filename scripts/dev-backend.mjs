@@ -126,16 +126,24 @@ async function reuseExistingBackend(convexUrl) {
 }
 
 function runConvexDev() {
-  const child = spawn(
-    "pnpm",
-    ["exec", "convex", "dev", "--local", "--tail-logs"],
-    {
-      cwd: process.cwd(),
-      stdio: "inherit",
-      shell: process.platform === "win32",
-      env: process.env,
-    }
-  );
+  const child =
+    process.platform === "win32"
+      ? spawn(
+          process.env.ComSpec ?? "cmd.exe",
+          ["/d", "/s", "/c", "pnpm.cmd exec convex dev --local --tail-logs"],
+          {
+            cwd: process.cwd(),
+            stdio: "inherit",
+            shell: false,
+            env: process.env,
+          }
+        )
+      : spawn("pnpm", ["exec", "convex", "dev", "--local", "--tail-logs"], {
+          cwd: process.cwd(),
+          stdio: "inherit",
+          shell: false,
+          env: process.env,
+        });
 
   child.on("exit", (code, signal) => {
     if (signal) {
@@ -155,20 +163,28 @@ function runConvexDev() {
 
 async function main() {
   const convexUrl = await resolveConvexUrl();
+  let warnedAboutForeignBackend = false;
 
-  if (await canQueryExpectedBackend(convexUrl)) {
-    await reuseExistingBackend(convexUrl);
+  while (true) {
+    if (await canQueryExpectedBackend(convexUrl)) {
+      await reuseExistingBackend(convexUrl);
+      return;
+    }
+
+    if (await portIsReachable(convexUrl)) {
+      if (!warnedAboutForeignBackend) {
+        console.warn(
+          `[dev:backend] Port for ${convexUrl} is already in use, but it does not appear to be this project's Convex backend. Waiting for that process to exit so OpenPeec can start its local backend.`
+        );
+        warnedAboutForeignBackend = true;
+      }
+      await sleep(5000);
+      continue;
+    }
+
+    runConvexDev();
     return;
   }
-
-  if (await portIsReachable(convexUrl)) {
-    console.error(
-      `[dev:backend] Port for ${convexUrl} is already in use, but it does not appear to be this project's Convex backend. Stop the other process and run pnpm dev again.`
-    );
-    process.exit(1);
-  }
-
-  runConvexDev();
 }
 
 await main();

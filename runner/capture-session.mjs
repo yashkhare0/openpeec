@@ -2,10 +2,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
+import { pathToFileURL } from "node:url";
 
 import { chromium } from "playwright";
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = {
     out: "runner/chatgpt.storage-state.json",
     url: "https://chatgpt.com/",
@@ -33,25 +34,48 @@ function parseArgs(argv) {
   return args;
 }
 
-function resolvePathIfRelative(inputPath) {
+export function resolvePathIfRelative(inputPath) {
   if (path.isAbsolute(inputPath)) {
     return inputPath;
   }
   return path.resolve(process.cwd(), inputPath);
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  const outputPath = resolvePathIfRelative(args.out);
-
+export async function openCaptureSession(options = {}) {
+  const outputPath = resolvePathIfRelative(
+    options.out ?? "runner/chatgpt.storage-state.json"
+  );
   const browser = await chromium.launch({
-    channel: args.browser,
+    channel: options.browser ?? "msedge",
     headless: false,
   });
 
   const context = await browser.newContext();
   const page = await context.newPage();
-  await page.goto(args.url, { waitUntil: "domcontentloaded", timeout: 45000 });
+  await page.goto(options.url ?? "https://chatgpt.com/", {
+    waitUntil: "domcontentloaded",
+    timeout: 45000,
+  });
+
+  return {
+    browser,
+    context,
+    page,
+    outputPath,
+    async save() {
+      await fs.mkdir(path.dirname(outputPath), { recursive: true });
+      await context.storageState({ path: outputPath });
+      return outputPath;
+    },
+    async close() {
+      await context.close();
+      await browser.close();
+    },
+  };
+}
+
+export async function captureSession(options = {}) {
+  const session = await openCaptureSession(options);
 
   console.log("");
   console.log(
@@ -73,17 +97,26 @@ async function main() {
     rl.close();
   }
 
-  await fs.mkdir(path.dirname(outputPath), { recursive: true });
-  await context.storageState({ path: outputPath });
+  const savedPath = await session.save();
 
-  console.log(`Saved storage state to ${outputPath}`);
+  console.log(`Saved storage state to ${savedPath}`);
 
-  await context.close();
-  await browser.close();
+  await session.close();
+  return savedPath;
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`Session capture failed: ${message}`);
-  process.exit(1);
-});
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  await captureSession(args);
+}
+
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  main().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Session capture failed: ${message}`);
+    process.exit(1);
+  });
+}

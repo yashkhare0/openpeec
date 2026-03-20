@@ -7,6 +7,7 @@ Turn `openpeec` into a trustworthy local-first internal monitoring product for C
 ## Success Criteria
 
 - ChatGPT runs fail fast when the environment is not operator-ready and do not consume queue capacity on predictable auth/Cloudflare failures.
+- ChatGPT connection can be established from inside the product, without asking the operator to manually run a side command.
 - A run can be clearly classified as `queued`, `running`, `success`, `failed`, or `blocked`, and each state is reflected correctly in Convex and the UI.
 - Source and citation analytics only derive from completed assistant answers and never from shell pages, blocker pages, or failed runs.
 - Convex queries remain semantically correct under larger datasets and do not silently truncate or drift from requested filters/ranges.
@@ -63,6 +64,7 @@ Phase 1
   - Cloudflare challenge path is reachable
   - authenticated shell is usable
 - [ ] Redesign local auth/session flow around a persistent real browser context.
+- [ ] Replace command-line-only session capture with an in-product guided setup flow.
 - [ ] Decide the supported operating mode:
   - persistent user data dir
   - imported storage state
@@ -70,6 +72,15 @@ Phase 1
 - [ ] Make missing/invalid session state a first-class blocked/preflight failure.
 - [ ] Align the shipped example config with the documented deep-link strategy.
 - [ ] Define artifact retention/redaction policy for local evidence.
+- [ ] Define how session health is checked:
+  - before queue claim
+  - on manual "Test connection"
+  - after blocked runs
+- [ ] Model session states in-product:
+  - not connected
+  - connected
+  - needs attention
+  - expired/blocked
 - **Status:** pending
 
 ### Phase 3: Harden Queue Lifecycle and Execution Semantics
@@ -124,6 +135,11 @@ Phase 1
 ### Phase 6: Unify Tooling, Bootstrap, and Documentation
 
 - [ ] Make backend, frontend, and worker agree on one Convex bootstrap contract.
+- [ ] Introduce a local companion/service contract for OS-level actions the SPA cannot perform:
+  - launch browser profile
+  - save local ChatGPT session state
+  - verify session health
+  - disconnect/reset local session
 - [ ] Make dev startup deterministic:
   - strict port handling
   - one source of truth for local URLs
@@ -229,7 +245,16 @@ Phase 1
 2. What is the canonical persisted state for a ChatGPT-specific blocker: separate `blocked` status, or `failed` plus subtype?
 3. Should entity/source attribution be snapshotted at ingest time or recomputed from mutable tracked-entity rules?
 4. Which artifacts must remain local-only, and which should be portable in product surfaces across machines?
-5. Which existing dirty files in the working tree represent desired progress versus work that should be re-evaluated under this stabilization plan?
+5. Which local bridge form should own in-product session setup:
+
+- bundled desktop helper
+- localhost daemon
+- browser extension/native messaging bridge
+
+6. How much of the dedicated browser profile should be exposed in the product:
+
+- simple "Connect ChatGPT"
+- advanced diagnostics for session/cookies/profile state
 
 ## Decisions Made
 
@@ -238,6 +263,7 @@ Phase 1
 | Plan stabilization before more feature work | The current issues are structural; adding more UI/features will compound incorrect behavior.  |
 | Sequence runner/queue before UI polish      | The biggest product failures are operational truth failures, not presentation gaps.           |
 | Keep this plan in project files             | The user explicitly wants continuity across sessions/devices; this plan must persist on disk. |
+| Treat session onboarding as product scope   | A manual CLI capture step is acceptable for dev diagnosis, but not for the real operator UX.  |
 
 ## Errors Encountered
 
@@ -250,3 +276,5 @@ Phase 1
 - Do not treat "visibility" as a stable metric until the data pipeline itself is corrected.
 - Do not merge more product-facing features until Phases 1-4 are materially complete.
 - Re-read this plan before implementation decisions; the main failure mode in this repo has been acting before semantics were stable.
+- The browser app cannot write `chatgpt.storage-state.json` by itself; in-product setup requires a local companion process or equivalent bridge.
+- Session validity should be treated as health-checked, not time-based. Do not build product logic around a fixed ChatGPT session TTL.

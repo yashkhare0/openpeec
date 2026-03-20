@@ -63,5 +63,16 @@ export default defineConfig({
   },
   server: {
     port: 5999,
+    watch: {
+      ignored: [
+        "**/e2e/**",
+        "**/test-results/**",
+        "**/playwright-report/**",
+        "**/findings.md",
+        "**/progress.md",
+        "**/task_plan.md",
+        "**/runner/artifacts/**",
+      ],
+    },
   },
 });

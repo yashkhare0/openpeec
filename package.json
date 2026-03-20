@@ -8,7 +8,7 @@
     "kill": "node scripts/kill-dev.mjs",
     "dev:frontend": "vite --open",
     "dev:backend": "node scripts/dev-backend.mjs",
-    "dev:runner": "node runner/process-queued-runs.mjs --config runner/example.monitor.json --poll-interval-ms 1000",
+    "dev:runner": "node runner/process-queued-runs.mjs --config runner/example.monitor.json --poll-interval-ms 1000 --headed",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p convex/tsconfig.json --noEmit && tsc -p tsconfig.e2e.json --noEmit",
     "build": "pnpm typecheck && vite build",
     "lint": "eslint . --ext ts,tsx,mts,cjs --report-unused-disable-directives --max-warnings 0",
@@ -27,8 +27,8 @@
     "runner:prompt:example": "node runner/run-monitor.mjs --config runner/example.monitor.json --output runner/last-run.json",
     "runner:capture-session": "node runner/capture-session.mjs",
     "runner:install-browsers": "playwright install chromium",
-    "runner:queue": "node runner/process-queued-runs.mjs --config runner/example.monitor.json --poll-interval-ms 1000",
-    "runner:queue:once": "node runner/process-queued-runs.mjs --config runner/example.monitor.json --once"
+    "runner:queue": "node runner/process-queued-runs.mjs --config runner/example.monitor.json --poll-interval-ms 1000 --headed",
+    "runner:queue:once": "node runner/process-queued-runs.mjs --config runner/example.monitor.json --once --headed"
   },
   "dependencies": {
     "@convex-dev/crons": "^0.1.9",

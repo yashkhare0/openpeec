@@ -16,6 +16,7 @@
 ## Research Findings
 
 - The highest-risk problem is runner posture against ChatGPT. The current implementation launches fresh headless browser contexts too easily, while the environment is already known to hit Cloudflare/Turnstile before the ChatGPT app becomes usable.
+- The actual local queue path was verified against the current environment: without `runner/chatgpt.storage-state.json`, the worker now blocks safely and leaves the run queued. This is the correct operational behavior, but it also proves the product cannot claim "working runs" until session onboarding is productized.
 - Queue behavior is currently fragile by design. A single `running` run can block the full system, and stale-run recovery is not strong enough to make that safe.
 - The analytics layer is not only slow at scale; several queries are semantically wrong once run volume grows because they rely on fixed recent caps and in-memory filtering.
 - The current frontend still behaves like a prototype shell in important places:
@@ -27,6 +28,10 @@
   - root README is still for a different product
   - runner docs and shipped config disagree on deep-link/headless defaults
   - backend/frontend/worker do not share one clean bootstrap contract
+- The current ChatGPT session bootstrap is still developer-centric:
+  - `pnpm runner:capture-session` works as a diagnostic path
+  - but the real product needs an in-product guided flow
+  - and that flow requires a local bridge because a browser SPA cannot write local session files directly
 - Test coverage is insufficient for the actual failure modes being seen in practice. Current verification proves the shell loads, not that the monitoring system is correct.
 
 ## Issue Inventory by Workstream
@@ -35,6 +40,9 @@
 
 - Missing storage state is treated as a warning instead of a preflight blocker.
 - Fresh headless contexts are too likely to trigger Cloudflare verification.
+- Session onboarding is not productized. Operators currently need a terminal command to establish ChatGPT connectivity.
+- There is no explicit "session health" model exposed in product state.
+- There is no local companion/service contract for browser-profile lifecycle operations.
 - Prompt submission and response detection rely on brittle selectors.
 - Blocker detection is string-based and narrow.
 - Citation extraction can scrape shell/blocker links instead of true sources.
@@ -76,6 +84,11 @@
 - Kill tooling is Windows-only and can target unrelated processes.
 - Artifact serving differs between `dev` and `preview`.
 - Repo docs do not match the shipped product and configs.
+- There is no shipped product architecture yet for local privileged actions:
+  - launching a dedicated browser profile
+  - saving session state
+  - verifying ChatGPT app readiness
+  - disconnecting/resetting session material
 
 ### Testing / Verification
 
@@ -94,6 +107,19 @@
 | Prefer persistent authenticated local browser context over fresh headless bootstrap | This matches the local-first requirement and is the most realistic path to stable ChatGPT execution.        |
 | Move to routed drill-downs before more dashboard expansion                          | Analytics products need durable URLs and refresh-safe navigation.                                           |
 | Define analytics contribution rules explicitly                                      | The product promise depends on knowing exactly which run states feed sources, citations, and summary views. |
+| Productize session setup with a local bridge                                        | The SPA cannot perform the local filesystem/browser-profile actions needed for ChatGPT session management.  |
+
+## Session-Specific Findings
+
+- `runner/chatgpt.storage-state.json` is currently absent in this environment.
+- Triggering a real queued run and then running the worker once produces the expected preflight failure:
+  - the worker exits early
+  - the queued run is not claimed
+  - no citations or fake response data are written
+- That means the worker safety contract is improved, but the operator experience is still incomplete.
+- Session lifetime should not be modeled as a fixed TTL:
+  - it can end because of logout, password changes, `log out all devices`, cookie expiry, or a new security challenge
+  - product logic should rely on health checks, not a hard-coded duration
 
 ## Issues Encountered
 

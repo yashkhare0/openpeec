@@ -87,7 +87,9 @@ function isTransientConvexError(error) {
     message.includes("networkerror") ||
     message.includes("network error") ||
     message.includes("econnrefused") ||
-    message.includes("socket hang up")
+    message.includes("socket hang up") ||
+    message.includes("could not find public function") ||
+    message.includes("server error")
   );
 }
 
@@ -256,8 +258,6 @@ export function shouldAutoRetry(result, runContext, maxAttempts = 2) {
     "checking your browser",
     "just a moment",
     "challenges.cloudflare.com",
-    "storage state not found",
-    "no local chatgpt session material is configured",
   ];
   if (nonRetriablePatterns.some((pattern) => haystack.includes(pattern))) {
     return false;

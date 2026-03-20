@@ -7,7 +7,7 @@
   "model": "chatgpt-web",
   "browser": {
     "channel": "msedge",
-    "headless": true
+    "headless": false
   },
   "navigation": {
     "url": "https://chatgpt.com/",
@@ -28,19 +28,18 @@
     "citationLinkSelector": "a[href]",
     "maxCitations": 20
   },
-  "authProfile": {
-    "authType": "file",
-    "localRef": "runner/example.auth-profile.json"
-  },
   "assertions": {
     "urlIncludes": "chatgpt.com"
   },
   "timing": {
+    "healthCheckTimeoutMs": 15000,
+    "promptReadyTimeoutMs": 15000,
+    "responseStartTimeoutMs": 45000,
     "responseTimeoutMs": 300000,
     "settleDelayMs": 1500
   },
   "worker": {
-    "maxConcurrent": 2,
+    "maxConcurrent": 1,
     "maxAttempts": 2,
     "staleThresholdMs": 600000,
     "staleRecoveryIntervalMs": 30000

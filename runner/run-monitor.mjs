@@ -158,7 +158,7 @@ function canonicalizeCitationUrl(input) {
   }
 }
 
-function detectAccessBlocker(title, responseText) {
+export function detectAccessBlocker(title, responseText) {
   const haystack =
     `${normalizeText(title)} ${normalizeText(responseText)}`.toLowerCase();
   const patterns = [
@@ -168,6 +168,8 @@ function detectAccessBlocker(title, responseText) {
     "challenges.cloudflare.com",
     "verify you are human",
     "checking your browser",
+    "incompatible browser extension or network configuration",
+    "your browser extensions or network settings have blocked the security verification process",
   ];
   return patterns.some((pattern) => haystack.includes(pattern));
 }
@@ -183,11 +185,115 @@ function resolvePromptReadyTimeoutMs(config) {
   );
 }
 
-async function snapshotPageGateState(page) {
+function resolveHealthCheckTimeoutMs(config) {
+  const responseTimeoutMs = config.timing.responseTimeoutMs ?? 300000;
+  const configuredTimeout = config.timing.healthCheckTimeoutMs;
+  const defaultTimeout = Math.min(responseTimeoutMs, 15000);
+  return clamp(
+    Math.floor(configuredTimeout ?? defaultTimeout),
+    5000,
+    responseTimeoutMs
+  );
+}
+
+function resolveResponseStartTimeoutMs(config) {
+  const responseTimeoutMs = config.timing.responseTimeoutMs ?? 300000;
+  const configuredTimeout = config.timing.responseStartTimeoutMs;
+  const defaultTimeout = Math.min(responseTimeoutMs, 45000);
+  return clamp(
+    Math.floor(configuredTimeout ?? defaultTimeout),
+    5000,
+    responseTimeoutMs
+  );
+}
+
+export async function snapshotPageGateState(page) {
   return await page.evaluate(() => ({
     title: document.title,
     bodyText: document.body?.innerText ?? "",
   }));
+}
+
+function matchesCriticalChatGpt403(url) {
+  try {
+    const parsed = new URL(url);
+    if (!/chatgpt\.com$/i.test(parsed.hostname)) {
+      return false;
+    }
+
+    return [
+      "/backend-anon/conversation/init",
+      "/backend-anon/models",
+      "/backend-anon/me",
+      "/backend-anon/sentinel/chat-requirements/prepare",
+      "/backend-anon/system_hints",
+      "/backend-anon/accounts/check",
+      "/backend-anon/settings/voices",
+      "/backend-anon/settings/redeemed_free_trial_on_device",
+      "/backend-anon/checkout_pricing_config/countries",
+      "/backend-anon/accounts/passkey/challenge",
+    ].some((pathPrefix) => parsed.pathname.startsWith(pathPrefix));
+  } catch {
+    return false;
+  }
+}
+
+export function classifyChatGptPageState({
+  title,
+  bodyText,
+  promptVisible,
+  networkEvents = [],
+}) {
+  if (detectAccessBlocker(title, bodyText)) {
+    return {
+      state: "blocked",
+      reason: "ChatGPT access was blocked before the prompt could run.",
+    };
+  }
+
+  const normalizedBody = normalizeText(bodyText).toLowerCase();
+  const critical403s = networkEvents.filter(
+    (event) => event.status === 403 && matchesCriticalChatGpt403(event.url)
+  );
+  const hasAnonymousShellError =
+    normalizedBody.includes("something went wrong") &&
+    normalizedBody.includes("help.openai.com");
+
+  if (critical403s.some((event) => event.url.includes("/conversation/init"))) {
+    return {
+      state: "blocked",
+      reason:
+        "ChatGPT guest session is unavailable because conversation requests are being rejected.",
+      critical403Count: critical403s.length,
+    };
+  }
+
+  if (!promptVisible && critical403s.length >= 3) {
+    return {
+      state: "blocked",
+      reason: `ChatGPT guest session is unavailable because ${critical403s.length} critical requests were rejected.`,
+      critical403Count: critical403s.length,
+    };
+  }
+
+  if (!promptVisible && hasAnonymousShellError && critical403s.length > 0) {
+    return {
+      state: "blocked",
+      reason:
+        "ChatGPT loaded an anonymous error shell instead of a usable conversation view.",
+      critical403Count: critical403s.length,
+    };
+  }
+
+  if (promptVisible) {
+    return {
+      state: "ready",
+    };
+  }
+
+  return {
+    state: "pending",
+  };
 }
 
 function classifySourceType(domain) {
@@ -321,6 +427,8 @@ export function normalizeRunnerConfig(rawConfig) {
     timing: {
       responseTimeoutMs: timing.responseTimeoutMs ?? 300000,
       promptReadyTimeoutMs: timing.promptReadyTimeoutMs,
+      healthCheckTimeoutMs: timing.healthCheckTimeoutMs,
+      responseStartTimeoutMs: timing.responseStartTimeoutMs,
       settleDelayMs: timing.settleDelayMs ?? 1500,
     },
     ingest: {
@@ -364,28 +472,167 @@ export async function getRunnerPreflight(config) {
     );
     if (!(await pathExists(storageStatePath))) {
       return {
-        ok: false,
-        status: "blocked",
-        reason: `Storage state not found at ${storageStatePath}. Capture a ChatGPT session before running queued monitoring jobs.`,
+        ok: true,
+        status: "success",
+        warning: `Storage state not found at ${storageStatePath}; continuing with a fresh browser session.`,
       };
     }
-  } else if (
-    !authMaterial.storageState &&
-    !(
-      authMaterial.cookies &&
-      Array.isArray(authMaterial.cookies) &&
-      authMaterial.cookies.length
-    )
-  ) {
-    return {
-      ok: false,
-      status: "blocked",
-      reason:
-        "No local ChatGPT session material is configured. Capture a session or provide storage state before queue execution.",
-    };
   }
 
   return { ok: true, status: "success" };
+}
+
+async function dismissCookieBanner(page) {
+  const selectors = [
+    "button:has-text('Accept all')",
+    "button:has-text('Reject non-essential')",
+    "button:has-text('Manage Cookies')",
+    "button[aria-label='Close']",
+    "button[aria-label='Dismiss']",
+  ];
+
+  for (const selector of selectors) {
+    const button = page.locator(selector).first();
+    const exists = await button.count().catch(() => 0);
+    if (!exists) {
+      continue;
+    }
+
+    const visible = await button.isVisible().catch(() => false);
+    if (!visible) {
+      continue;
+    }
+
+    await button.click({ timeout: 1500 }).catch(() => {});
+    return true;
+  }
+
+  return false;
+}
+
+async function isPromptComposerVisible(page, selector) {
+  const input = page.locator(selector).first();
+  const exists = await input.count().catch(() => 0);
+  if (!exists) {
+    return false;
+  }
+  return await input.isVisible().catch(() => false);
+}
+
+async function waitForChatGptComposer(page, config, networkEvents) {
+  const timeoutMs = resolveHealthCheckTimeoutMs(config);
+  const deadline = Date.now() + timeoutMs;
+  let lastReason =
+    "ChatGPT never reached a usable prompt composer before timing out.";
+
+  while (Date.now() < deadline) {
+    await dismissCookieBanner(page);
+
+    const promptVisible = await isPromptComposerVisible(
+      page,
+      config.prompt.inputSelector
+    );
+    const gateState = await snapshotPageGateState(page);
+    const pageState = classifyChatGptPageState({
+      title: gateState.title,
+      bodyText: gateState.bodyText,
+      promptVisible,
+      networkEvents,
+    });
+
+    if (pageState.state === "ready") {
+      return {
+        ok: true,
+        gateState,
+      };
+    }
+
+    if (pageState.reason) {
+      lastReason = pageState.reason;
+    }
+
+    if (pageState.state === "blocked") {
+      return {
+        ok: false,
+        status: "blocked",
+        reason: lastReason,
+        gateState,
+      };
+    }
+
+    await page.waitForTimeout(750);
+  }
+
+  const promptVisible = await isPromptComposerVisible(
+    page,
+    config.prompt.inputSelector
+  );
+  const gateState = await snapshotPageGateState(page);
+  const pageState = classifyChatGptPageState({
+    title: gateState.title,
+    bodyText: gateState.bodyText,
+    promptVisible,
+    networkEvents,
+  });
+
+  if (pageState.state === "ready") {
+    return {
+      ok: true,
+      gateState,
+    };
+  }
+
+  return {
+    ok: false,
+    status: pageState.state === "blocked" ? "blocked" : "failed",
+    reason: pageState.reason ?? lastReason,
+    gateState,
+  };
+}
+
+async function waitForAssistantResponse(page, config, networkEvents) {
+  const timeoutMs = resolveResponseStartTimeoutMs(config);
+  const deadline = Date.now() + timeoutMs;
+  const response = page
+    .locator(config.extraction.responseContainerSelector)
+    .first();
+
+  while (Date.now() < deadline) {
+    const responseVisible =
+      (await response.count().catch(() => 0)) > 0 &&
+      (await response.isVisible().catch(() => false));
+    if (responseVisible) {
+      return { ok: true };
+    }
+
+    const promptVisible = await isPromptComposerVisible(
+      page,
+      config.prompt.inputSelector
+    );
+    const gateState = await snapshotPageGateState(page);
+    const pageState = classifyChatGptPageState({
+      title: gateState.title,
+      bodyText: gateState.bodyText,
+      promptVisible,
+      networkEvents,
+    });
+
+    if (pageState.state === "blocked") {
+      return {
+        ok: false,
+        status: "blocked",
+        reason: pageState.reason,
+      };
+    }
+
+    await page.waitForTimeout(1000);
+  }
+
+  return {
+    ok: false,
+    status: "failed",
+    reason: `Response did not start within ${timeoutMs}ms.`,
+  };
 }
 
 async function extractResponseAndCitations(page, config) {
@@ -636,6 +883,7 @@ async function ingestRunIfRequested(config, result, shouldIngest) {
 
 export async function runMonitor(config, options = {}) {
   const normalizedConfig = normalizeRunnerConfig(config);
+  const warnings = [];
   const preflight = await getRunnerPreflight(normalizedConfig);
   if (!preflight.ok) {
     const finishedAt = Date.now();
@@ -674,6 +922,9 @@ export async function runMonitor(config, options = {}) {
     );
     return { ...result, ingest };
   }
+  if (preflight.warning) {
+    warnings.push(preflight.warning);
+  }
 
   const startedAt = Date.now();
   let status = "success";
@@ -689,7 +940,6 @@ export async function runMonitor(config, options = {}) {
   let citationQualityScore = undefined;
   let averageCitationPosition = undefined;
   let fallbackUsed = false;
-  const warnings = [];
   const networkEvents = [];
   const consoleEvents = [];
 
@@ -739,11 +989,9 @@ export async function runMonitor(config, options = {}) {
       if (await pathExists(storageStatePath)) {
         contextOptions.storageState = storageStatePath;
       } else {
-        status = "blocked";
-        fallbackUsed = true;
-        summary = `Storage state disappeared before browser launch at ${storageStatePath}.`;
-        responseSummary = summary;
-        warnings.push(summary);
+        warnings.push(
+          `Storage state not found at ${storageStatePath}; continuing with a fresh browser session.`
+        );
       }
     } else if (authMaterial.storageState) {
       contextOptions.storageState = authMaterial.storageState;
@@ -800,31 +1048,33 @@ export async function runMonitor(config, options = {}) {
       });
     }
 
-    const initialGateState = await snapshotPageGateState(page);
-    if (
-      detectAccessBlocker(initialGateState.title, initialGateState.bodyText)
-    ) {
+    const readiness = await waitForChatGptComposer(
+      page,
+      normalizedConfig,
+      networkEvents
+    );
+    if (!readiness.ok) {
       fallbackUsed = true;
-      status = "blocked";
-      summary = "ChatGPT access was blocked before the prompt could run.";
+      status = readiness.status ?? "failed";
+      summary = readiness.reason;
       responseText = "";
       responseSummary = summary;
       warnings.push(
-        "Access blocker detected on chatgpt.com before prompt submission; metrics are not treated as a valid monitoring run."
+        status === "blocked"
+          ? "Access blocker detected on chatgpt.com before prompt submission; metrics are not treated as a valid monitoring run."
+          : "ChatGPT did not reach a usable prompt composer before prompt submission."
       );
     }
 
-    let promptSubmitted = Boolean(
-      normalizedConfig.prompt.text &&
-      normalizedConfig.navigation.promptQueryParam
-    );
+    let promptSubmitted = false;
 
     if (status !== "success") {
       promptSubmitted = false;
     } else if (!normalizedConfig.prompt.text) {
       warnings.push("No prompt text configured; running extraction-only mode.");
-    } else if (!promptSubmitted) {
+    } else {
       try {
+        await dismissCookieBanner(page);
         const input = page
           .locator(normalizedConfig.prompt.inputSelector)
           .first();
@@ -882,17 +1132,25 @@ export async function runMonitor(config, options = {}) {
     }
 
     if (promptSubmitted) {
-      try {
-        await page.waitForSelector(
-          normalizedConfig.extraction.responseContainerSelector,
-          { timeout: normalizedConfig.timing.responseTimeoutMs }
-        );
-      } catch (error) {
-        warnings.push(
-          `Response container not found after submit: ${
-            error instanceof Error ? error.message : "unknown error"
-          }`
-        );
+      const responseStart = await waitForAssistantResponse(
+        page,
+        normalizedConfig,
+        networkEvents
+      );
+      if (!responseStart.ok) {
+        if (responseStart.status === "blocked") {
+          status = "blocked";
+          fallbackUsed = true;
+          summary = responseStart.reason;
+          responseSummary = summary;
+          warnings.push(
+            "Access blocker detected on chatgpt.com after prompt submission; metrics are not treated as a valid monitoring run."
+          );
+        } else {
+          warnings.push(
+            `Response container not found after submit: ${responseStart.reason}`
+          );
+        }
       }
     }
 
