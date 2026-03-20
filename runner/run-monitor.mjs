@@ -368,8 +368,6 @@ export function normalizeRunnerConfig(rawConfig) {
   const timing = rawConfig.timing ?? {};
   const ingest = rawConfig.ingest ?? {};
   const navigationUrl = deepLink.url;
-  const isChatGptNavigation =
-    typeof navigationUrl === "string" && /chatgpt\.com/i.test(navigationUrl);
 
   return {
     schemaVersion: 2,
@@ -382,12 +380,12 @@ export function normalizeRunnerConfig(rawConfig) {
     browser: {
       channel: browser.channel ?? null,
       headless: browser.headless ?? true,
+      userDataDir: browser.userDataDir ?? null,
     },
     authProfile: rawConfig.authProfile,
     navigation: {
       url: navigationUrl,
-      promptQueryParam:
-        deepLink.promptQueryParam ?? (isChatGptNavigation ? "q" : null),
+      promptQueryParam: deepLink.promptQueryParam ?? null,
       waitUntil: deepLink.waitUntil ?? "domcontentloaded",
       timeoutMs: deepLink.timeoutMs ?? 30000,
     },
@@ -953,10 +951,10 @@ export async function runMonitor(config, options = {}) {
     normalizedConfig.authProfile
   );
   const promptReadyTimeoutMs = resolvePromptReadyTimeoutMs(normalizedConfig);
-  const browser = await chromium.launch({
-    channel: normalizedConfig.browser.channel ?? undefined,
-    headless: options.headed ? false : normalizedConfig.browser.headless,
-  });
+  const persistentProfileDir = normalizedConfig.browser.userDataDir
+    ? resolvePathIfRelative(normalizedConfig.browser.userDataDir)
+    : null;
+  let browser = null;
   let context;
   let page;
   let pageVideo = null;
@@ -982,7 +980,14 @@ export async function runMonitor(config, options = {}) {
         size: { width: 1440, height: 900 },
       },
     };
-    if (authMaterial.storageStatePath) {
+    if (persistentProfileDir) {
+      await fs.mkdir(persistentProfileDir, { recursive: true });
+      if (authMaterial.storageStatePath || authMaterial.storageState) {
+        warnings.push(
+          "Persistent Chrome profile is enabled; storage state bootstrap material is ignored in favor of the local profile directory."
+        );
+      }
+    } else if (authMaterial.storageStatePath) {
       const storageStatePath = resolvePathIfRelative(
         authMaterial.storageStatePath
       );
@@ -997,7 +1002,19 @@ export async function runMonitor(config, options = {}) {
       contextOptions.storageState = authMaterial.storageState;
     }
 
-    context = await browser.newContext(contextOptions);
+    if (persistentProfileDir) {
+      context = await chromium.launchPersistentContext(persistentProfileDir, {
+        ...contextOptions,
+        channel: normalizedConfig.browser.channel ?? undefined,
+        headless: options.headed ? false : normalizedConfig.browser.headless,
+      });
+    } else {
+      browser = await chromium.launch({
+        channel: normalizedConfig.browser.channel ?? undefined,
+        headless: options.headed ? false : normalizedConfig.browser.headless,
+      });
+      context = await browser.newContext(contextOptions);
+    }
     await context.tracing.start({
       screenshots: true,
       snapshots: true,
@@ -1011,7 +1028,14 @@ export async function runMonitor(config, options = {}) {
     }
 
     page = await context.newPage();
+    for (const existingPage of context.pages()) {
+      if (existingPage === page) {
+        continue;
+      }
+      await existingPage.close().catch(() => {});
+    }
     pageVideo = page.video();
+    const browserUserAgent = await page.evaluate(() => navigator.userAgent);
     const screenshotPath = path.join(runDir, "page.png");
     tracePath = path.join(runDir, "trace.zip");
     pageHtmlPath = path.join(runDir, "page.html");
@@ -1163,6 +1187,11 @@ export async function runMonitor(config, options = {}) {
     output = {
       title: extracted.pageTitle,
       finalUrl: extracted.finalUrl,
+      browser: {
+        channel: normalizedConfig.browser.channel,
+        userAgent: browserUserAgent,
+        persistentProfileDir,
+      },
       responseContainerSelector:
         normalizedConfig.extraction.responseContainerSelector,
     };
@@ -1339,7 +1368,9 @@ export async function runMonitor(config, options = {}) {
     if (context) {
       await context.close();
     }
-    await browser.close();
+    if (browser) {
+      await browser.close();
+    }
   }
 
   const finishedAt = Date.now();

@@ -81,3 +81,29 @@ describe("buildRetryLabel", () => {
     );
   });
 });
+
+describe("buildRunConfig", () => {
+  it("does not inject the ChatGPT q deeplink when it is not configured", async () => {
+    const { buildRunConfig } =
+      await import("../runner/process-queued-runs.mjs");
+
+    expect(
+      buildRunConfig(
+        {
+          navigation: {
+            url: "https://chatgpt.com/",
+          },
+          prompt: {},
+        },
+        {
+          prompt: {
+            id: "prompt_123",
+            promptText: "What is drio?",
+            targetModel: "chatgpt-web",
+          },
+          runLabel: "Manual run",
+        }
+      ).navigation.promptQueryParam
+    ).toBeUndefined();
+  });
+});

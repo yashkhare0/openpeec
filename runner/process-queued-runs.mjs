@@ -155,18 +155,16 @@ async function waitForBackendReady(client, cliArgs) {
   }
 }
 
-function isChatGptUrl(url) {
-  return typeof url === "string" && /chatgpt\.com/i.test(url);
-}
-
 function resolveWorkerConfig(baseConfig, cliArgs) {
   const worker = baseConfig.worker ?? {};
+  const hasPersistentProfile = Boolean(baseConfig?.browser?.userDataDir);
+  const requestedMaxConcurrent = Math.max(
+    1,
+    Math.floor(cliArgs.maxConcurrent ?? worker.maxConcurrent ?? 2)
+  );
 
   return {
-    maxConcurrent: Math.max(
-      1,
-      Math.floor(cliArgs.maxConcurrent ?? worker.maxConcurrent ?? 2)
-    ),
+    maxConcurrent: hasPersistentProfile ? 1 : requestedMaxConcurrent,
     maxAttempts: Math.max(
       1,
       Math.floor(cliArgs.maxAttempts ?? worker.maxAttempts ?? 2)
@@ -188,7 +186,7 @@ function resolveWorkerConfig(baseConfig, cliArgs) {
   };
 }
 
-function buildRunConfig(baseConfig, claimedRun) {
+export function buildRunConfig(baseConfig, claimedRun) {
   const configuredResponseTimeout =
     baseConfig?.timing?.responseTimeoutMs ?? 300000;
   const navigationUrl =
@@ -197,8 +195,7 @@ function buildRunConfig(baseConfig, claimedRun) {
     "https://chatgpt.com/";
   const promptQueryParam =
     baseConfig.navigation?.promptQueryParam ??
-    baseConfig.deepLink?.promptQueryParam ??
-    (isChatGptUrl(navigationUrl) ? "q" : undefined);
+    baseConfig.deepLink?.promptQueryParam;
 
   return {
     ...baseConfig,

@@ -10,7 +10,8 @@ export function parseArgs(argv) {
   const args = {
     out: "runner/chatgpt.storage-state.json",
     url: "https://chatgpt.com/",
-    browser: "msedge",
+    browser: "chrome",
+    profileDir: "runner/profiles/chatgpt-chrome",
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -27,6 +28,11 @@ export function parseArgs(argv) {
     }
     if (token === "--browser") {
       args.browser = argv[i + 1];
+      i += 1;
+      continue;
+    }
+    if (token === "--profile-dir") {
+      args.profileDir = argv[i + 1];
       i += 1;
     }
   }
@@ -45,31 +51,37 @@ export async function openCaptureSession(options = {}) {
   const outputPath = resolvePathIfRelative(
     options.out ?? "runner/chatgpt.storage-state.json"
   );
-  const browser = await chromium.launch({
-    channel: options.browser ?? "msedge",
+  const profileDir = resolvePathIfRelative(
+    options.profileDir ?? "runner/profiles/chatgpt-chrome"
+  );
+  await fs.mkdir(profileDir, { recursive: true });
+  const context = await chromium.launchPersistentContext(profileDir, {
+    channel: options.browser ?? "chrome",
     headless: false,
   });
-
-  const context = await browser.newContext();
-  const page = await context.newPage();
+  const page =
+    context.pages().find((existingPage) => !existingPage.isClosed()) ??
+    (await context.newPage());
   await page.goto(options.url ?? "https://chatgpt.com/", {
     waitUntil: "domcontentloaded",
     timeout: 45000,
   });
 
   return {
-    browser,
     context,
     page,
     outputPath,
+    profileDir,
     async save() {
       await fs.mkdir(path.dirname(outputPath), { recursive: true });
       await context.storageState({ path: outputPath });
-      return outputPath;
+      return {
+        outputPath,
+        profileDir,
+      };
     },
     async close() {
       await context.close();
-      await browser.close();
     },
   };
 }
@@ -97,12 +109,13 @@ export async function captureSession(options = {}) {
     rl.close();
   }
 
-  const savedPath = await session.save();
+  const saved = await session.save();
 
-  console.log(`Saved storage state to ${savedPath}`);
+  console.log(`Saved storage state to ${saved.outputPath}`);
+  console.log(`Persistent Chrome profile is available at ${saved.profileDir}`);
 
   await session.close();
-  return savedPath;
+  return saved.outputPath;
 }
 
 async function main() {

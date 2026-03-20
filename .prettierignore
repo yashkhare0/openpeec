@@ -3,6 +3,7 @@ convex/_generated
 dist
 node_modules
 runner/artifacts
+runner/profiles
 .tmp-vite.log
 .tmp-vite.err.log
 package-lock.json

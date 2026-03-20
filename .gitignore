@@ -18,5 +18,6 @@ coverage/
 playwright-report/
 test-results/
 runner/artifacts/
+runner/profiles/
 runner/last-run.json
 .gstack/

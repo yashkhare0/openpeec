@@ -21,9 +21,9 @@ This is an operator tool for recurring checks, not a generic browser automation 
 ## Operator Workflow
 
 1. Install browsers once with `pnpm runner:install-browsers`.
-2. Capture a real ChatGPT session with `pnpm runner:capture-session`. This opens a headed Edge session and saves storage state to `runner/chatgpt.storage-state.json`.
-3. Keep `runner/example.auth-profile.json` pointed at that file, or replace it with your own local path.
-4. Run a monitoring check with `pnpm runner:prompt:example`, or queue prompts from the dashboard and process them with `pnpm runner:queue` or `pnpm runner:queue:once`.
+2. Open and warm the persistent local Chrome profile with `pnpm runner:capture-session`. This opens a headed Chrome session, uses `runner/profiles/chatgpt-chrome`, and also exports storage state to `runner/chatgpt.storage-state.json` for debugging if needed.
+3. Run a monitoring check with `pnpm runner:prompt:example`, or queue prompts from the dashboard and process them with `pnpm runner:queue` or `pnpm runner:queue:once`.
+4. The queue worker reuses the same local Chrome profile directory across runs instead of launching a fresh browser context every time.
 5. Review `runner/last-run.json` and the evidence bundle in `runner/artifacts/<run-label>-<timestamp>/`.
 6. Inspect:
    `status`, `warnings`, `responseText`, `citations`, `visibilityScore`, `citationQualityScore`, `network.json`, `console.json`, `page.html`, `response.html`, `trace.zip`, and the recorded video.
@@ -47,12 +47,12 @@ video, trace, DOM, and source artifacts.
   "platform": "web",
   "model": "chatgpt-web",
   "browser": {
-    "channel": "msedge",
-    "headless": false
+    "channel": "chrome",
+    "headless": false,
+    "userDataDir": "runner/profiles/chatgpt-chrome"
   },
   "navigation": {
     "url": "https://chatgpt.com/",
-    "promptQueryParam": "q",
     "waitUntil": "domcontentloaded",
     "timeoutMs": 30000
   },
@@ -69,10 +69,6 @@ video, trace, DOM, and source artifacts.
     "citationLinkSelector": "a[href]",
     "maxCitations": 20
   },
-  "authProfile": {
-    "authType": "file|env|manual",
-    "localRef": "runner/example.auth-profile.json"
-  },
   "assertions": {
     "urlIncludes": "chatgpt.com",
     "titleIncludes": "optional title substring",
@@ -88,12 +84,11 @@ video, trace, DOM, and source artifacts.
 }
 ```
 
-`authProfile.localRef` is a local-only metadata pointer. Secrets stay local.
-The default example profile expects `runner/chatgpt.storage-state.json`, which you create with `pnpm runner:capture-session`.
+`browser.userDataDir` points at the persistent local Chrome profile used for ChatGPT runs. This is now the primary stability mechanism for guest-mode monitoring. `pnpm runner:capture-session` opens and primes that same profile directory.
 The live ChatGPT page uses a visible `#prompt-textarea` contenteditable and a hidden fallback `textarea`; keep the contenteditable first in your selector order.
-The runner supports ChatGPT's optional `?q=` deep link through `navigation.promptQueryParam`. In local queue processing this is the preferred path because it creates the user turn directly in a new thread. If the assistant never resolves past the `request-placeholder` node, the run should be treated as failed because there is no completed answer or citation set to analyze.
+The runner can use ChatGPT's optional `?q=` deep link through `navigation.promptQueryParam`, but the default local path is now composer-first. If you explicitly turn `promptQueryParam` back on, treat it as an opt-in compatibility mode rather than the primary submission path.
 The live ChatGPT response stream also renders temporary `request-placeholder` assistant nodes; exclude those from extraction or you will scrape an empty streaming shell instead of the completed answer.
-If selectors fail, session is missing, or ChatGPT markup shifts, the run still returns structured output with warnings.
+If selectors fail, the persistent profile is invalid, or ChatGPT markup shifts, the run still returns structured output with warnings.
 
 ## Result Contract
 
@@ -183,6 +178,7 @@ For queued prompt execution:
 
 Queue execution is strictly sequential. Only one run can be in `running` state
 at a time; the next queued run starts after the previous run is completed.
+When `browser.userDataDir` is configured, the worker enforces a single concurrent run so the shared local Chrome profile is never used by multiple jobs at once.
 If a run waits 5 minutes for a usable assistant response and times out/stalls,
 the worker marks it failed and auto-queues one retry.
 
