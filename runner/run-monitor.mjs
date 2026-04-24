@@ -7,6 +7,8 @@ import { ConvexHttpClient } from "convex/browser";
 import { chromium } from "playwright";
 import { api } from "../convex/_generated/api.js";
 
+import { warmUpSession } from "./session-warmup.mjs";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -1034,6 +1036,7 @@ export async function runMonitor(config, options = {}) {
       }
       await existingPage.close().catch(() => {});
     }
+    await warmUpSession(page);
     pageVideo = page.video();
     const browserUserAgent = await page.evaluate(() => navigator.userAgent);
     const screenshotPath = path.join(runDir, "page.png");
