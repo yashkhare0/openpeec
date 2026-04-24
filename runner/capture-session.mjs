@@ -6,6 +6,8 @@ import { pathToFileURL } from "node:url";
 
 import { chromium } from "playwright";
 
+import { warmUpSession } from "./session-warmup.mjs";
+
 export function parseArgs(argv) {
   const args = {
     out: "runner/chatgpt.storage-state.json",
@@ -62,6 +64,7 @@ export async function openCaptureSession(options = {}) {
   const page =
     context.pages().find((existingPage) => !existingPage.isClosed()) ??
     (await context.newPage());
+  await warmUpSession(page);
   await page.goto(options.url ?? "https://chatgpt.com/", {
     waitUntil: "domcontentloaded",
     timeout: 45000,
