@@ -1,0 +1,355 @@
+<svg
+  width="1200"
+  height="630"
+  viewBox="0 0 1200 630"
+  fill="none"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <defs>
+    <linearGradient
+      id="panel-glow"
+      x1="742"
+      y1="40"
+      x2="1054"
+      y2="530"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop stop-color="#EFF6FF" />
+      <stop offset="1" stop-color="#FFFFFF" />
+    </linearGradient>
+    <linearGradient
+      id="line-blue"
+      x1="0"
+      y1="0"
+      x2="0"
+      y2="1"
+      gradientUnits="objectBoundingBox"
+    >
+      <stop stop-color="#60A5FA" />
+      <stop offset="1" stop-color="#2563EB" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="#F8FAFC" />
+
+  <g opacity="0.6" stroke="#E2E8F0">
+    <path d="M96 0V630" />
+    <path d="M288 0V630" />
+    <path d="M480 0V630" />
+    <path d="M672 0V630" />
+    <path d="M864 0V630" />
+    <path d="M1056 0V630" />
+    <path d="M0 120H1200" />
+    <path d="M0 264H1200" />
+    <path d="M0 408H1200" />
+    <path d="M0 552H1200" />
+  </g>
+
+  <rect
+    x="48"
+    y="48"
+    width="1104"
+    height="534"
+    rx="32"
+    fill="#FFFFFF"
+    stroke="#E2E8F0"
+  />
+
+  <g transform="translate(88 88)">
+    <rect
+      x="0"
+      y="0"
+      width="56"
+      height="56"
+      rx="16"
+      fill="#F8FAFC"
+      stroke="#E2E8F0"
+    />
+    <g transform="translate(1 1)">
+      <path
+        d="M33 10H17C12.582 10 9 13.582 9 18V46C9 50.418 12.582 54 17 54H45C49.418 54 53 50.418 53 46V34"
+        stroke="#111827"
+        stroke-width="4.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+      <path
+        d="M41 10H45C49.418 10 53 13.582 53 18V26"
+        stroke="#111827"
+        stroke-width="4.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+      <rect x="17" y="32" width="6" height="14" rx="2.5" fill="#93C5FD" />
+      <rect x="28" y="25" width="6" height="21" rx="2.5" fill="#60A5FA" />
+      <rect x="39" y="18" width="6" height="28" rx="2.5" fill="#2563EB" />
+    </g>
+
+    <text
+      x="76"
+      y="36"
+      fill="#111827"
+      font-family="'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif"
+      font-size="30"
+      font-weight="620"
+      letter-spacing="-0.04em"
+    >
+      OpenPeec
+    </text>
+
+    <text
+      x="0"
+      y="140"
+      fill="#111827"
+      font-family="'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif"
+      font-size="52"
+      font-weight="620"
+      letter-spacing="-0.055em"
+    >
+      Brand visibility
+    </text>
+    <text
+      x="0"
+      y="198"
+      fill="#111827"
+      font-family="'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif"
+      font-size="52"
+      font-weight="620"
+      letter-spacing="-0.055em"
+    >
+      monitoring for
+    </text>
+    <text
+      x="0"
+      y="256"
+      fill="#111827"
+      font-family="'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif"
+      font-size="52"
+      font-weight="620"
+      letter-spacing="-0.055em"
+    >
+      AI answers
+    </text>
+
+    <text
+      x="0"
+      y="326"
+      fill="#475569"
+      font-family="'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif"
+      font-size="24"
+      font-weight="450"
+      letter-spacing="-0.02em"
+    >
+      Track prompts, citations, source evidence, and provider-level
+    </text>
+    <text
+      x="0"
+      y="360"
+      fill="#475569"
+      font-family="'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif"
+      font-size="24"
+      font-weight="450"
+      letter-spacing="-0.02em"
+    >
+      performance in a calm, data-first workspace.
+    </text>
+
+    <g transform="translate(0 412)">
+      <rect width="110" height="42" rx="21" fill="#EFF6FF" />
+      <text
+        x="22"
+        y="27"
+        fill="#1D4ED8"
+        font-family="'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif"
+        font-size="18"
+        font-weight="560"
+      >
+        Prompts
+      </text>
+
+      <rect x="126" width="112" height="42" rx="21" fill="#F1F5F9" />
+      <text
+        x="151"
+        y="27"
+        fill="#0F172A"
+        font-family="'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif"
+        font-size="18"
+        font-weight="560"
+      >
+        Citations
+      </text>
+
+      <rect x="254" width="106" height="42" rx="21" fill="#F1F5F9" />
+      <text
+        x="283"
+        y="27"
+        fill="#0F172A"
+        font-family="'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif"
+        font-size="18"
+        font-weight="560"
+      >
+        Sources
+      </text>
+    </g>
+  </g>
+
+  <g transform="translate(690 88)">
+    <rect
+      width="382"
+      height="454"
+      rx="30"
+      fill="url(#panel-glow)"
+      stroke="#DBEAFE"
+    />
+
+    <g transform="translate(26 26)">
+      <rect width="96" height="88" rx="18" fill="#FFFFFF" stroke="#E2E8F0" />
+      <text
+        x="18"
+        y="28"
+        fill="#64748B"
+        font-family="'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif"
+        font-size="14"
+        font-weight="520"
+      >
+        Visibility
+      </text>
+      <text
+        x="18"
+        y="62"
+        fill="#111827"
+        font-family="'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif"
+        font-size="28"
+        font-weight="620"
+      >
+        74.8
+      </text>
+      <rect x="18" y="70" width="40" height="10" rx="5" fill="#DCFCE7" />
+
+      <rect
+        x="108"
+        width="96"
+        height="88"
+        rx="18"
+        fill="#FFFFFF"
+        stroke="#E2E8F0"
+      />
+      <text
+        x="126"
+        y="28"
+        fill="#64748B"
+        font-family="'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif"
+        font-size="14"
+        font-weight="520"
+      >
+        Citations
+      </text>
+      <text
+        x="126"
+        y="62"
+        fill="#111827"
+        font-family="'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif"
+        font-size="28"
+        font-weight="620"
+      >
+        12.3
+      </text>
+      <rect x="126" y="70" width="40" height="10" rx="5" fill="#DBEAFE" />
+
+      <rect x="216" width="114" height="88" rx="18" fill="#111827" />
+      <text
+        x="234"
+        y="28"
+        fill="#94A3B8"
+        font-family="'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif"
+        font-size="14"
+        font-weight="520"
+      >
+        Prompt health
+      </text>
+      <text
+        x="234"
+        y="62"
+        fill="#F8FAFC"
+        font-family="'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif"
+        font-size="28"
+        font-weight="620"
+      >
+        Good
+      </text>
+      <rect x="234" y="70" width="52" height="10" rx="5" fill="#60A5FA" />
+    </g>
+
+    <g transform="translate(26 136)">
+      <rect width="330" height="176" rx="24" fill="#FFFFFF" stroke="#E2E8F0" />
+      <text
+        x="20"
+        y="28"
+        fill="#64748B"
+        font-family="'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif"
+        font-size="14"
+        font-weight="520"
+      >
+        Visibility trend
+      </text>
+
+      <path d="M26 122H304" stroke="#E2E8F0" stroke-linecap="round" />
+      <path d="M26 94H304" stroke="#E2E8F0" stroke-linecap="round" />
+      <path d="M26 66H304" stroke="#E2E8F0" stroke-linecap="round" />
+
+      <path
+        d="M26 114C52 108 57 105 82 96C107 87 119 86 144 78C171 69 181 70 206 58C229 47 246 45 304 34"
+        stroke="url(#line-blue)"
+        stroke-width="6"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+
+      <circle cx="82" cy="96" r="5" fill="#60A5FA" />
+      <circle cx="144" cy="78" r="5" fill="#60A5FA" />
+      <circle cx="206" cy="58" r="5" fill="#2563EB" />
+      <circle cx="304" cy="34" r="6" fill="#2563EB" />
+    </g>
+
+    <g transform="translate(26 332)">
+      <rect width="158" height="96" rx="22" fill="#FFFFFF" stroke="#E2E8F0" />
+      <text
+        x="18"
+        y="28"
+        fill="#64748B"
+        font-family="'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif"
+        font-size="14"
+        font-weight="520"
+      >
+        Source mix
+      </text>
+      <rect x="18" y="44" width="24" height="32" rx="8" fill="#BFDBFE" />
+      <rect x="50" y="34" width="24" height="42" rx="8" fill="#93C5FD" />
+      <rect x="82" y="25" width="24" height="51" rx="8" fill="#60A5FA" />
+      <rect x="114" y="14" width="24" height="62" rx="8" fill="#2563EB" />
+
+      <rect
+        x="172"
+        width="184"
+        height="96"
+        rx="22"
+        fill="#FFFFFF"
+        stroke="#E2E8F0"
+      />
+      <text
+        x="190"
+        y="28"
+        fill="#64748B"
+        font-family="'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif"
+        font-size="14"
+        font-weight="520"
+      >
+        Top citations
+      </text>
+
+      <rect x="190" y="44" width="148" height="10" rx="5" fill="#E2E8F0" />
+      <rect x="190" y="61" width="116" height="10" rx="5" fill="#DBEAFE" />
+      <rect x="190" y="78" width="132" height="10" rx="5" fill="#E2E8F0" />
+    </g>
+  </g>
+</svg>

@@ -1,17 +1,23 @@
-# Local Monitoring Runner (Playwright)
+# Local Monitoring Runner
 
-Use this runner to execute internal monitoring prompts against ChatGPT Web and capture response visibility and citation quality signals per run.
+Use this runner to execute internal monitoring prompts against provider web clients and capture response visibility and citation quality signals per run.
+
+OpenPeec v0 only executes OpenAI/ChatGPT runs. Other providers stay seeded for
+the data model, but they are inactive until provider-specific runners are added.
 
 This is an operator tool for recurring checks, not a generic browser automation script. Every run should answer:
 
-- Did ChatGPT return a usable response for this monitoring prompt?
+- Did the provider return a usable response for this monitoring prompt?
 - Which sources were cited, and where did they appear?
 - Did citation quality or visibility degrade versus expected behavior?
 
 ## Commands
 
 - `pnpm runner:install-browsers`
+- `pnpm runner:install-camoufox`
 - `pnpm runner:capture-session`
+- `pnpm runner:open-session`
+- `pnpm runner:stealth-smoke`
 - `pnpm runner:monitor -- --config runner/example.monitor.json`
 - `pnpm runner:monitor -- --config runner/example.monitor.json --output runner/last-run.json --ingest`
 - `pnpm runner:prompt:example`
@@ -20,19 +26,45 @@ This is an operator tool for recurring checks, not a generic browser automation 
 
 ## Operator Workflow
 
-1. Install browsers once with `pnpm runner:install-browsers`.
-2. Open and warm the persistent local Chrome profile with `pnpm runner:capture-session`. This opens a headed Chrome session, uses `runner/profiles/chatgpt-chrome`, and also exports storage state to `runner/chatgpt.storage-state.json` for debugging if needed.
-3. Run a monitoring check with `pnpm runner:prompt:example`, or queue prompts from the dashboard and process them with `pnpm runner:queue` or `pnpm runner:queue:once`.
-4. The queue worker reuses the same local Chrome profile directory across runs instead of launching a fresh browser context every time.
-5. Review `runner/last-run.json` and the evidence bundle in `runner/artifacts/<run-label>-<timestamp>/`.
-6. Inspect:
+1. Install Camoufox once with `pnpm runner:install-camoufox`. Keep `pnpm runner:install-browsers` for the app e2e suite and the fallback Playwright engine.
+2. **Prime the Camoufox session once** with `pnpm runner:capture-session -- --engine camoufox`: log in or complete whatever ChatGPT needs in the opened browser. This saves a Playwright storage-state file at `runner/camoufox.storage-state.json`.
+3. If a run is blocked, repeat the capture step and retry. For debugging only, set `"sessionMode": "guest"` in the monitor config to force a fresh browser context with no stored cookies.
+4. Run a monitoring check with `pnpm runner:prompt:example`, or queue prompts from the dashboard and process them with `pnpm runner:queue` or `pnpm runner:queue:once`.
+5. The queue worker keeps one Camoufox browser server and browser context warm for the life of the worker, then runs queued prompts sequentially inside that same session. Standalone `runner:monitor` commands are one-shot and close after the run.
+6. Review `runner/last-run.json` and the evidence bundle in `runner/artifacts/<run-label>-<timestamp>/`.
+7. Inspect:
    `status`, `warnings`, `responseText`, `citations`, `visibilityScore`, `citationQualityScore`, `network.json`, `console.json`, `page.html`, `response.html`, `trace.zip`, and the recorded video.
-7. If you need ingestion, run with `--ingest` and set `VITE_CONVEX_URL`.
+8. If you need ingestion, run with `--ingest` and set `VITE_CONVEX_URL`.
 
-`pnpm dev` now starts the queue worker automatically (`dev:runner`) so queued
+`pnpm dev` starts the queue worker automatically (`dev:runner`) so queued
 prompt jobs are picked up without manual worker startup.
-Queue runs use headless Playwright by default and still capture screenshots,
+Queue runs use the configured browser engine and still capture screenshots,
 video, trace, DOM, and source artifacts.
+The dashboard Providers page exposes the same Camoufox local session opener through the Vite-only `/local-provider-session/open` endpoint. That endpoint exists for local open-source development; it launches an interactive Camoufox window, saves `runner/camoufox.storage-state.json`, and does not automate account login or verification.
+
+## Browser Engines
+
+`browser.engine` controls the runner browser:
+
+- `"camoufox"`: official Python Camoufox launched through its Playwright remote server. This is the default in `runner/example.monitor.json`. Stored sessions use `browser.storageStatePath`, not `browser.userDataDir`; the queue worker also reuses one warm Camoufox browser/context across runs.
+- `"playwright"`: regular Playwright Chromium. Stored sessions use `browser.userDataDir`, defaulting to `runner/profiles/chatgpt-chrome` for OpenAI.
+
+Camoufox setup:
+
+```sh
+pnpm runner:install-camoufox
+pnpm runner:capture-session -- --engine camoufox
+pnpm runner:stealth-smoke
+```
+
+If the system `python3` cannot install Camoufox cleanly, point the scripts at a
+newer interpreter:
+
+```sh
+CAMOUFOX_PYTHON=/path/to/python3 pnpm runner:install-camoufox
+```
+
+`pnpm runner:stealth-smoke` records a local fingerprint probe under `runner/artifacts/`. Add `-- --detectors` to also visit public detector pages, or `-- --engine all` to compare regular Playwright and Camoufox in the same run.
 
 ## Prompt-Oriented Config Contract
 
@@ -43,18 +75,30 @@ video, trace, DOM, and source artifacts.
   "monitorId": "optional-monitor-id-for-legacy-ingest",
   "promptId": "optional-prompt-id-for-analytics-ingest",
   "runLabel": "chatgpt-citation-visibility-smoke",
-  "client": "chatgpt",
+  "provider": "openai",
   "platform": "web",
-  "model": "chatgpt-web",
+  "sessionMode": "stored",
   "browser": {
-    "channel": "chrome",
+    "engine": "camoufox",
+    "storageStatePath": "runner/camoufox.storage-state.json",
     "headless": false,
-    "userDataDir": "runner/profiles/chatgpt-chrome"
+    "camoufox": {
+      "humanize": 0.8,
+      "geoip": false
+    }
   },
   "navigation": {
     "url": "https://chatgpt.com/",
+    "submitStrategy": "type",
     "waitUntil": "domcontentloaded",
-    "timeoutMs": 30000
+    "timeoutMs": 30000,
+    "hopWaitUntil": "load",
+    "domainHops": [
+      { "url": "https://www.google.com/", "waitAfterMs": 6000 },
+      { "url": "https://en.wikipedia.org/wiki/Main_Page", "waitAfterMs": 5000 },
+      { "url": "https://github.com/", "waitAfterMs": 5000 },
+      { "googleSearch": "open source software", "waitAfterMs": 5000 }
+    ]
   },
   "prompt": {
     "text": "Prompt text to submit",
@@ -76,7 +120,10 @@ video, trace, DOM, and source artifacts.
   },
   "timing": {
     "responseTimeoutMs": 45000,
-    "settleDelayMs": 1500
+    "settleDelayMs": 1500,
+    "warmupGotoTimeoutMs": 30000,
+    "postHopSettleMinMs": 2500,
+    "hopNetworkIdleMaxMs": 0
   },
   "ingest": {
     "target": "auto|analytics|monitoring"
@@ -84,11 +131,13 @@ video, trace, DOM, and source artifacts.
 }
 ```
 
-`browser.userDataDir` points at the persistent local Chrome profile used for ChatGPT runs. This is now the primary stability mechanism for guest-mode monitoring. `pnpm runner:capture-session` opens and primes that same profile directory.
+`sessionMode` defaults to `"stored"`. With Camoufox, stored mode reads `browser.storageStatePath` and defaults to `runner/camoufox.storage-state.json`. With regular Playwright, stored mode uses `browser.userDataDir` and defaults to `runner/profiles/chatgpt-chrome` for OpenAI if omitted. Provider `sessionJson` can add material using the same shape as `runner/example.auth-profile.json`, or a Playwright storage-state JSON.
 The live ChatGPT page uses a visible `#prompt-textarea` contenteditable and a hidden fallback `textarea`; keep the contenteditable first in your selector order.
-The runner can use ChatGPT's optional `?q=` deep link through `navigation.promptQueryParam`, but the default local path is now composer-first. If you explicitly turn `promptQueryParam` back on, treat it as an opt-in compatibility mode rather than the primary submission path.
+OpenAI runs default to `navigation.submitStrategy: "type"`: the runner opens `https://chatgpt.com/`, waits for the composer, types the prompt, and submits it. To test the ChatGPT `?q={prompt}` deep link path explicitly, set `navigation.submitStrategy: "deeplink"` and `navigation.promptQueryParam: "q"`.
 The live ChatGPT response stream also renders temporary `request-placeholder` assistant nodes; exclude those from extraction or you will scrape an empty streaming shell instead of the completed answer.
-If selectors fail, the persistent profile is invalid, or ChatGPT markup shifts, the run still returns structured output with warnings.
+If selectors fail, a stored fallback profile is invalid, or ChatGPT markup shifts, the run still returns structured output with warnings.
+
+**Domain hops (default on):** before `navigation.url` (e.g. ChatGPT), the runner runs `navigation.domainHops` in the same tab. The queue build merges `deepLink` and `navigation` (later wins per key, but see below): if you put `domainHops` only on `deepLink` and the worker adds a minimal `navigation` (URL only), hops are still applied. Each step uses `navigation.hopWaitUntil` for `page.goto` (default **`load`**, not `domcontentloaded`). After the navigation, it waits for the **`load`** event, then optionally up to `timing.hopNetworkIdleMaxMs` for **`networkidle`** (default `0` = off, since many sites never go fully idle), then a minimum **post-load settle** `timing.postHopSettleMinMs` (default `2500` ms), then each hop’s **`waitAfterMs`** (extra time on the page). Google search steps wait for **load** on the results page the same way. Set `"domainHops": []` to skip. `timing.warmupGotoTimeoutMs` bounds each hop’s `goto` timeout (default `30000`).
 
 ## Result Contract
 
@@ -100,9 +149,8 @@ The runner emits JSON:
   "monitorId": "string-or-null",
   "promptId": "string-or-null",
   "runLabel": "string",
-  "client": "chatgpt",
+  "provider": "openai|claude|gemini|mistral",
   "platform": "web|desktop|ios|android",
-  "model": "string",
   "status": "success|failed",
   "startedAt": 0,
   "finishedAt": 0,
@@ -173,12 +221,12 @@ If `--ingest` is provided and `VITE_CONVEX_URL` is set:
 For queued prompt execution:
 
 1. The dashboard creates `promptRuns` with `status: "queued"`.
-2. `pnpm runner:queue` claims the next queued run, launches Playwright locally, and patches that same record to `running`, then `success` or `failed`.
+2. `pnpm runner:queue` claims the next queued run, launches the configured browser engine locally, and patches that same record to `running`, then `success` or `failed`.
 3. Citations, warnings, screenshot/video/trace paths, and the final deep link are written back onto the original queued run so the dashboard can inspect the evidence.
 
 Queue execution is strictly sequential. Only one run can be in `running` state
 at a time; the next queued run starts after the previous run is completed.
-When `browser.userDataDir` is configured, the worker enforces a single concurrent run so the shared local Chrome profile is never used by multiple jobs at once.
+Camoufox queue execution is forced to one run at a time because all jobs share one warm browser context. When `"sessionMode": "stored"` and `browser.userDataDir` are configured for the Playwright engine, the worker also enforces a single concurrent run so the shared local Chrome profile is never used by multiple jobs at once.
 If a run waits 5 minutes for a usable assistant response and times out/stalls,
 the worker marks it failed and auto-queues one retry.
 

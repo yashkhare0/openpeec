@@ -3,39 +3,45 @@ import {
   Activity,
   FileStack,
   FileText,
+  Globe2,
   Link2,
-  ListTree,
   MessageSquareText,
 } from "lucide-react";
 
+import { ModeToggle } from "@/components/ModeToggle";
+import { OpenPeecMark } from "@/components/layout/OpenPeecMark";
 import {
   Sidebar,
   SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
+  SidebarFooter,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarSeparator,
 } from "@/components/ui/sidebar";
 
 type PageKey =
   | "overview"
   | "prompts"
+  | "providers"
   | "runs"
-  | "groups"
   | "responses"
   | "sources";
 
-const mainPages: Array<{ key: PageKey; label: string; icon: typeof Activity }> =
-  [
-    { key: "overview", label: "Overview", icon: Activity },
-    { key: "prompts", label: "Prompts", icon: FileText },
-    { key: "runs", label: "Runs", icon: FileStack },
-    { key: "groups", label: "Groups", icon: ListTree },
-    { key: "responses", label: "Responses", icon: MessageSquareText },
-    { key: "sources", label: "Sources", icon: Link2 },
-  ];
+type PageItem = { key: PageKey; label: string; icon: typeof Activity };
+
+const pageItems: PageItem[] = [
+  { key: "overview", label: "Overview", icon: Activity },
+  { key: "prompts", label: "Prompts", icon: FileText },
+  { key: "providers", label: "Providers", icon: Globe2 },
+  { key: "runs", label: "Runs", icon: FileStack },
+  { key: "responses", label: "Responses", icon: MessageSquareText },
+  { key: "sources", label: "Sources", icon: Link2 },
+];
+
+const navButtonClassName =
+  "h-9 rounded-lg border border-transparent px-3 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground data-[active=true]:border-sidebar-border/80 data-[active=true]:bg-sidebar-accent/85 data-[active=true]:text-sidebar-foreground data-[active=true]:shadow-none group-data-[collapsible=icon]:size-9! group-data-[collapsible=icon]:p-2!";
 
 export function AppSidebar({
   page,
@@ -47,41 +53,48 @@ export function AppSidebar({
 } & React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="icon" variant="inset" {...props}>
-      <SidebarHeader>
+      <SidebarHeader className="px-3 pt-3 pb-2">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" tooltip="OpenPeec">
-              <div className="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-lg">
-                <span className="text-sm font-bold">O</span>
-              </div>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">OpenPeec</span>
+            <SidebarMenuButton
+              size="lg"
+              tooltip="Overview"
+              className="hover:bg-sidebar-accent/45 h-10 rounded-xl px-2.5 group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:p-0!"
+              onClick={() => startTransition(() => onPage("overview"))}
+            >
+              <div className="bg-sidebar-primary/8 text-sidebar-foreground border-sidebar-border/70 flex size-8 shrink-0 items-center justify-center rounded-lg border">
+                <OpenPeecMark className="size-4" />
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
 
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {mainPages.map((item) => (
-                <SidebarMenuItem key={item.key}>
-                  <SidebarMenuButton
-                    isActive={page === item.key}
-                    onClick={() => startTransition(() => onPage(item.key))}
-                    tooltip={item.label}
-                  >
-                    <item.icon />
-                    <span>{item.label}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+      <SidebarSeparator className="mx-3" />
+
+      <SidebarContent className="px-3 py-2" data-tour="sidebar-nav">
+        <SidebarMenu className="gap-1">
+          {pageItems.map((item) => (
+            <SidebarMenuItem key={item.key}>
+              <SidebarMenuButton
+                isActive={page === item.key}
+                onClick={() => startTransition(() => onPage(item.key))}
+                tooltip={item.label}
+                className={navButtonClassName}
+              >
+                <item.icon />
+                <span>{item.label}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
       </SidebarContent>
+
+      <SidebarSeparator className="mx-3" />
+
+      <SidebarFooter className="gap-2 px-3 pt-2 pb-3">
+        <ModeToggle className={navButtonClassName} />
+      </SidebarFooter>
     </Sidebar>
   );
 }

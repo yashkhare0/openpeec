@@ -7,11 +7,22 @@ import { ConvexHttpClient } from "convex/browser";
 
 import { api } from "../convex/_generated/api.js";
 import {
+  CAMOUFOX_ENGINE,
+  browserEngineRunnerName,
+  normalizeBrowserEngine,
+} from "./browser-engine.mjs";
+import {
+  DEFAULT_CAMOUFOX_STORAGE_STATE_PATH,
+  DEFAULT_OPENAI_USER_DATA_DIR,
+  createSharedRunnerBrowserSession,
   getRunnerPreflight,
   readJsonFile,
   resolvePathIfRelative,
+  resolveSessionMode,
   runMonitor,
 } from "./run-monitor.mjs";
+
+const DEFAULT_LOCAL_CONVEX_URL = "http://127.0.0.1:3210";
 
 function parseArgs(argv) {
   const args = {
@@ -135,7 +146,7 @@ async function resolveConvexUrl() {
   }
 
   const env = await readEnvFile(path.join(cwd, ".env"));
-  return parseEnvValue(env, "VITE_CONVEX_URL");
+  return parseEnvValue(env, "VITE_CONVEX_URL") ?? DEFAULT_LOCAL_CONVEX_URL;
 }
 
 async function waitForBackendReady(client, cliArgs) {
@@ -144,7 +155,7 @@ async function waitForBackendReady(client, cliArgs) {
       await client.query(api.analytics.getQueueStatus, {});
       return;
     } catch (error) {
-      if (cliArgs.once || !isTransientConvexError(error)) {
+      if (cliArgs.once) {
         throw error;
       }
       console.warn(
@@ -157,14 +168,29 @@ async function waitForBackendReady(client, cliArgs) {
 
 function resolveWorkerConfig(baseConfig, cliArgs) {
   const worker = baseConfig.worker ?? {};
-  const hasPersistentProfile = Boolean(baseConfig?.browser?.userDataDir);
+  const sessionMode = resolveSessionMode(baseConfig);
+  const provider = baseConfig.provider ?? "openai";
+  const browserEngine = normalizeBrowserEngine(baseConfig.browser?.engine);
+  const effectiveUserDataDir =
+    browserEngine === CAMOUFOX_ENGINE
+      ? null
+      : (baseConfig?.browser?.userDataDir ??
+        (sessionMode === "stored" && provider === "openai"
+          ? DEFAULT_OPENAI_USER_DATA_DIR
+          : null));
+  const hasPersistentProfile =
+    sessionMode === "stored" && Boolean(effectiveUserDataDir);
   const requestedMaxConcurrent = Math.max(
     1,
-    Math.floor(cliArgs.maxConcurrent ?? worker.maxConcurrent ?? 2)
+    Math.floor(cliArgs.maxConcurrent ?? worker.maxConcurrent ?? 1)
   );
 
   return {
-    maxConcurrent: hasPersistentProfile ? 1 : requestedMaxConcurrent,
+    runnerName: browserEngineRunnerName(browserEngine, "worker"),
+    maxConcurrent:
+      hasPersistentProfile || browserEngine === CAMOUFOX_ENGINE
+        ? 1
+        : requestedMaxConcurrent,
     maxAttempts: Math.max(
       1,
       Math.floor(cliArgs.maxAttempts ?? worker.maxAttempts ?? 2)
@@ -190,26 +216,76 @@ export function buildRunConfig(baseConfig, claimedRun) {
   const configuredResponseTimeout =
     baseConfig?.timing?.responseTimeoutMs ?? 300000;
   const navigationUrl =
+    claimedRun.prompt.providerUrl ??
     baseConfig.navigation?.url ??
     baseConfig.deepLink?.url ??
     "https://chatgpt.com/";
+  const provider =
+    claimedRun.prompt.providerSlug ?? baseConfig.provider ?? "openai";
+  const submitStrategy =
+    claimedRun.prompt.submitStrategy ??
+    baseConfig.prompt?.submitStrategy ??
+    baseConfig.navigation?.submitStrategy ??
+    baseConfig.deepLink?.submitStrategy ??
+    "type";
   const promptQueryParam =
-    baseConfig.navigation?.promptQueryParam ??
-    baseConfig.deepLink?.promptQueryParam;
+    submitStrategy === "deeplink"
+      ? (claimedRun.prompt.promptQueryParam ??
+        baseConfig.navigation?.promptQueryParam ??
+        baseConfig.deepLink?.promptQueryParam ??
+        (provider === "openai" ? "q" : undefined))
+      : null;
+  const browserEngine = normalizeBrowserEngine(baseConfig.browser?.engine);
+  const useCamoufox = browserEngine === CAMOUFOX_ENGINE;
+  const baseSessionMode = baseConfig.sessionMode ?? baseConfig.session?.mode;
+  const sessionMode = resolveSessionMode({
+    ...baseConfig,
+    sessionMode: useCamoufox
+      ? (baseSessionMode ?? "stored")
+      : (claimedRun.prompt.sessionMode ?? baseSessionMode),
+  });
+  const useStoredSession = sessionMode === "stored";
+  const userDataDirFromQueue =
+    claimedRun.prompt.sessionProfileDir ?? baseConfig.browser?.userDataDir;
+  const userDataDir =
+    useStoredSession && !useCamoufox
+      ? (userDataDirFromQueue ??
+        (provider === "openai" ? DEFAULT_OPENAI_USER_DATA_DIR : undefined))
+      : undefined;
+  const storageStatePath =
+    useStoredSession && useCamoufox
+      ? (baseConfig.browser?.storageStatePath ??
+        DEFAULT_CAMOUFOX_STORAGE_STATE_PATH)
+      : baseConfig.browser?.storageStatePath;
 
   return {
     ...baseConfig,
     promptId: claimedRun.prompt.id,
     runLabel: claimedRun.runLabel,
-    model: claimedRun.prompt.targetModel || baseConfig.model || "chatgpt-web",
+    sessionMode,
+    sessionJson: useStoredSession
+      ? (claimedRun.prompt.providerSessionJson ?? baseConfig.sessionJson)
+      : undefined,
+    authProfile: useStoredSession ? baseConfig.authProfile : undefined,
+    provider,
+    platform: baseConfig.platform ?? "web",
+    browser: {
+      ...(baseConfig.browser ?? {}),
+      engine: browserEngine,
+      userDataDir,
+      storageStatePath,
+    },
     navigation: {
+      ...(baseConfig.deepLink ?? {}),
       ...(baseConfig.navigation ?? {}),
       url: navigationUrl,
       promptQueryParam,
+      submitStrategy,
     },
     prompt: {
       ...(baseConfig.prompt ?? {}),
       text: claimedRun.prompt.promptText,
+      submitStrategy,
     },
     ingest: {
       target: "none",
@@ -275,7 +351,13 @@ async function queueRetry(client, claimedRun) {
   });
 }
 
-async function completeRunFromError(client, claimedRun, error) {
+async function completeRunFromError(
+  client,
+  claimedRun,
+  error,
+  runnerName,
+  sessionMode
+) {
   const message = errorMessage(error);
   const finishedAt = Date.now();
   await client.mutation(api.analytics.completePromptRun, {
@@ -287,7 +369,8 @@ async function completeRunFromError(client, claimedRun, error) {
     warnings: [message],
     citations: [],
     runLabel: claimedRun.runLabel,
-    runner: "local-playwright-worker",
+    runner: runnerName,
+    sessionMode,
   });
 }
 
@@ -305,7 +388,7 @@ async function maybeRecoverStaleRuns(client, workerConfig, state) {
     api.analytics.recoverStaleRunningPromptRuns,
     {
       olderThanMs: workerConfig.staleThresholdMs,
-      runner: "local-playwright-worker",
+      runner: workerConfig.runnerName,
       summary:
         "Recovered stale running job after worker interruption or timeout watchdog.",
     }
@@ -320,7 +403,7 @@ async function maybeRecoverStaleRuns(client, workerConfig, state) {
 async function claimNextRun(client, workerConfig, cliArgs) {
   try {
     return await client.mutation(api.analytics.claimNextQueuedPromptRun, {
-      runner: "local-playwright-worker",
+      runner: workerConfig.runnerName,
       maxConcurrent: workerConfig.maxConcurrent,
     });
   } catch (error) {
@@ -340,7 +423,8 @@ async function processClaimedRun(
   baseConfig,
   claimedRun,
   cliArgs,
-  workerConfig
+  workerConfig,
+  sharedBrowserSession
 ) {
   const runConfig = buildRunConfig(baseConfig, claimedRun);
 
@@ -348,6 +432,7 @@ async function processClaimedRun(
     const result = await runMonitor(runConfig, {
       headed: cliArgs.headed,
       ingest: false,
+      browserSession: sharedBrowserSession,
     });
 
     await client.mutation(api.analytics.completePromptRun, {
@@ -367,25 +452,32 @@ async function processClaimedRun(
       output: result.output ? JSON.stringify(result.output) : undefined,
       warnings: result.warnings?.length ? result.warnings : undefined,
       citations: result.citations,
-      runner: "local-playwright-worker",
+      runner: workerConfig.runnerName,
+      sessionMode: runConfig.sessionMode,
     });
 
     console.log(
-      `[queue-worker] ${claimedRun.prompt.name}: ${result.status} with ${result.citations.length} citations`
+      `[queue-worker] ${claimedRun.prompt.excerpt}: ${result.status} with ${result.citations.length} citations`
     );
 
     if (shouldAutoRetry(result, claimedRun, workerConfig.maxAttempts)) {
       const retryRun = await queueRetry(client, claimedRun);
       console.log(
-        `[queue-worker] ${claimedRun.prompt.name}: auto-requeued as attempt ${retryRun.runId ? (claimedRun.attempt ?? 1) + 1 : "unknown"}`
+        `[queue-worker] ${claimedRun.prompt.excerpt}: auto-requeued as attempt ${retryRun.runId ? (claimedRun.attempt ?? 1) + 1 : "unknown"}`
       );
     }
 
     return result.status === "success";
   } catch (error) {
-    await completeRunFromError(client, claimedRun, error);
+    await completeRunFromError(
+      client,
+      claimedRun,
+      error,
+      workerConfig.runnerName,
+      runConfig.sessionMode
+    );
     const message = errorMessage(error);
-    console.error(`[queue-worker] ${claimedRun.prompt.name}: ${message}`);
+    console.error(`[queue-worker] ${claimedRun.prompt.excerpt}: ${message}`);
 
     if (
       shouldAutoRetry(
@@ -396,7 +488,7 @@ async function processClaimedRun(
     ) {
       await queueRetry(client, claimedRun);
       console.log(
-        `[queue-worker] ${claimedRun.prompt.name}: auto-requeued after worker error`
+        `[queue-worker] ${claimedRun.prompt.excerpt}: auto-requeued after worker error`
       );
     }
     return false;
@@ -406,11 +498,6 @@ async function processClaimedRun(
 async function main() {
   const cliArgs = parseArgs(process.argv.slice(2));
   const convexUrl = await resolveConvexUrl();
-  if (!convexUrl) {
-    throw new Error(
-      "VITE_CONVEX_URL is required to process queued runs (env or .env.local)."
-    );
-  }
 
   const baseConfig = await readJsonFile(resolvePathIfRelative(cliArgs.config));
   const workerConfig = resolveWorkerConfig(baseConfig, cliArgs);
@@ -420,63 +507,91 @@ async function main() {
     lastRecoveryAt: 0,
     lastPreflightReason: null,
   };
+  let sharedBrowserSession = null;
   let hadFailure = false;
 
-  await waitForBackendReady(client, cliArgs);
+  try {
+    await waitForBackendReady(client, cliArgs);
 
-  while (true) {
-    await maybeRecoverStaleRuns(client, workerConfig, workerState);
+    if (
+      normalizeBrowserEngine(baseConfig.browser?.engine) === CAMOUFOX_ENGINE
+    ) {
+      console.log(
+        "[queue-worker] Starting shared Camoufox session for queued runs."
+      );
+      sharedBrowserSession = await createSharedRunnerBrowserSession(
+        baseConfig,
+        {
+          headed: cliArgs.headed,
+        }
+      );
+    }
 
-    let claimedAny = false;
-    while (activeTasks.size < workerConfig.maxConcurrent) {
-      const preflight = await getRunnerPreflight(baseConfig);
-      if (!preflight.ok) {
-        if (cliArgs.once) {
-          console.error(`[queue-worker] ${preflight.reason}`);
-          hadFailure = true;
+    while (true) {
+      await maybeRecoverStaleRuns(client, workerConfig, workerState);
+
+      let claimedAny = false;
+      while (activeTasks.size < workerConfig.maxConcurrent) {
+        const preflight = sharedBrowserSession
+          ? { ok: true, status: "success" }
+          : await getRunnerPreflight(baseConfig);
+        if (!preflight.ok) {
+          if (cliArgs.once) {
+            console.error(`[queue-worker] ${preflight.reason}`);
+            hadFailure = true;
+            break;
+          }
+          if (workerState.lastPreflightReason !== preflight.reason) {
+            console.warn(`[queue-worker] ${preflight.reason}`);
+            workerState.lastPreflightReason = preflight.reason;
+          }
           break;
         }
-        if (workerState.lastPreflightReason !== preflight.reason) {
-          console.warn(`[queue-worker] ${preflight.reason}`);
-          workerState.lastPreflightReason = preflight.reason;
+
+        workerState.lastPreflightReason = null;
+        const claimedRun = await claimNextRun(client, workerConfig, cliArgs);
+        if (!claimedRun) {
+          break;
         }
+
+        claimedAny = true;
+        let task;
+        task = processClaimedRun(
+          client,
+          baseConfig,
+          claimedRun,
+          cliArgs,
+          workerConfig,
+          sharedBrowserSession
+        )
+          .then((ok) => {
+            hadFailure = hadFailure || !ok;
+          })
+          .finally(() => {
+            activeTasks.delete(task);
+          });
+        activeTasks.add(task);
+      }
+
+      if (cliArgs.once && activeTasks.size === 0 && !claimedAny) {
         break;
       }
 
-      workerState.lastPreflightReason = null;
-      const claimedRun = await claimNextRun(client, workerConfig, cliArgs);
-      if (!claimedRun) {
-        break;
+      if (activeTasks.size > 0) {
+        await Promise.race(activeTasks);
+        continue;
       }
 
-      claimedAny = true;
-      let task;
-      task = processClaimedRun(
-        client,
-        baseConfig,
-        claimedRun,
-        cliArgs,
-        workerConfig
-      )
-        .then((ok) => {
-          hadFailure = hadFailure || !ok;
-        })
-        .finally(() => {
-          activeTasks.delete(task);
-        });
-      activeTasks.add(task);
+      await sleep(cliArgs.pollIntervalMs);
     }
-
-    if (cliArgs.once && activeTasks.size === 0 && !claimedAny) {
-      break;
-    }
-
+  } finally {
     if (activeTasks.size > 0) {
-      await Promise.race(activeTasks);
-      continue;
+      await Promise.allSettled(activeTasks);
     }
-
-    await sleep(cliArgs.pollIntervalMs);
+    if (sharedBrowserSession) {
+      console.log("[queue-worker] Closing shared Camoufox session.");
+      await sharedBrowserSession.close();
+    }
   }
 
   if (hadFailure) {

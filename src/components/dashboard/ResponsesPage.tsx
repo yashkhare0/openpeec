@@ -17,8 +17,8 @@ import { DashboardTableCardSkeleton } from "./components/LoadingState";
 type ResponseRow = {
   _id: Id<"promptRuns">;
   promptId: Id<"prompts">;
-  promptName: string;
-  model: string;
+  promptExcerpt: string;
+  providerName: string;
   status: string;
   startedAt: number;
   responseSummary?: string;
@@ -48,7 +48,7 @@ export function ResponsesPage({
       return runs;
     }
     return runs.filter((run) =>
-      `${run.promptName} ${run.model} ${run.responseSummary ?? ""}`
+      `${run.promptExcerpt} ${run.providerName} ${run.responseSummary ?? ""}`
         .toLowerCase()
         .includes(needle)
     );
@@ -119,7 +119,7 @@ export function ResponsesPage({
                               {formatFreshness(run.startedAt)}
                             </p>
                             <p className="text-muted-foreground text-xs">
-                              {titleCase(run.status)} | {run.model}
+                              {titleCase(run.status)} | {run.providerName}
                             </p>
                           </div>
                         </TableCell>
@@ -132,7 +132,7 @@ export function ResponsesPage({
                               onOpenPrompt(run.promptId);
                             }}
                           >
-                            <p className="font-medium">{run.promptName}</p>
+                            <p className="font-medium">{run.promptExcerpt}</p>
                           </button>
                         </TableCell>
                         <TableCell>

@@ -1,0 +1,54 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e6]:
+      - list [ref=e8]:
+        - listitem [ref=e9]:
+          - button [ref=e10]:
+            - img [ref=e12]
+      - list [ref=e19]:
+        - listitem [ref=e20]:
+          - button "Overview" [ref=e21]:
+            - img [ref=e22]
+            - generic [ref=e24]: Overview
+        - listitem [ref=e25]:
+          - button "Prompts" [ref=e26]:
+            - img [ref=e27]
+            - generic [ref=e30]: Prompts
+        - listitem [ref=e31]:
+          - button "Runs" [ref=e32]:
+            - img [ref=e33]
+            - generic [ref=e38]: Runs
+        - listitem [ref=e39]:
+          - button "Responses" [ref=e40]:
+            - img [ref=e41]
+            - generic [ref=e43]: Responses
+        - listitem [ref=e44]:
+          - button "Sources" [ref=e45]:
+            - img [ref=e46]
+            - generic [ref=e49]: Sources
+      - generic [ref=e51]:
+        - img [ref=e52]
+        - generic [ref=e58]: Theme
+        - switch "Toggle dark mode" [ref=e59]
+    - main [ref=e60]:
+      - generic [ref=e61]:
+        - button "Toggle Sidebar" [ref=e62]:
+          - img
+          - generic [ref=e63]: Toggle Sidebar
+        - generic [ref=e64]:
+          - navigation "breadcrumb" [ref=e66]:
+            - list [ref=e67]:
+              - listitem [ref=e69]:
+                - link "Prompts" [disabled] [ref=e70]
+          - generic [ref=e71]:
+            - button "Search prompts" [ref=e73]:
+              - img
+              - generic [ref=e74]: Search prompts
+            - button "New prompt" [ref=e75]:
+              - img
+              - generic [ref=e76]: New prompt
+            - combobox [ref=e77]:
+              - generic: 7d
+              - img
+      - generic [ref=e80]: Loading analytics data...
+  - region "Notifications alt+T"

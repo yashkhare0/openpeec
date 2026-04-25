@@ -19,26 +19,26 @@ import {
 import { cn } from "@/lib/utils";
 import { InlineEmpty } from "./EmptyState";
 
-type ModelRow = {
-  model: string;
+type ProviderRow = {
+  provider: string;
   visibility: number | undefined;
   citationQuality: number | undefined;
   averagePosition: number | undefined;
   deltaVisibility: number | undefined;
 };
 
-export function CompetitorTable({ rows }: { rows: ModelRow[] }) {
+export function CompetitorTable({ rows }: { rows: ProviderRow[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Model Comparison</CardTitle>
+        <CardTitle>Provider Comparison</CardTitle>
         <CardDescription>
-          Compare models by visibility and citation quality.
+          Compare providers by visibility and citation quality.
         </CardDescription>
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (
-          <InlineEmpty text="No model comparison data yet." />
+          <InlineEmpty text="No provider comparison data yet." />
         ) : (
           <Table>
             <TableHeader>
@@ -52,16 +52,16 @@ export function CompetitorTable({ rows }: { rows: ModelRow[] }) {
             </TableHeader>
             <TableBody>
               {rows.map((row, i) => (
-                <TableRow key={row.model}>
+                <TableRow key={row.provider}>
                   <TableCell className="text-muted-foreground">
                     {i + 1}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <div className="bg-muted flex size-7 items-center justify-center rounded-md text-xs font-bold">
-                        {row.model.charAt(0).toUpperCase()}
+                        {row.provider.charAt(0).toUpperCase()}
                       </div>
-                      <span className="font-medium">{row.model}</span>
+                      <span className="font-medium">{row.provider}</span>
                     </div>
                   </TableCell>
                   <TableCell className="text-right">

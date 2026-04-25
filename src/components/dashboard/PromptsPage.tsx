@@ -1,42 +1,26 @@
-import { useState } from "react";
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { Id } from "../../../convex/_generated/dataModel";
-import { FolderPlus, MoreHorizontal, Play, Plus } from "lucide-react";
+import { MoreHorizontal, Play } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import {
   Table,
   TableBody,
@@ -45,9 +29,31 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { InlineEmpty } from "./components/EmptyState";
 import { DashboardTableCardSkeleton } from "./components/LoadingState";
+
+type PromptRow = {
+  id: Id<"prompts">;
+  excerpt: string;
+  providerCount: number;
+  providerNames: string[];
+  latestProviderName?: string;
+  latestCitationQuality?: number;
+  latestRunAt?: number;
+  latestRunId?: Id<"promptRuns">;
+  latestStatus?: string;
+  latestResponseSummary?: string;
+  latestSourceCount?: number;
+  responseCount: number;
+  sourceDiversity: number;
+  topSources: string[];
+  topEntities: string[];
+  responseDrift?: number;
+  sourceVariance?: number;
+  active: boolean;
+};
 
 function formatPercent(value: number | undefined): string {
   if (value === undefined) return "-";
@@ -80,62 +86,341 @@ const statusTone: Record<string, string> = {
   failed: "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-300",
   running: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
   queued: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300",
+  blocked: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300",
 };
 
-export function PromptsPage({
-  loading = false,
-  groups,
-  selectedGroup,
-  onSelectGroup,
+const COMPACT_PROMPTS_QUERY = "(max-width: 1279px)";
+
+function useCompactPromptsLayout() {
+  const [compact, setCompact] = useState(() =>
+    typeof window === "undefined"
+      ? false
+      : window.matchMedia(COMPACT_PROMPTS_QUERY).matches
+  );
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(COMPACT_PROMPTS_QUERY);
+    const update = () => setCompact(mediaQuery.matches);
+
+    update();
+    mediaQuery.addEventListener("change", update);
+
+    return () => mediaQuery.removeEventListener("change", update);
+  }, []);
+
+  return compact;
+}
+
+function activateRowOnKey(
+  event: KeyboardEvent<HTMLElement>,
+  callback: () => void
+) {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    callback();
+  }
+}
+
+function getProviderLabel(row: PromptRow): string {
+  if (row.providerCount === 1) {
+    return row.providerNames[0] ?? "1 provider";
+  }
+
+  return `${row.providerCount} active providers`;
+}
+
+function PromptActions({
+  row,
+  compact = false,
+  onRun,
+  onToggle,
+  onDelete,
+}: {
+  row: PromptRow;
+  compact?: boolean;
+  onRun: (promptId: Id<"prompts">, label: string) => Promise<void>;
+  onToggle: (row: PromptRow) => Promise<void>;
+  onDelete: (row: PromptRow) => Promise<void>;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size={compact ? "icon" : "icon-sm"}
+          className={compact ? "size-11" : undefined}
+          aria-label={`Actions for ${row.excerpt}`}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <MoreHorizontal className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <DropdownMenuItem onClick={() => void onRun(row.id, row.excerpt)}>
+          <Play className="size-4" />
+          Run
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => void onToggle(row)}>
+          {row.active ? "Pause" : "Resume"}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          onClick={() => void onDelete(row)}
+        >
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function PromptTable({
   rows,
   selectedPromptId,
   onSelectPrompt,
-  search,
-  onSearch,
-  onCreateGroup,
+  onRun,
+  onToggle,
+  onDelete,
+}: {
+  rows: PromptRow[];
+  selectedPromptId: Id<"prompts"> | null;
+  onSelectPrompt: (value: Id<"prompts"> | null) => void;
+  onRun: (promptId: Id<"prompts">, label: string) => Promise<void>;
+  onToggle: (row: PromptRow) => Promise<void>;
+  onDelete: (row: PromptRow) => Promise<void>;
+}) {
+  return (
+    <Table className="min-w-[920px] table-fixed">
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-[38%]">Prompt</TableHead>
+          <TableHead className="w-[170px]">Providers</TableHead>
+          <TableHead className="w-[140px]">Latest</TableHead>
+          <TableHead className="w-[96px] text-right">Responses</TableHead>
+          <TableHead className="w-[84px] text-right">Sources</TableHead>
+          <TableHead className="w-[90px] text-right">Citation</TableHead>
+          <TableHead className="w-10" />
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((row) => (
+          <TableRow
+            key={String(row.id)}
+            className={selectedPromptId === row.id ? "bg-muted/30" : ""}
+            tabIndex={0}
+            onClick={() => onSelectPrompt(row.id)}
+            onKeyDown={(event) =>
+              activateRowOnKey(event, () => onSelectPrompt(row.id))
+            }
+          >
+            <TableCell className="whitespace-normal">
+              <div className="space-y-1">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <p className="line-clamp-2 min-w-0 font-medium break-words">
+                    {row.excerpt}
+                  </p>
+                  {!row.active ? <Badge variant="outline">Paused</Badge> : null}
+                </div>
+                <p className="text-muted-foreground line-clamp-2 text-xs">
+                  {row.latestResponseSummary ??
+                    "No captured response summary yet."}
+                </p>
+              </div>
+            </TableCell>
+            <TableCell className="whitespace-normal">
+              <div className="flex min-w-0 flex-col gap-1">
+                <p className="truncate font-medium">{getProviderLabel(row)}</p>
+                {row.latestProviderName ? (
+                  <p className="text-muted-foreground truncate text-xs">
+                    Latest: {row.latestProviderName}
+                  </p>
+                ) : null}
+              </div>
+            </TableCell>
+            <TableCell>
+              <div className="space-y-1">
+                <p className="font-medium">
+                  {row.latestRunAt
+                    ? formatFreshness(row.latestRunAt)
+                    : "No runs yet"}
+                </p>
+                {row.latestStatus ? (
+                  <span
+                    className={`inline-flex rounded-full px-2 py-0.5 text-xs ${
+                      statusTone[row.latestStatus] ??
+                      "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {titleCase(row.latestStatus)}
+                  </span>
+                ) : null}
+              </div>
+            </TableCell>
+            <TableCell className="text-right tabular-nums">
+              {row.responseCount}
+            </TableCell>
+            <TableCell className="text-right tabular-nums">
+              {row.latestSourceCount ?? row.sourceDiversity}
+            </TableCell>
+            <TableCell className="text-right tabular-nums">
+              {formatPercent(row.latestCitationQuality)}
+            </TableCell>
+            <TableCell>
+              <PromptActions
+                row={row}
+                onRun={onRun}
+                onToggle={onToggle}
+                onDelete={onDelete}
+              />
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function PromptMeta({
+  label,
+  value,
+  children,
+}: {
+  label: string;
+  value: string | number;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-muted-foreground text-xs">{label}</dt>
+      <dd className="mt-1 truncate text-sm font-medium tabular-nums">
+        {value}
+      </dd>
+      {children ? (
+        <dd className="text-muted-foreground mt-1 min-w-0 text-xs">
+          {children}
+        </dd>
+      ) : null}
+    </div>
+  );
+}
+
+function PromptCompactList({
+  rows,
+  selectedPromptId,
+  onSelectPrompt,
+  onRun,
+  onToggle,
+  onDelete,
+}: {
+  rows: PromptRow[];
+  selectedPromptId: Id<"prompts"> | null;
+  onSelectPrompt: (value: Id<"prompts"> | null) => void;
+  onRun: (promptId: Id<"prompts">, label: string) => Promise<void>;
+  onToggle: (row: PromptRow) => Promise<void>;
+  onDelete: (row: PromptRow) => Promise<void>;
+}) {
+  return (
+    <div className="grid gap-3">
+      {rows.map((row) => (
+        <div
+          key={String(row.id)}
+          className={`hover:bg-muted/40 rounded-lg border p-3 transition-colors ${
+            selectedPromptId === row.id ? "bg-muted/30" : "bg-background"
+          }`}
+        >
+          <div className="flex min-w-0 items-start justify-between gap-3">
+            <button
+              type="button"
+              aria-label={`Open prompt ${row.excerpt}`}
+              className="focus-visible:border-ring focus-visible:ring-ring/50 -m-1 min-w-0 flex-1 rounded-md p-1 text-left outline-none focus-visible:ring-3"
+              onClick={() => onSelectPrompt(row.id)}
+            >
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <p className="line-clamp-2 min-w-0 text-sm leading-snug font-medium break-words">
+                  {row.excerpt}
+                </p>
+                {!row.active ? <Badge variant="outline">Paused</Badge> : null}
+              </div>
+              <p className="text-muted-foreground line-clamp-2 text-xs leading-relaxed">
+                {row.latestResponseSummary ??
+                  "No captured response summary yet."}
+              </p>
+            </button>
+            <PromptActions
+              compact
+              row={row}
+              onRun={onRun}
+              onToggle={onToggle}
+              onDelete={onDelete}
+            />
+          </div>
+
+          <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 border-t pt-3 sm:grid-cols-4">
+            <PromptMeta label="Providers" value={getProviderLabel(row)}>
+              {row.latestProviderName
+                ? `Latest: ${row.latestProviderName}`
+                : null}
+            </PromptMeta>
+            <PromptMeta
+              label="Latest"
+              value={
+                row.latestRunAt ? formatFreshness(row.latestRunAt) : "No runs"
+              }
+            >
+              {row.latestStatus ? (
+                <span
+                  className={`inline-flex rounded-full px-2 py-0.5 ${
+                    statusTone[row.latestStatus] ??
+                    "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {titleCase(row.latestStatus)}
+                </span>
+              ) : null}
+            </PromptMeta>
+            <PromptMeta label="Responses" value={row.responseCount} />
+            <PromptMeta
+              label="Sources / Citation"
+              value={`${row.latestSourceCount ?? row.sourceDiversity} / ${formatPercent(
+                row.latestCitationQuality
+              )}`}
+            />
+          </dl>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function PromptsPage({
+  loading = false,
+  rows,
+  selectedPromptId,
+  onSelectPrompt,
+  createOpen,
+  onCreateOpenChange,
   onCreatePrompt,
   onUpdatePrompt,
   onDeletePrompt,
   onTriggerSelectedNow,
 }: {
   loading?: boolean;
-  groups: Array<{ _id: Id<"promptGroups">; name: string }>;
-  selectedGroup: Id<"promptGroups"> | "all";
-  onSelectGroup: (value: Id<"promptGroups"> | "all") => void;
-  rows: Array<{
-    id: Id<"prompts">;
-    name: string;
-    group: string;
-    model: string;
-    latestCitationQuality?: number;
-    latestRunAt?: number;
-    latestRunId?: Id<"promptRuns">;
-    latestStatus?: string;
-    latestResponseSummary?: string;
-    latestSourceCount?: number;
-    responseCount: number;
-    sourceDiversity: number;
-    topSources: string[];
-    topEntities: string[];
-    responseDrift?: number;
-    sourceVariance?: number;
-    active: boolean;
-  }>;
+  rows: PromptRow[];
   selectedPromptId: Id<"prompts"> | null;
   onSelectPrompt: (value: Id<"prompts"> | null) => void;
-  search: string;
-  onSearch: (value: string) => void;
-  onCreateGroup: (args: { name: string }) => Promise<Id<"promptGroups">>;
+  createOpen?: boolean;
+  onCreateOpenChange?: (open: boolean) => void;
   onCreatePrompt: (args: {
-    name: string;
     promptText: string;
-    targetModel: string;
-    groupId?: Id<"promptGroups">;
+    active?: boolean;
   }) => Promise<Id<"prompts">>;
   onUpdatePrompt: (args: {
     id: Id<"prompts">;
     active?: boolean;
-    groupId?: Id<"promptGroups">;
   }) => Promise<Id<"prompts">>;
   onDeletePrompt: (args: { id: Id<"prompts"> }) => Promise<Id<"prompts">>;
   onTriggerSelectedNow: (args: {
@@ -143,20 +428,11 @@ export function PromptsPage({
     label?: string;
   }) => Promise<{ queuedCount: number }>;
 }) {
-  const [createOpen, setCreateOpen] = useState(false);
-  const [groupPickerPromptId, setGroupPickerPromptId] =
-    useState<Id<"prompts"> | null>(null);
-  const [newGroupName, setNewGroupName] = useState("");
-  const [newPromptName, setNewPromptName] = useState("");
+  const compactLayout = useCompactPromptsLayout();
+  const [internalCreateOpen, setInternalCreateOpen] = useState(false);
   const [newPromptText, setNewPromptText] = useState("");
-  const [newPromptModel, setNewPromptModel] = useState("gpt-5");
-  const [newPromptGroup, setNewPromptGroup] = useState<
-    Id<"promptGroups"> | "none"
-  >("none");
-
-  const topGroups = groups.slice(0, 5);
-  const selectedRow =
-    rows.find((row) => row.id === groupPickerPromptId) ?? null;
+  const isCreateOpen = createOpen ?? internalCreateOpen;
+  const setCreateOpen = onCreateOpenChange ?? setInternalCreateOpen;
 
   const queuePrompt = async (promptId: Id<"prompts">, label: string) => {
     try {
@@ -166,67 +442,43 @@ export function PromptsPage({
       });
       toast.success(
         result.queuedCount === 1
-          ? "Prompt queued."
-          : `${result.queuedCount} prompts queued.`
+          ? "Provider run queued."
+          : `${result.queuedCount} provider runs queued.`
       );
     } catch (error) {
       toast.error(errorMessage(error));
     }
   };
 
-  const assignPromptToGroup = async (
-    promptId: Id<"prompts">,
-    groupId?: Id<"promptGroups">,
-    successMessage?: string
-  ) => {
+  const togglePrompt = async (row: PromptRow) => {
     try {
-      await onUpdatePrompt({ id: promptId, groupId });
-      toast.success(
-        successMessage ??
-          (groupId ? "Prompt added to group." : "Prompt removed from group.")
-      );
-      setGroupPickerPromptId(null);
-      setNewGroupName("");
+      await onUpdatePrompt({ id: row.id, active: !row.active });
+      toast.success(row.active ? "Prompt paused." : "Prompt resumed.");
     } catch (error) {
       toast.error(errorMessage(error));
     }
   };
 
-  const createGroupAndAssign = async () => {
-    if (!groupPickerPromptId) return;
-    if (!newGroupName.trim()) {
-      toast.error("Group name is required.");
-      return;
-    }
+  const removePrompt = async (row: PromptRow) => {
     try {
-      const groupId = await onCreateGroup({ name: newGroupName.trim() });
-      setNewGroupName("");
-      await assignPromptToGroup(
-        groupPickerPromptId,
-        groupId,
-        "Group created and prompt assigned."
-      );
+      await onDeletePrompt({ id: row.id });
+      toast.success("Prompt deleted.");
     } catch (error) {
       toast.error(errorMessage(error));
     }
   };
 
   const createPrompt = async () => {
-    if (!newPromptName.trim() || !newPromptText.trim()) {
-      toast.error("Prompt name and prompt text are required.");
+    if (!newPromptText.trim()) {
+      toast.error("Prompt text is required.");
       return;
     }
+
     try {
       await onCreatePrompt({
-        name: newPromptName.trim(),
         promptText: newPromptText.trim(),
-        targetModel: newPromptModel,
-        groupId: newPromptGroup === "none" ? undefined : newPromptGroup,
       });
-      setNewPromptName("");
       setNewPromptText("");
-      setNewPromptModel("gpt-5");
-      setNewPromptGroup("none");
       setCreateOpen(false);
       toast.success("Prompt created.");
     } catch (error) {
@@ -235,367 +487,72 @@ export function PromptsPage({
   };
 
   return (
-    <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="px-4 lg:px-6">
+    <div className="flex min-w-0 flex-col gap-4 py-4 md:gap-6 md:py-6">
+      <div className="min-w-0 px-4 lg:px-6">
         {loading ? (
           <DashboardTableCardSkeleton
             titleWidth="w-24"
             controlsWidth="w-[420px]"
             rows={6}
-            columns={7}
+            columns={6}
           />
         ) : (
-          <Card>
+          <Card className="min-w-0">
             <CardHeader>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <CardTitle>Prompts</CardTitle>
-                  <CardDescription>
-                    One row per prompt, with the latest response and a compact
-                    actions menu.
-                  </CardDescription>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Select
-                    value={selectedGroup}
-                    onValueChange={(value) =>
-                      onSelectGroup(value as Id<"promptGroups"> | "all")
-                    }
-                  >
-                    <SelectTrigger className="h-8 w-[180px]">
-                      <SelectValue placeholder="All groups" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All groups</SelectItem>
-                      {groups.map((group) => (
-                        <SelectItem key={String(group._id)} value={group._id}>
-                          {group.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    value={search}
-                    onChange={(e) => onSearch(e.target.value)}
-                    placeholder="Search prompts..."
-                    className="h-8 w-[240px]"
-                  />
-                  <Button size="sm" onClick={() => setCreateOpen(true)}>
-                    <Plus className="size-4" />
-                    New prompt
-                  </Button>
-                </div>
-              </div>
+              <CardTitle>Prompts</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex min-w-0 flex-col gap-4">
               {rows.length === 0 ? (
                 <InlineEmpty text="No prompts yet. Add one to start capturing real responses and source evidence." />
+              ) : compactLayout ? (
+                <PromptCompactList
+                  rows={rows}
+                  selectedPromptId={selectedPromptId}
+                  onSelectPrompt={onSelectPrompt}
+                  onRun={queuePrompt}
+                  onToggle={togglePrompt}
+                  onDelete={removePrompt}
+                />
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Prompt</TableHead>
-                      <TableHead>Group</TableHead>
-                      <TableHead>Latest run</TableHead>
-                      <TableHead className="text-right">Responses</TableHead>
-                      <TableHead className="text-right">Sources</TableHead>
-                      <TableHead className="text-right">Drift</TableHead>
-                      <TableHead className="w-12 text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.map((row) => (
-                      <TableRow
-                        key={String(row.id)}
-                        className={
-                          selectedPromptId === row.id ? "bg-muted/40" : ""
-                        }
-                        onClick={() => onSelectPrompt(row.id)}
-                      >
-                        <TableCell>
-                          <div className="space-y-1">
-                            <p className="font-medium">{row.name}</p>
-                            <p className="text-muted-foreground text-xs">
-                              {row.model}
-                            </p>
-                            {!row.active ? (
-                              <Badge variant="outline">Paused</Badge>
-                            ) : null}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-sm">{row.group}</TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            <Badge
-                              variant="secondary"
-                              className={
-                                statusTone[row.latestStatus ?? ""] ?? ""
-                              }
-                            >
-                              {titleCase(row.latestStatus ?? "not_run")}
-                            </Badge>
-                            <p className="text-muted-foreground text-xs">
-                              {row.latestRunAt
-                                ? formatFreshness(row.latestRunAt)
-                                : "No run yet"}
-                            </p>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {row.responseCount}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {row.sourceDiversity}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatPercent(row.responseDrift)}
-                        </TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          <div className="flex justify-end">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  aria-label={`Actions for ${row.name}`}
-                                >
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-52">
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    void queuePrompt(row.id, row.name)
-                                  }
-                                >
-                                  <Play className="mr-2 h-4 w-4" />
-                                  Run
-                                </DropdownMenuItem>
-                                <DropdownMenuSub>
-                                  <DropdownMenuSubTrigger>
-                                    <FolderPlus className="mr-2 h-4 w-4" />
-                                    Add to group
-                                  </DropdownMenuSubTrigger>
-                                  <DropdownMenuSubContent className="w-56">
-                                    {topGroups.map((group) => (
-                                      <DropdownMenuItem
-                                        key={String(group._id)}
-                                        onClick={() =>
-                                          void assignPromptToGroup(
-                                            row.id,
-                                            group._id
-                                          )
-                                        }
-                                      >
-                                        {group.name}
-                                      </DropdownMenuItem>
-                                    ))}
-                                    {groups.length > topGroups.length ? (
-                                      <DropdownMenuItem
-                                        onClick={() =>
-                                          setGroupPickerPromptId(row.id)
-                                        }
-                                      >
-                                        View all
-                                      </DropdownMenuItem>
-                                    ) : null}
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                      onClick={() =>
-                                        setGroupPickerPromptId(row.id)
-                                      }
-                                    >
-                                      Create a new group
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onClick={() =>
-                                        void assignPromptToGroup(
-                                          row.id,
-                                          undefined
-                                        )
-                                      }
-                                    >
-                                      Remove from group
-                                    </DropdownMenuItem>
-                                  </DropdownMenuSubContent>
-                                </DropdownMenuSub>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    void onUpdatePrompt({
-                                      id: row.id,
-                                      active: !row.active,
-                                    })
-                                      .then(() =>
-                                        toast.success(
-                                          row.active
-                                            ? "Prompt paused."
-                                            : "Prompt resumed."
-                                        )
-                                      )
-                                      .catch((error: unknown) =>
-                                        toast.error(errorMessage(error))
-                                      )
-                                  }
-                                >
-                                  {row.active ? "Pause" : "Resume"}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  className="text-destructive focus:text-destructive"
-                                  onClick={() => {
-                                    if (
-                                      !window.confirm(
-                                        `Delete "${row.name}" and all of its recorded runs?`
-                                      )
-                                    ) {
-                                      return;
-                                    }
-                                    void onDeletePrompt({ id: row.id })
-                                      .then(() => {
-                                        if (selectedPromptId === row.id) {
-                                          onSelectPrompt(null);
-                                        }
-                                        toast.success("Prompt deleted.");
-                                      })
-                                      .catch((error: unknown) =>
-                                        toast.error(errorMessage(error))
-                                      );
-                                  }}
-                                >
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <PromptTable
+                  rows={rows}
+                  selectedPromptId={selectedPromptId}
+                  onSelectPrompt={onSelectPrompt}
+                  onRun={queuePrompt}
+                  onToggle={togglePrompt}
+                  onDelete={removePrompt}
+                />
               )}
             </CardContent>
           </Card>
         )}
       </div>
 
-      <Sheet open={createOpen} onOpenChange={setCreateOpen}>
-        <SheetContent className="w-full sm:max-w-md">
-          <SheetHeader>
-            <SheetTitle>New prompt</SheetTitle>
-            <SheetDescription>
-              Create a prompt with only the fields the backend actually uses.
-            </SheetDescription>
-          </SheetHeader>
-          <div className="space-y-3 p-4 pt-0">
-            <Input
-              value={newPromptName}
-              onChange={(e) => setNewPromptName(e.target.value)}
-              placeholder="Prompt name"
-              className="h-8"
-            />
-            <Textarea
-              value={newPromptText}
-              onChange={(e) => setNewPromptText(e.target.value)}
-              placeholder="Prompt text"
-              className="min-h-24 text-sm"
-            />
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Select value={newPromptModel} onValueChange={setNewPromptModel}>
-                <SelectTrigger className="h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {["gpt-5", "gpt-4.1", "o3"].map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {m}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={newPromptGroup}
-                onValueChange={(value) =>
-                  setNewPromptGroup(value as Id<"promptGroups"> | "none")
-                }
-              >
-                <SelectTrigger className="h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No group</SelectItem>
-                  {groups.map((group) => (
-                    <SelectItem key={String(group._id)} value={group._id}>
-                      {group.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button className="w-full" onClick={() => void createPrompt()}>
-              Create prompt
-            </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
-
-      <Sheet
-        open={groupPickerPromptId !== null}
-        onOpenChange={(open) => !open && setGroupPickerPromptId(null)}
-      >
-        <SheetContent className="w-full sm:max-w-sm">
-          <SheetHeader>
-            <SheetTitle>Add to group</SheetTitle>
-            <SheetDescription>
-              {selectedRow
-                ? `Assign "${selectedRow.name}" to an existing group or create a new one.`
-                : "Assign this prompt to a group."}
-            </SheetDescription>
-          </SheetHeader>
-          <div className="space-y-3 p-4 pt-0">
-            <Button
-              variant="outline"
-              className="w-full justify-start"
-              onClick={() =>
-                groupPickerPromptId
-                  ? void assignPromptToGroup(groupPickerPromptId, undefined)
-                  : undefined
-              }
-            >
-              No group
-            </Button>
-            {groups.map((group) => (
-              <Button
-                key={String(group._id)}
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() =>
-                  groupPickerPromptId
-                    ? void assignPromptToGroup(groupPickerPromptId, group._id)
-                    : undefined
-                }
-              >
-                {group.name}
-              </Button>
-            ))}
-            <div className="space-y-3 rounded-xl border p-3">
-              <p className="text-sm font-medium">Create new group</p>
-              <Input
-                value={newGroupName}
-                onChange={(e) => setNewGroupName(e.target.value)}
-                placeholder="Group name"
-                className="h-8"
+      <Dialog open={isCreateOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New prompt</DialogTitle>
+            <DialogDescription>
+              Add prompt text. It will run across every active provider.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="prompt-text">Prompt text</Label>
+              <Textarea
+                id="prompt-text"
+                value={newPromptText}
+                onChange={(event) => setNewPromptText(event.target.value)}
+                placeholder="Ask about your category, product, or brand visibility..."
+                rows={8}
               />
-              <Button
-                className="w-full"
-                onClick={() => void createGroupAndAssign()}
-              >
-                Create and assign
-              </Button>
             </div>
           </div>
-        </SheetContent>
-      </Sheet>
+          <DialogFooter>
+            <Button onClick={() => void createPrompt()}>Create prompt</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

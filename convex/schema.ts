@@ -101,24 +101,29 @@ export default defineSchema({
     .index("monitorId_startedAt", ["monitorId", "startedAt"]),
 
   // Analytics domain entities for visibility/citation monitoring.
-  promptGroups: defineTable({
+  providers: defineTable({
+    slug: v.string(),
     name: v.string(),
-    description: v.optional(v.string()),
-    color: v.optional(v.string()),
-    sortOrder: v.float64(),
-  }).index("sortOrder", ["sortOrder"]),
+    url: v.string(),
+    channelSlug: v.optional(v.string()),
+    channelName: v.optional(v.string()),
+    transport: v.optional(v.literal("browser")),
+    sessionMode: v.optional(v.union(v.literal("guest"), v.literal("stored"))),
+    sessionProfileDir: v.optional(v.string()),
+    promptQueryParam: v.optional(v.string()),
+    submitStrategy: v.optional(
+      v.union(v.literal("type"), v.literal("deeplink"))
+    ),
+    sessionJson: v.optional(v.string()),
+    active: v.boolean(),
+  })
+    .index("slug", ["slug"])
+    .index("active", ["active"]),
 
   prompts: defineTable({
-    groupId: v.optional(v.id("promptGroups")),
-    name: v.string(),
     promptText: v.string(),
-    targetModel: v.string(),
-    tags: v.optional(v.array(v.string())),
     active: v.boolean(),
-    notes: v.optional(v.string()),
-  })
-    .index("groupId", ["groupId"])
-    .index("active", ["active"]),
+  }).index("active", ["active"]),
 
   promptJobs: defineTable({
     name: v.string(),
@@ -152,7 +157,20 @@ export default defineSchema({
 
   promptRuns: defineTable({
     promptId: v.id("prompts"),
-    model: v.string(),
+    providerId: v.id("providers"),
+    providerSlug: v.string(),
+    providerName: v.string(),
+    providerUrl: v.string(),
+    channelSlug: v.optional(v.string()),
+    channelName: v.optional(v.string()),
+    transport: v.optional(v.literal("browser")),
+    sessionMode: v.optional(v.union(v.literal("guest"), v.literal("stored"))),
+    sessionProfileDir: v.optional(v.string()),
+    promptQueryParam: v.optional(v.string()),
+    submitStrategy: v.optional(
+      v.union(v.literal("type"), v.literal("deeplink"))
+    ),
+    promptExcerpt: v.string(),
     status: v.union(
       v.literal("queued"),
       v.literal("running"),
@@ -183,7 +201,7 @@ export default defineSchema({
     .index("startedAt", ["startedAt"])
     .index("status_startedAt", ["status", "startedAt"])
     .index("promptId_startedAt", ["promptId", "startedAt"])
-    .index("model_startedAt", ["model", "startedAt"])
+    .index("providerSlug_startedAt", ["providerSlug", "startedAt"])
     .index("ingestId", ["ingestId"]),
 
   citations: defineTable({

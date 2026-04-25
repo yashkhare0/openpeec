@@ -67,21 +67,18 @@ const sourceChartConfig = {
 
 export function PromptDetailPage({
   loading = false,
-  selectedGroupName,
   promptAnalysis,
   onBack,
   selectedRunId,
   onOpenRun,
 }: {
   loading?: boolean;
-  selectedGroupName?: string;
   promptAnalysis:
     | {
         prompt: {
           _id: Id<"prompts">;
-          name: string;
+          excerpt: string;
           promptText: string;
-          targetModel: string;
         };
         summary: {
           responseCount: number;
@@ -94,7 +91,9 @@ export function PromptDetailPage({
           status: string;
           startedAt: number;
           finishedAt?: number;
-          model: string;
+          providerSlug: string;
+          providerName: string;
+          providerUrl: string;
           attempt?: number;
           citationQualityScore?: number;
           averageCitationPosition?: number;
@@ -224,17 +223,13 @@ export function PromptDetailPage({
         <Button variant="outline" size="sm" onClick={onBack}>
           Back to prompts
         </Button>
-        {selectedGroupName ? (
-          <Badge variant="outline">{selectedGroupName}</Badge>
-        ) : null}
-        <Badge variant="secondary">{promptAnalysis.prompt.targetModel}</Badge>
       </div>
 
       <div className="grid gap-4 px-4 lg:px-6 xl:grid-cols-[minmax(0,1.1fr)_380px]">
         <div className="flex flex-col gap-4">
           <Card>
             <CardHeader>
-              <CardTitle>{promptAnalysis.prompt.name}</CardTitle>
+              <CardTitle>{promptAnalysis.prompt.excerpt}</CardTitle>
               <CardDescription>
                 {promptAnalysis.prompt.promptText}
               </CardDescription>
@@ -389,7 +384,9 @@ export function PromptDetailPage({
                           <Badge variant="secondary">
                             {titleCase(response.status)}
                           </Badge>
-                          <Badge variant="outline">{response.model}</Badge>
+                          <Badge variant="outline">
+                            {response.providerName}
+                          </Badge>
                           <span className="text-muted-foreground text-xs">
                             {formatFreshness(response.startedAt)}
                           </span>

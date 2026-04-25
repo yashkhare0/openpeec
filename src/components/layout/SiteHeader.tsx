@@ -1,3 +1,6 @@
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Search, XIcon } from "lucide-react";
+
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -6,6 +9,8 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -17,36 +22,77 @@ import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 
 type RangeOption = { label: string; days: number };
-type ModelOption = { label: string; value: string };
+type ProviderOption = { label: string; value: string };
 
 const rangeOptions: RangeOption[] = [
-  { label: "Last 7 days", days: 7 },
-  { label: "Last 30 days", days: 30 },
-  { label: "Last 90 days", days: 90 },
+  { label: "7d", days: 7 },
+  { label: "30d", days: 30 },
+  { label: "90d", days: 90 },
 ];
 
 export function SiteHeader({
   rangeDays,
   onRangeDays,
-  modelFilter,
-  onModelFilter,
-  modelOptions,
+  providerFilter,
+  onProviderFilter,
+  providerOptions,
+  showRangeFilter = true,
+  showProviderFilter = true,
+  searchValue,
+  onSearchValue,
+  searchPlaceholder = "Search...",
+  action,
   breadcrumbs,
 }: {
   rangeDays: number;
   onRangeDays: (value: number) => void;
-  modelFilter: string;
-  onModelFilter: (value: string) => void;
-  modelOptions: ModelOption[];
+  providerFilter: string;
+  onProviderFilter: (value: string) => void;
+  providerOptions: ProviderOption[];
+  showRangeFilter?: boolean;
+  showProviderFilter?: boolean;
+  searchValue?: string;
+  onSearchValue?: (value: string) => void;
+  searchPlaceholder?: string;
+  action?: ReactNode;
   breadcrumbs?: Array<{ label: string; onClick?: () => void }>;
 }) {
+  const [searchOpen, setSearchOpen] = useState(Boolean(searchValue));
+  const inputRef = useRef<HTMLInputElement>(null);
+  const hasSearch = onSearchValue !== undefined;
+
+  useEffect(() => {
+    if (searchValue) {
+      setSearchOpen(true);
+    }
+  }, [searchValue]);
+
+  useEffect(() => {
+    if (searchOpen) {
+      inputRef.current?.focus();
+    }
+  }, [searchOpen]);
+
+  const openSearch = () => {
+    setSearchOpen(true);
+  };
+
+  const clearSearch = () => {
+    onSearchValue?.("");
+    if (!searchValue) {
+      setSearchOpen(false);
+      return;
+    }
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
   return (
     <header className="bg-background flex min-h-14 shrink-0 items-center gap-2 border-b px-4 py-2">
-      <SidebarTrigger className="-ml-1 self-start sm:self-center" />
+      <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="mr-2 hidden h-4 sm:block" />
 
-      <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 space-y-1">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0 flex-1">
           {breadcrumbs?.length ? (
             <Breadcrumb>
               <BreadcrumbList>
@@ -74,35 +120,87 @@ export function SiteHeader({
           ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Select
-            value={rangeDays.toString()}
-            onValueChange={(v) => onRangeDays(Number(v))}
-          >
-            <SelectTrigger className="h-8 w-[140px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {rangeOptions.map((opt) => (
-                <SelectItem key={opt.days} value={opt.days.toString()}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {hasSearch ? (
+            <div className="flex items-center">
+              {searchOpen ? (
+                <div className="relative">
+                  <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
+                  <Input
+                    ref={inputRef}
+                    value={searchValue ?? ""}
+                    onChange={(event) => onSearchValue?.(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        if (searchValue) {
+                          onSearchValue?.("");
+                        } else {
+                          setSearchOpen(false);
+                        }
+                      }
+                    }}
+                    placeholder={searchPlaceholder}
+                    className="h-8 w-[220px] pr-8 pl-8"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="absolute top-1/2 right-1 -translate-y-1/2"
+                    onClick={clearSearch}
+                  >
+                    <XIcon />
+                    <span className="sr-only">Clear search</span>
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={openSearch}
+                >
+                  <Search />
+                  <span className="sr-only">Search prompts</span>
+                </Button>
+              )}
+            </div>
+          ) : null}
 
-          <Select value={modelFilter} onValueChange={onModelFilter}>
-            <SelectTrigger className="h-8 w-[140px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {modelOptions.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {action}
+
+          {showRangeFilter ? (
+            <Select
+              value={rangeDays.toString()}
+              onValueChange={(v) => onRangeDays(Number(v))}
+            >
+              <SelectTrigger className="h-8 w-[76px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {rangeOptions.map((opt) => (
+                  <SelectItem key={opt.days} value={opt.days.toString()}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
+
+          {showProviderFilter ? (
+            <Select value={providerFilter} onValueChange={onProviderFilter}>
+              <SelectTrigger className="h-8 w-[160px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {providerOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
         </div>
       </div>
     </header>

@@ -1,0 +1,42 @@
+import { cn } from "@/lib/utils";
+
+type OpenPeecMarkProps = React.SVGProps<SVGSVGElement> & {
+  title?: string;
+};
+
+export function OpenPeecMark({
+  className,
+  title,
+  ...props
+}: OpenPeecMarkProps) {
+  return (
+    <svg
+      viewBox="0 0 64 64"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      className={cn("size-5", className)}
+      {...props}
+    >
+      {title ? <title>{title}</title> : null}
+      <path
+        d="M34 10H18C13.582 10 10 13.582 10 18V46C10 50.418 13.582 54 18 54H46C50.418 54 54 50.418 54 46V34"
+        stroke="currentColor"
+        strokeWidth="4.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M42 10H46C50.418 10 54 13.582 54 18V26"
+        stroke="currentColor"
+        strokeWidth="4.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <rect x="18" y="32" width="6" height="14" rx="2.5" fill="#93C5FD" />
+      <rect x="29" y="25" width="6" height="21" rx="2.5" fill="#60A5FA" />
+      <rect x="40" y="18" width="6" height="28" rx="2.5" fill="#2563EB" />
+    </svg>
+  );
+}

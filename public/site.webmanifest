@@ -1,0 +1,20 @@
+{
+  "name": "OpenPeec",
+  "short_name": "OpenPeec",
+  "description": "Visibility and citation-quality monitoring for AI-generated answers.",
+  "theme_color": "#111827",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

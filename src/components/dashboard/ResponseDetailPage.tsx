@@ -122,7 +122,12 @@ export function ResponseDetailPage({
           startedAt: number;
           finishedAt?: number;
           latencyMs?: number;
-          model: string;
+          providerSlug: string;
+          providerName: string;
+          providerUrl?: string;
+          channelName?: string;
+          sessionMode?: "guest" | "stored";
+          promptExcerpt: string;
           responseSummary?: string;
           sourceCount?: number;
           citationQualityScore?: number;
@@ -132,7 +137,7 @@ export function ResponseDetailPage({
           warnings?: string[];
         };
         prompt?: {
-          name: string;
+          excerpt: string;
           promptText: string;
         } | null;
         mentions?: Array<{
@@ -288,10 +293,15 @@ export function ResponseDetailPage({
           <Card>
             <CardHeader>
               <CardTitle>
-                {runDetail.prompt?.name ?? "Selected response"}
+                {runDetail.prompt?.excerpt ?? runDetail.run.promptExcerpt}
               </CardTitle>
               <CardDescription>
-                {runDetail.run.model} | {titleCase(runDetail.run.status)} |{" "}
+                {runDetail.run.providerName}
+                {runDetail.run.channelName
+                  ? ` | ${runDetail.run.channelName}`
+                  : ""}{" "}
+                |{" "}
+                {titleCase(runDetail.run.status)} |{" "}
                 {formatFreshness(runDetail.run.startedAt)}
               </CardDescription>
             </CardHeader>
@@ -320,6 +330,13 @@ export function ResponseDetailPage({
                     runDetail.run.latencyMs
                   )}
                 </Badge>
+                {runDetail.run.sessionMode ? (
+                  <Badge variant="outline">
+                    {runDetail.run.sessionMode === "stored"
+                      ? "Local profile"
+                      : "Ephemeral"}
+                  </Badge>
+                ) : null}
               </div>
 
               {runDetail.prompt?.promptText ? (

@@ -1,5 +1,7 @@
 import path from "path";
 import fs from "fs";
+import { spawn, type ChildProcess } from "child_process";
+import type { IncomingMessage, ServerResponse } from "http";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, type Plugin } from "vite";
@@ -53,9 +55,134 @@ function serveRunnerArtifacts(): Plugin {
   };
 }
 
+function readRequestBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk: string) => {
+      body += chunk;
+    });
+    req.on("end", () => resolve(body));
+    req.on("error", reject);
+  });
+}
+
+function sendJson(res: ServerResponse, statusCode: number, payload: unknown) {
+  res.statusCode = statusCode;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(payload));
+}
+
+function localProviderSessionApi(): Plugin {
+  const sessionProcesses = new Map<string, ChildProcess>();
+  const providerDefaults: Record<
+    string,
+    {
+      url: string;
+      engine: "camoufox" | "playwright";
+      storageStatePath: string;
+      profileDir?: string;
+      browser?: string;
+    }
+  > = {
+    openai: {
+      url: "https://chatgpt.com/",
+      engine: "camoufox",
+      storageStatePath: "runner/camoufox.storage-state.json",
+    },
+  };
+
+  return {
+    name: "local-provider-session-api",
+    configureServer(server) {
+      server.middlewares.use(
+        "/local-provider-session/open",
+        async (req, res) => {
+          if (req.method !== "POST") {
+            sendJson(res, 405, { error: "Method not allowed" });
+            return;
+          }
+
+          let body: { providerSlug?: string } = {};
+          try {
+            const rawBody = await readRequestBody(req);
+            body = rawBody ? JSON.parse(rawBody) : {};
+          } catch {
+            sendJson(res, 400, { error: "Invalid JSON body" });
+            return;
+          }
+
+          const providerSlug = body.providerSlug ?? "openai";
+          const defaults = providerDefaults[providerSlug];
+          if (!defaults) {
+            sendJson(res, 400, {
+              error: "Only OpenAI session windows are supported in v0",
+            });
+            return;
+          }
+
+          const existing = sessionProcesses.get(providerSlug);
+          if (existing && existing.exitCode === null && !existing.killed) {
+            sendJson(res, 200, {
+              status: "already_open",
+              providerSlug,
+              engine: defaults.engine,
+              storageStatePath: defaults.storageStatePath,
+              profileDir: defaults.profileDir ?? null,
+              url: defaults.url,
+            });
+            return;
+          }
+
+          const args = [
+            "runner/open-session-window.mjs",
+            "--url",
+            defaults.url,
+            "--engine",
+            defaults.engine,
+            "--out",
+            defaults.storageStatePath,
+          ];
+          if (defaults.profileDir) {
+            args.push("--profile-dir", defaults.profileDir);
+          }
+          if (defaults.browser) {
+            args.push("--browser", defaults.browser);
+          }
+
+          const child = spawn(process.execPath, args, {
+            cwd: __dirname,
+            detached: true,
+            stdio: "ignore",
+          });
+          child.unref();
+          sessionProcesses.set(providerSlug, child);
+          child.once("exit", () => {
+            sessionProcesses.delete(providerSlug);
+          });
+
+          sendJson(res, 200, {
+            status: "opening",
+            providerSlug,
+            engine: defaults.engine,
+            storageStatePath: defaults.storageStatePath,
+            profileDir: defaults.profileDir ?? null,
+            url: defaults.url,
+          });
+        }
+      );
+    },
+  };
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [tailwindcss(), react(), serveRunnerArtifacts()],
+  plugins: [
+    tailwindcss(),
+    react(),
+    serveRunnerArtifacts(),
+    localProviderSessionApi(),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

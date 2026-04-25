@@ -25,7 +25,7 @@ export function ModelsPage({
   rows,
 }: {
   rows: Array<{
-    model: string;
+    provider: string;
     visibility: number | undefined;
     citation: number | undefined;
     position: number | undefined;
@@ -37,8 +37,8 @@ export function ModelsPage({
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
         <div className="px-4 lg:px-6">
           <EmptyState
-            title="No model analytics yet"
-            description="Once real prompt runs are ingested, model-level visibility and citation comparisons will appear here."
+            title="No provider analytics yet"
+            description="Once real prompt runs are ingested, provider-level visibility and citation comparisons will appear here."
             compact
           />
         </div>
@@ -51,7 +51,7 @@ export function ModelsPage({
       <div className="px-4 lg:px-6">
         <Card>
           <CardHeader>
-            <CardTitle>Models</CardTitle>
+            <CardTitle>Providers</CardTitle>
             <CardDescription>
               Visibility and citation quality matrix.
             </CardDescription>
@@ -69,13 +69,13 @@ export function ModelsPage({
               </TableHeader>
               <TableBody>
                 {rows.map((row) => (
-                  <TableRow key={row.model}>
+                  <TableRow key={row.provider}>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <div className="bg-muted flex size-7 items-center justify-center rounded-md text-xs font-bold">
-                          {row.model.charAt(0).toUpperCase()}
+                          {row.provider.charAt(0).toUpperCase()}
                         </div>
-                        <span className="font-medium">{row.model}</span>
+                        <span className="font-medium">{row.provider}</span>
                       </div>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">

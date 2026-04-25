@@ -24,8 +24,12 @@ import { DashboardTableCardSkeleton } from "./components/LoadingState";
 type RunRow = {
   _id: Id<"promptRuns">;
   promptId: Id<"prompts">;
-  promptName: string;
-  model: string;
+  promptExcerpt: string;
+  providerSlug: string;
+  providerName: string;
+  providerUrl?: string;
+  channelName?: string;
+  sessionMode?: "guest" | "stored";
   status: string;
   startedAt: number;
   finishedAt?: number;
@@ -63,7 +67,7 @@ export function RunsPage({
       if (!needle) {
         return true;
       }
-      return `${run.promptName} ${run.model} ${run.runLabel ?? ""} ${run.responseSummary ?? ""} ${(run.warnings ?? []).join(" ")}`
+      return `${run.promptExcerpt} ${run.providerName} ${run.runLabel ?? ""} ${run.responseSummary ?? ""} ${(run.warnings ?? []).join(" ")}`
         .toLowerCase()
         .includes(needle);
     });
@@ -151,10 +155,16 @@ export function RunsPage({
                               event.stopPropagation();
                               onOpenPrompt(run.promptId);
                             }}
-                          >
-                            <p className="font-medium">{run.promptName}</p>
+                            >
+                            <p className="font-medium">{run.promptExcerpt}</p>
                             <p className="text-muted-foreground mt-1 text-xs">
-                              {run.model}
+                              {run.providerName}
+                              {run.channelName
+                                ? ` · ${run.channelName}`
+                                : ""}
+                              {run.sessionMode
+                                ? ` · ${formatSessionMode(run.sessionMode)}`
+                                : ""}
                             </p>
                           </button>
                         </TableCell>
@@ -250,6 +260,10 @@ function titleCase(value: string) {
     .split("_")
     .map((item) => item.charAt(0).toUpperCase() + item.slice(1).toLowerCase())
     .join(" ");
+}
+
+function formatSessionMode(value: "guest" | "stored") {
+  return value === "stored" ? "Local profile" : "Ephemeral";
 }
 
 function formatFreshness(timestamp: number) {

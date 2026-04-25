@@ -1,0 +1,38 @@
+<svg
+  width="512"
+  height="128"
+  viewBox="0 0 512 128"
+  fill="none"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <g transform="translate(12 12)">
+    <path
+      d="M56 16H28C18.0589 16 10 24.0589 10 34V94C10 103.941 18.0589 112 28 112H88C97.9411 112 106 103.941 106 94V66"
+      stroke="#111827"
+      stroke-width="8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M74 16H88C97.9411 16 106 24.0589 106 34V48"
+      stroke="#111827"
+      stroke-width="8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <rect x="28" y="66" width="12" height="28" rx="4.5" fill="#93C5FD" />
+    <rect x="50" y="52" width="12" height="42" rx="4.5" fill="#60A5FA" />
+    <rect x="72" y="38" width="12" height="56" rx="4.5" fill="#2563EB" />
+  </g>
+  <text
+    x="142"
+    y="78"
+    fill="#111827"
+    font-family="'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif"
+    font-size="52"
+    font-weight="620"
+    letter-spacing="-0.045em"
+  >
+    OpenPeec
+  </text>
+</svg>

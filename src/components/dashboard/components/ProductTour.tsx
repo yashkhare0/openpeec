@@ -5,8 +5,8 @@ import "driver.js/dist/driver.css";
 type PageKey =
   | "overview"
   | "prompts"
+  | "providers"
   | "runs"
-  | "groups"
   | "responses"
   | "sources";
 
@@ -17,7 +17,7 @@ function buildSteps(onNavigate: (page: PageKey) => void): DriveStep[] {
       popover: {
         title: "Sidebar Navigation",
         description:
-          "Switch between pages here. Overview shows the dashboard, Prompts manages monitored questions, Runs and Responses drill into execution detail, Groups organizes prompt sets, and Sources tracks citation domains.",
+          "Switch between pages here. Overview shows the dashboard, Prompts manages monitored questions, Runs and Responses drill into execution detail, and Sources tracks citation domains.",
         side: "right",
         align: "start",
       },
@@ -27,7 +27,7 @@ function buildSteps(onNavigate: (page: PageKey) => void): DriveStep[] {
       popover: {
         title: "Filter Your Data",
         description:
-          "Narrow your analytics by time range (7, 30, or 90 days) and by specific AI model. Changes apply across all dashboard views.",
+          "Narrow your analytics by time range (7, 30, or 90 days) and by provider. Changes apply across all dashboard views.",
         side: "bottom",
         align: "start",
       },
@@ -48,7 +48,7 @@ function buildSteps(onNavigate: (page: PageKey) => void): DriveStep[] {
     {
       element: "[data-tour='charts-area']",
       popover: {
-        title: "Trends & Model Comparison",
+        title: "Trends & Provider Comparison",
         description:
           "The trend chart tracks citation quality and coverage over time. Use the surrounding pages to move from prompt setup into run and response inspection.",
         side: "top",

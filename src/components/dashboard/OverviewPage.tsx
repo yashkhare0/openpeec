@@ -24,7 +24,8 @@ type TrendPoint = {
 
 type OverviewRun = {
   id: string;
-  promptName: string;
+  promptExcerpt: string;
+  providerName: string;
   status: string;
   startedAt: number;
   finishedAt?: number;
@@ -55,7 +56,8 @@ export function OverviewPage({
     | {
         promptComparison: Array<{
           promptId: string;
-          name: string;
+          excerpt: string;
+          providerName: string;
           responseCount: number;
           latestStatus: string;
           latestResponseSummary: string;
@@ -197,9 +199,10 @@ export function OverviewPage({
                           <TableRow key={row.promptId}>
                             <TableCell>
                               <div className="space-y-1">
-                                <p className="font-medium">{row.name}</p>
+                                <p className="font-medium">{row.excerpt}</p>
                                 <p className="text-muted-foreground text-xs">
-                                  {row.responseCount} responses
+                                  {row.providerName} | {row.responseCount}{" "}
+                                  responses
                                 </p>
                               </div>
                             </TableCell>
@@ -257,7 +260,7 @@ export function OverviewPage({
                           </div>
                         </TableCell>
                         <TableCell className="font-medium">
-                          {run.promptName}
+                          {run.promptExcerpt}
                         </TableCell>
                         <TableCell>
                           <span className={statusClassName(run.status)}>

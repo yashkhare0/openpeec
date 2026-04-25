@@ -4,13 +4,27 @@ import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ConvexHttpClient } from "convex/browser";
-import { chromium } from "playwright";
 import { api } from "../convex/_generated/api.js";
 
-import { warmUpSession } from "./session-warmup.mjs";
+import {
+  detectAntiBotBlock,
+  detectAntiBotNetworkBlock,
+} from "./anti-bot-detector.mjs";
+import {
+  CAMOUFOX_ENGINE,
+  browserEngineRunnerName,
+  getBrowserEnginePreflight,
+  launchRunnerBrowserContext,
+  normalizeBrowserEngine,
+} from "./browser-engine.mjs";
+import {
+  DEFAULT_DOMAIN_HOPS,
+  runDomainHopSequence,
+} from "./session-warmup.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const DEFAULT_LOCAL_CONVEX_URL = "http://127.0.0.1:3210";
 
 function parseArgs(argv) {
   const args = {
@@ -56,6 +70,59 @@ export function resolvePathIfRelative(inputPath) {
   return path.resolve(process.cwd(), inputPath);
 }
 
+async function readEnvFile(filePath) {
+  try {
+    return await fs.readFile(filePath, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+function parseEnvValue(content, key) {
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+
+    const separator = line.indexOf("=");
+    if (separator === -1) {
+      continue;
+    }
+
+    const currentKey = line.slice(0, separator).trim();
+    if (currentKey !== key) {
+      continue;
+    }
+
+    let value = line.slice(separator + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    return value;
+  }
+  return undefined;
+}
+
+async function resolveConvexUrl() {
+  if (process.env.VITE_CONVEX_URL) {
+    return process.env.VITE_CONVEX_URL;
+  }
+
+  const cwd = process.cwd();
+  const envLocal = await readEnvFile(path.join(cwd, ".env.local"));
+  const fromLocal = parseEnvValue(envLocal, "VITE_CONVEX_URL");
+  if (fromLocal) {
+    return fromLocal;
+  }
+
+  const env = await readEnvFile(path.join(cwd, ".env"));
+  return parseEnvValue(env, "VITE_CONVEX_URL") ?? DEFAULT_LOCAL_CONVEX_URL;
+}
+
 export async function loadAuthProfileMaterial(authProfileConfig) {
   if (!authProfileConfig) {
     return {};
@@ -86,6 +153,117 @@ export async function loadAuthProfileMaterial(authProfileConfig) {
   return {};
 }
 
+export function parseSessionJsonMaterial(sessionJson) {
+  const raw = typeof sessionJson === "string" ? sessionJson.trim() : "";
+  if (!raw) {
+    return { material: {}, warnings: [] };
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        material: {},
+        warnings: [
+          "Provider sessionJson is not a JSON object; continuing with the local browser profile.",
+        ],
+      };
+    }
+
+    if ("origins" in parsed) {
+      return { material: { storageState: parsed }, warnings: [] };
+    }
+
+    if (
+      "cookies" in parsed ||
+      "headers" in parsed ||
+      "storageState" in parsed ||
+      "storageStatePath" in parsed
+    ) {
+      return { material: parsed, warnings: [] };
+    }
+
+    return { material: parsed, warnings: [] };
+  } catch {
+    return {
+      material: {},
+      warnings: [
+        "Provider sessionJson is invalid JSON; continuing with the local browser profile.",
+      ],
+    };
+  }
+}
+
+export async function loadRunnerSessionMaterial(config) {
+  const authMaterial = await loadAuthProfileMaterial(config.authProfile);
+  const { material: providerMaterial, warnings } = parseSessionJsonMaterial(
+    config.sessionJson
+  );
+  const browserMaterial = config.browser?.storageStatePath
+    ? { storageStatePath: config.browser.storageStatePath }
+    : {};
+  const headers =
+    authMaterial.headers || providerMaterial.headers
+      ? {
+          ...(authMaterial.headers ?? {}),
+          ...(providerMaterial.headers ?? {}),
+        }
+      : undefined;
+  const cookies = [
+    ...(Array.isArray(authMaterial.cookies) ? authMaterial.cookies : []),
+    ...(Array.isArray(providerMaterial.cookies)
+      ? providerMaterial.cookies
+      : []),
+  ];
+
+  return {
+    material: {
+      ...browserMaterial,
+      ...authMaterial,
+      ...providerMaterial,
+      ...(headers ? { headers } : {}),
+      ...(cookies.length ? { cookies } : {}),
+    },
+    warnings,
+  };
+}
+
+/** Default disk location for the local real-Chrome session (same as capture-session / open-session). */
+export const DEFAULT_OPENAI_USER_DATA_DIR = "runner/profiles/chatgpt-chrome";
+export const DEFAULT_CAMOUFOX_STORAGE_STATE_PATH =
+  "runner/camoufox.storage-state.json";
+
+/**
+ * @param {Record<string, unknown>} rawConfig
+ * @returns {"guest"|"stored"}
+ */
+export function resolveSessionMode(rawConfig) {
+  const explicit = rawConfig.sessionMode ?? rawConfig.session?.mode;
+  if (explicit === "guest") {
+    return "guest";
+  }
+  if (explicit === "stored") {
+    return "stored";
+  }
+  // Main path: local persistent Chrome (headed warm-up, real cookies). Ephemeral "guest" is opt-in.
+  return "stored";
+}
+
+function resolveSubmitStrategy(rawConfig) {
+  const explicit =
+    rawConfig.prompt?.submitStrategy ??
+    rawConfig.navigation?.submitStrategy ??
+    rawConfig.deepLink?.submitStrategy;
+  if (explicit === "deeplink") {
+    return "deeplink";
+  }
+  if (explicit === "type") {
+    return "type";
+  }
+
+  return "type";
+}
+
 function ensureWebDeepLink(url) {
   if (!/^https?:\/\//i.test(url)) {
     throw new Error(
@@ -106,6 +284,15 @@ function normalizeText(input) {
   return String(input ?? "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** When this appears in the assistant bubble, the model did not return a real answer. */
+export function isOpenAiGenerationErrorResponse(responseText) {
+  const t = normalizeText(responseText).toLowerCase();
+  if (!t) {
+    return false;
+  }
+  return t.includes("something went wrong") && t.includes("help.openai.com");
 }
 
 function summarizeText(input, maxChars = 240) {
@@ -160,9 +347,32 @@ function canonicalizeCitationUrl(input) {
   }
 }
 
-export function detectAccessBlocker(title, responseText) {
+export function detectAccessBlocker(title, responseText, options = {}) {
+  return Boolean(getAccessBlockerReason(title, responseText, options));
+}
+
+export function getAccessBlockerReason(title, responseText, options = {}) {
   const haystack =
-    `${normalizeText(title)} ${normalizeText(responseText)}`.toLowerCase();
+    `${normalizeText(title)} ${normalizeText(responseText)} ${normalizeText(options.url)}`.toLowerCase();
+  if (
+    haystack.includes("verify you are human") ||
+    haystack.includes("challenges.cloudflare.com") ||
+    haystack.includes("checking your browser")
+  ) {
+    return "ChatGPT is showing a human verification challenge. Open `pnpm runner:capture-session -- --engine camoufox` and complete it manually in the local browser session.";
+  }
+
+  const antiBot = detectAntiBotBlock({
+    statusCode: options.statusCode,
+    html: options.html,
+    title,
+    bodyText: responseText,
+    url: options.url,
+  });
+  if (antiBot.blocked) {
+    return `ChatGPT access was blocked before the prompt could run (${antiBot.reason}).`;
+  }
+
   const patterns = [
     "just a moment",
     "security verification",
@@ -173,7 +383,9 @@ export function detectAccessBlocker(title, responseText) {
     "incompatible browser extension or network configuration",
     "your browser extensions or network settings have blocked the security verification process",
   ];
-  return patterns.some((pattern) => haystack.includes(pattern));
+  return patterns.some((pattern) => haystack.includes(pattern))
+    ? "ChatGPT access was blocked before the prompt could run."
+    : null;
 }
 
 function resolvePromptReadyTimeoutMs(config) {
@@ -211,8 +423,10 @@ function resolveResponseStartTimeoutMs(config) {
 
 export async function snapshotPageGateState(page) {
   return await page.evaluate(() => ({
+    url: window.location.href,
     title: document.title,
     bodyText: document.body?.innerText ?? "",
+    html: document.documentElement?.outerHTML ?? "",
   }));
 }
 
@@ -241,19 +455,40 @@ function matchesCriticalChatGpt403(url) {
 }
 
 export function classifyChatGptPageState({
+  url,
   title,
   bodyText,
+  html,
+  statusCode,
   promptVisible,
   networkEvents = [],
 }) {
-  if (detectAccessBlocker(title, bodyText)) {
+  const blockerReason = getAccessBlockerReason(title, bodyText, {
+    html,
+    statusCode,
+    url,
+  });
+  if (blockerReason) {
     return {
       state: "blocked",
-      reason: "ChatGPT access was blocked before the prompt could run.",
+      reason: blockerReason,
     };
   }
 
   const normalizedBody = normalizeText(bodyText).toLowerCase();
+  const normalizedUrl = normalizeText(url).toLowerCase();
+  const loginWallVisible =
+    normalizedBody.includes("get started") &&
+    normalizedBody.includes("log in") &&
+    normalizedBody.includes("sign up");
+  if (normalizedUrl.includes("/auth/login") || loginWallVisible) {
+    return {
+      state: "blocked",
+      reason:
+        "ChatGPT requires a logged-in or warmed local session before prompts can run. Run `pnpm runner:capture-session -- --engine camoufox` once to prime local storage state.",
+    };
+  }
+
   const critical403s = networkEvents.filter(
     (event) => event.status === 403 && matchesCriticalChatGpt403(event.url)
   );
@@ -290,6 +525,14 @@ export function classifyChatGptPageState({
   if (promptVisible) {
     return {
       state: "ready",
+    };
+  }
+
+  const networkBlocker = detectAntiBotNetworkBlock(networkEvents);
+  if (networkBlocker.blocked) {
+    return {
+      state: "blocked",
+      reason: `ChatGPT access was blocked before the prompt could run (${networkBlocker.reason}).`,
     };
   }
 
@@ -360,8 +603,18 @@ function qualityScoreForCitation(citation) {
   return Number((clamp(score, 0, 1) * 100).toFixed(1));
 }
 
+/**
+ * Merge legacy `deepLink` and `navigation` so a partial `navigation` from the
+ * queue (url + submit) does not erase `domainHops` that only exist on `deepLink`.
+ * Later keys win.
+ * @param {Record<string, unknown>} rawConfig
+ */
+function mergeNavigationLayer(rawConfig) {
+  return { ...(rawConfig.deepLink ?? {}), ...(rawConfig.navigation ?? {}) };
+}
+
 export function normalizeRunnerConfig(rawConfig) {
-  const deepLink = rawConfig.navigation ?? rawConfig.deepLink ?? {};
+  const mergedNav = mergeNavigationLayer(rawConfig);
   const browser = rawConfig.browser ?? {};
   const prompt = rawConfig.prompt ?? {};
   const extraction = rawConfig.extraction ?? {};
@@ -369,30 +622,79 @@ export function normalizeRunnerConfig(rawConfig) {
   const assertions = rawConfig.assertions ?? {};
   const timing = rawConfig.timing ?? {};
   const ingest = rawConfig.ingest ?? {};
-  const navigationUrl = deepLink.url;
+  const navigationUrl = mergedNav.url;
+  const rawDomainHops = mergedNav.domainHops;
+  const domainHops =
+    rawDomainHops === undefined || rawDomainHops === null
+      ? DEFAULT_DOMAIN_HOPS
+      : Array.isArray(rawDomainHops)
+        ? rawDomainHops
+        : [];
+  const provider = rawConfig.provider ?? "openai";
+  const sessionMode = resolveSessionMode(rawConfig);
+  const submitStrategy = resolveSubmitStrategy(rawConfig);
+  const engine = normalizeBrowserEngine(
+    browser.engine ??
+      rawConfig.browserEngine ??
+      process.env.OPENPEEC_BROWSER_ENGINE
+  );
+  let userDataDir =
+    sessionMode === "stored" && engine !== CAMOUFOX_ENGINE
+      ? (browser.userDataDir ?? null)
+      : null;
+  if (
+    sessionMode === "stored" &&
+    engine !== CAMOUFOX_ENGINE &&
+    !userDataDir &&
+    provider === "openai"
+  ) {
+    userDataDir = DEFAULT_OPENAI_USER_DATA_DIR;
+  }
+  let storageStatePath =
+    sessionMode === "stored" ? (browser.storageStatePath ?? null) : null;
+  if (
+    sessionMode === "stored" &&
+    engine === CAMOUFOX_ENGINE &&
+    !storageStatePath
+  ) {
+    storageStatePath = DEFAULT_CAMOUFOX_STORAGE_STATE_PATH;
+  }
 
   return {
     schemaVersion: 2,
     monitorId: rawConfig.monitorId ?? null,
     promptId: rawConfig.promptId ?? prompt.id ?? null,
     runLabel: rawConfig.runLabel ?? rawConfig.monitorName ?? "prompt-run",
-    client: rawConfig.client ?? "chatgpt",
+    provider,
     platform: rawConfig.platform ?? "web",
-    model: rawConfig.model ?? prompt.targetModel ?? "chatgpt-web",
+    sessionMode,
+    sessionJson:
+      sessionMode === "stored" ? (rawConfig.sessionJson ?? null) : null,
     browser: {
+      engine,
       channel: browser.channel ?? null,
       headless: browser.headless ?? true,
-      userDataDir: browser.userDataDir ?? null,
+      userDataDir,
+      storageStatePath,
+      camoufox: browser.camoufox ?? rawConfig.camoufox ?? {},
     },
-    authProfile: rawConfig.authProfile,
+    authProfile: sessionMode === "stored" ? rawConfig.authProfile : undefined,
     navigation: {
       url: navigationUrl,
-      promptQueryParam: deepLink.promptQueryParam ?? null,
-      waitUntil: deepLink.waitUntil ?? "domcontentloaded",
-      timeoutMs: deepLink.timeoutMs ?? 30000,
+      domainHops,
+      /** Hops use this (default `load`), not `waitUntil` — ChatGPT nav may stay on `domcontentloaded`. */
+      hopWaitUntil: mergedNav.hopWaitUntil ?? "load",
+      promptQueryParam:
+        submitStrategy === "deeplink"
+          ? (mergedNav.promptQueryParam ?? (provider === "openai" ? "q" : null))
+          : null,
+      submitStrategy,
+      waitUntil: mergedNav.waitUntil ?? "domcontentloaded",
+      timeoutMs: mergedNav.timeoutMs ?? 30000,
     },
     prompt: {
       text: prompt.text ?? rawConfig.promptText ?? "",
+      submitStrategy,
       inputSelector:
         prompt.inputSelector ??
         selectors.promptInputSelector ??
@@ -430,6 +732,9 @@ export function normalizeRunnerConfig(rawConfig) {
       healthCheckTimeoutMs: timing.healthCheckTimeoutMs,
       responseStartTimeoutMs: timing.responseStartTimeoutMs,
       settleDelayMs: timing.settleDelayMs ?? 1500,
+      warmupGotoTimeoutMs: timing.warmupGotoTimeoutMs ?? 30000,
+      postHopSettleMinMs: timing.postHopSettleMinMs ?? 2500,
+      hopNetworkIdleMaxMs: timing.hopNetworkIdleMaxMs ?? 0,
     },
     ingest: {
       target: ingest.target ?? "auto",
@@ -460,11 +765,92 @@ async function pathExists(filePath) {
   }
 }
 
+async function applyAuthMaterialToContext(context, authMaterial) {
+  if (authMaterial.cookies && Array.isArray(authMaterial.cookies)) {
+    await context.addCookies(authMaterial.cookies);
+  }
+  if (authMaterial.headers && typeof authMaterial.headers === "object") {
+    await context.setExtraHTTPHeaders(authMaterial.headers);
+  }
+}
+
+async function persistStorageStateIfConfigured(context, config, warnings) {
+  const storageStatePath = config.browser.storageStatePath;
+  if (!storageStatePath) {
+    return null;
+  }
+
+  const absolutePath = resolvePathIfRelative(storageStatePath);
+  try {
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await context.storageState({ path: absolutePath });
+    return absolutePath;
+  } catch (error) {
+    warnings.push(
+      `Failed to persist browser storage state: ${
+        error instanceof Error ? error.message : "unknown error"
+      }`
+    );
+    return null;
+  }
+}
+
+export async function createSharedRunnerBrowserSession(config, options = {}) {
+  const normalizedConfig = normalizeRunnerConfig(config);
+  if (normalizedConfig.browser.engine !== CAMOUFOX_ENGINE) {
+    return null;
+  }
+
+  const preflight = await getRunnerPreflight(normalizedConfig);
+  if (!preflight.ok) {
+    throw new Error(preflight.reason);
+  }
+
+  const { material: authMaterial } =
+    await loadRunnerSessionMaterial(normalizedConfig);
+  const contextOptions = {};
+
+  if (authMaterial.storageStatePath) {
+    const storageStatePath = resolvePathIfRelative(
+      authMaterial.storageStatePath
+    );
+    if (await pathExists(storageStatePath)) {
+      contextOptions.storageState = storageStatePath;
+    }
+  } else if (authMaterial.storageState) {
+    contextOptions.storageState = authMaterial.storageState;
+  }
+
+  const session = await launchRunnerBrowserContext({
+    browserOptions: normalizedConfig.browser,
+    contextOptions,
+    persistentProfileDir: null,
+    headed: options.headed,
+  });
+  await applyAuthMaterialToContext(session.context, authMaterial);
+
+  return {
+    ...session,
+    shared: true,
+    storageStatePath: normalizedConfig.browser.storageStatePath,
+    warnings: [
+      ...session.warnings,
+      "Camoufox uses screenshots, traces, DOM, network, and console artifacts; Playwright video recording is disabled because Firefox remote server does not support it.",
+    ],
+  };
+}
+
 export async function getRunnerPreflight(config) {
   const normalizedConfig = normalizeRunnerConfig(config);
-  const authMaterial = await loadAuthProfileMaterial(
-    normalizedConfig.authProfile
+  const enginePreflight = await getBrowserEnginePreflight(
+    normalizedConfig.browser
   );
+  if (!enginePreflight.ok) {
+    return enginePreflight;
+  }
+
+  const { material: authMaterial, warnings } =
+    await loadRunnerSessionMaterial(normalizedConfig);
 
   if (authMaterial.storageStatePath) {
     const storageStatePath = resolvePathIfRelative(
@@ -474,19 +860,24 @@ export async function getRunnerPreflight(config) {
       return {
         ok: true,
         status: "success",
-        warning: `Storage state not found at ${storageStatePath}; continuing with a fresh browser session.`,
+        warning:
+          normalizedConfig.browser.engine === CAMOUFOX_ENGINE
+            ? `Storage state not found at ${storageStatePath}; continuing with a fresh Camoufox session.`
+            : `Storage state not found at ${storageStatePath}; continuing with the local browser profile.`,
       };
     }
   }
 
-  return { ok: true, status: "success" };
+  return { ok: true, status: "success", warning: warnings[0] };
 }
 
 async function dismissCookieBanner(page) {
   const selectors = [
-    "button:has-text('Accept all')",
     "button:has-text('Reject non-essential')",
-    "button:has-text('Manage Cookies')",
+    "button:has-text('Reject all')",
+    "button:has-text('Accept all')",
+    "button:has-text('Accept all cookies')",
+    "button:has-text('I agree')",
     "button[aria-label='Close']",
     "button[aria-label='Dismiss']",
   ];
@@ -503,8 +894,13 @@ async function dismissCookieBanner(page) {
       continue;
     }
 
-    await button.click({ timeout: 1500 }).catch(() => {});
-    return true;
+    try {
+      await button.click({ timeout: 2500 });
+      await page.waitForTimeout(250);
+      return true;
+    } catch {
+      continue;
+    }
   }
 
   return false;
@@ -534,8 +930,10 @@ async function waitForChatGptComposer(page, config, networkEvents) {
     );
     const gateState = await snapshotPageGateState(page);
     const pageState = classifyChatGptPageState({
+      url: gateState.url,
       title: gateState.title,
       bodyText: gateState.bodyText,
+      html: gateState.html,
       promptVisible,
       networkEvents,
     });
@@ -569,8 +967,10 @@ async function waitForChatGptComposer(page, config, networkEvents) {
   );
   const gateState = await snapshotPageGateState(page);
   const pageState = classifyChatGptPageState({
+    url: gateState.url,
     title: gateState.title,
     bodyText: gateState.bodyText,
+    html: gateState.html,
     promptVisible,
     networkEvents,
   });
@@ -611,8 +1011,10 @@ async function waitForAssistantResponse(page, config, networkEvents) {
     );
     const gateState = await snapshotPageGateState(page);
     const pageState = classifyChatGptPageState({
+      url: gateState.url,
       title: gateState.title,
       bodyText: gateState.bodyText,
+      html: gateState.html,
       promptVisible,
       networkEvents,
     });
@@ -791,11 +1193,7 @@ async function ingestRunIfRequested(config, result, shouldIngest) {
     return { ok: false, skipped: "Ingest disabled" };
   }
 
-  const convexUrl = process.env.VITE_CONVEX_URL;
-  if (!convexUrl) {
-    return { ok: false, skipped: "VITE_CONVEX_URL is not set" };
-  }
-
+  const convexUrl = await resolveConvexUrl();
   const client = new ConvexHttpClient(convexUrl);
   const target = config.ingest.target ?? "auto";
   const ingestKey = process.env.PEEC_RUN_INGEST_KEY;
@@ -809,7 +1207,7 @@ async function ingestRunIfRequested(config, result, shouldIngest) {
     try {
       await client.mutation(api.analytics.ingestPromptRun, {
         promptId: config.promptId,
-        model: result.model,
+        provider: result.provider,
         status: result.status,
         startedAt: result.startedAt,
         finishedAt: result.finishedAt,
@@ -854,8 +1252,8 @@ async function ingestRunIfRequested(config, result, shouldIngest) {
           citationQualityScore: result.citationQualityScore,
           averageCitationPosition: result.averageCitationPosition,
         }),
-        runner: "local-playwright",
-        client: config.client,
+        runner: browserEngineRunnerName(config.browser?.engine),
+        client: config.provider === "openai" ? "chatgpt" : config.provider,
         platform: config.platform,
         ingestKey,
       });
@@ -884,6 +1282,43 @@ async function ingestRunIfRequested(config, result, shouldIngest) {
 export async function runMonitor(config, options = {}) {
   const normalizedConfig = normalizeRunnerConfig(config);
   const warnings = [];
+  if (normalizedConfig.provider !== "openai") {
+    const finishedAt = Date.now();
+    const reason = `Provider runner is not implemented for ${normalizedConfig.provider}; OpenAI is the only active v0 provider.`;
+    const result = {
+      schemaVersion: 2,
+      monitorId: normalizedConfig.monitorId,
+      promptId: normalizedConfig.promptId,
+      runLabel: normalizedConfig.runLabel,
+      provider: normalizedConfig.provider,
+      platform: normalizedConfig.platform,
+      status: "blocked",
+      startedAt: finishedAt,
+      finishedAt,
+      latencyMs: 0,
+      summary: reason,
+      deeplinkUsed: buildDeepLinkUrl(normalizedConfig),
+      evidencePath: null,
+      fallbackUsed: true,
+      warnings: [reason],
+      responseText: "",
+      responseSummary: reason,
+      sourceCount: undefined,
+      citations: [],
+      visibilityScore: undefined,
+      citationQualityScore: undefined,
+      averageCitationPosition: undefined,
+      output: {
+        provider: normalizedConfig.provider,
+      },
+    };
+    const ingest = await ingestRunIfRequested(
+      normalizedConfig,
+      result,
+      options.ingest
+    );
+    return { ...result, ingest };
+  }
   const preflight = await getRunnerPreflight(normalizedConfig);
   if (!preflight.ok) {
     const finishedAt = Date.now();
@@ -892,9 +1327,8 @@ export async function runMonitor(config, options = {}) {
       monitorId: normalizedConfig.monitorId,
       promptId: normalizedConfig.promptId,
       runLabel: normalizedConfig.runLabel,
-      client: normalizedConfig.client,
+      provider: normalizedConfig.provider,
       platform: normalizedConfig.platform,
-      model: normalizedConfig.model,
       status: "blocked",
       startedAt: finishedAt,
       finishedAt,
@@ -949,14 +1383,16 @@ export async function runMonitor(config, options = {}) {
   }
   ensureWebDeepLink(deepLinkUrl);
 
-  const authMaterial = await loadAuthProfileMaterial(
-    normalizedConfig.authProfile
-  );
+  const { material: authMaterial, warnings: sessionWarnings } =
+    await loadRunnerSessionMaterial(normalizedConfig);
+  warnings.push(...sessionWarnings);
   const promptReadyTimeoutMs = resolvePromptReadyTimeoutMs(normalizedConfig);
   const persistentProfileDir = normalizedConfig.browser.userDataDir
     ? resolvePathIfRelative(normalizedConfig.browser.userDataDir)
     : null;
-  let browser = null;
+  const externalBrowserSession = options.browserSession ?? null;
+  const ownsBrowserSession = !externalBrowserSession;
+  let browserSession = externalBrowserSession;
   let context;
   let page;
   let pageVideo = null;
@@ -976,67 +1412,71 @@ export async function runMonitor(config, options = {}) {
     runDir = path.join(artifactsDir, `${monitorSlug}-${startedAt}`);
     await fs.mkdir(runDir, { recursive: true });
 
-    const contextOptions = {
-      recordVideo: {
-        dir: runDir,
-        size: { width: 1440, height: 900 },
-      },
-    };
-    if (persistentProfileDir) {
-      await fs.mkdir(persistentProfileDir, { recursive: true });
-      if (authMaterial.storageStatePath || authMaterial.storageState) {
+    if (!browserSession) {
+      const contextOptions = {};
+      if (normalizedConfig.browser.engine === CAMOUFOX_ENGINE) {
         warnings.push(
-          "Persistent Chrome profile is enabled; storage state bootstrap material is ignored in favor of the local profile directory."
+          "Camoufox uses screenshots, traces, DOM, network, and console artifacts; Playwright video recording is disabled because Firefox remote server does not support it."
         );
-      }
-    } else if (authMaterial.storageStatePath) {
-      const storageStatePath = resolvePathIfRelative(
-        authMaterial.storageStatePath
-      );
-      if (await pathExists(storageStatePath)) {
-        contextOptions.storageState = storageStatePath;
       } else {
-        warnings.push(
-          `Storage state not found at ${storageStatePath}; continuing with a fresh browser session.`
-        );
+        contextOptions.recordVideo = {
+          dir: runDir,
+          size: { width: 1440, height: 900 },
+        };
       }
-    } else if (authMaterial.storageState) {
-      contextOptions.storageState = authMaterial.storageState;
-    }
+      if (persistentProfileDir) {
+        await fs.mkdir(persistentProfileDir, { recursive: true });
+        if (authMaterial.storageStatePath || authMaterial.storageState) {
+          warnings.push(
+            "Persistent Chrome profile is enabled; storage state bootstrap material is ignored in favor of the local profile directory."
+          );
+        }
+      } else if (authMaterial.storageStatePath) {
+        const storageStatePath = resolvePathIfRelative(
+          authMaterial.storageStatePath
+        );
+        if (await pathExists(storageStatePath)) {
+          contextOptions.storageState = storageStatePath;
+        } else {
+          warnings.push(
+            `Storage state not found at ${storageStatePath}; continuing with a fresh browser session.`
+          );
+        }
+      } else if (authMaterial.storageState) {
+        contextOptions.storageState = authMaterial.storageState;
+      }
 
-    if (persistentProfileDir) {
-      context = await chromium.launchPersistentContext(persistentProfileDir, {
-        ...contextOptions,
-        channel: normalizedConfig.browser.channel ?? undefined,
-        headless: options.headed ? false : normalizedConfig.browser.headless,
+      browserSession = await launchRunnerBrowserContext({
+        browserOptions: normalizedConfig.browser,
+        contextOptions,
+        persistentProfileDir,
+        headed: options.headed,
       });
-    } else {
-      browser = await chromium.launch({
-        channel: normalizedConfig.browser.channel ?? undefined,
-        headless: options.headed ? false : normalizedConfig.browser.headless,
-      });
-      context = await browser.newContext(contextOptions);
     }
+    context = browserSession.context;
+    warnings.push(...browserSession.warnings);
     await context.tracing.start({
       screenshots: true,
       snapshots: true,
       sources: true,
     });
-    if (authMaterial.cookies && Array.isArray(authMaterial.cookies)) {
-      await context.addCookies(authMaterial.cookies);
-    }
-    if (authMaterial.headers && typeof authMaterial.headers === "object") {
-      await context.setExtraHTTPHeaders(authMaterial.headers);
-    }
+    await applyAuthMaterialToContext(context, authMaterial);
 
     page = await context.newPage();
-    for (const existingPage of context.pages()) {
-      if (existingPage === page) {
-        continue;
+    if (!browserSession.shared) {
+      for (const existingPage of context.pages()) {
+        if (existingPage === page) {
+          continue;
+        }
+        await existingPage.close().catch(() => {});
       }
-      await existingPage.close().catch(() => {});
     }
-    await warmUpSession(page);
+    await runDomainHopSequence(page, normalizedConfig.navigation.domainHops, {
+      waitUntil: normalizedConfig.navigation.hopWaitUntil ?? "load",
+      gotoTimeoutMs: normalizedConfig.timing.warmupGotoTimeoutMs ?? 30000,
+      postHopSettleMinMs: normalizedConfig.timing.postHopSettleMinMs ?? 2500,
+      hopNetworkIdleMaxMs: normalizedConfig.timing.hopNetworkIdleMaxMs ?? 0,
+    });
     pageVideo = page.video();
     const browserUserAgent = await page.evaluate(() => navigator.userAgent);
     const screenshotPath = path.join(runDir, "page.png");
@@ -1061,12 +1501,14 @@ export async function runMonitor(config, options = {}) {
         status: response.status(),
         method: request.method(),
         resourceType: request.resourceType(),
+        isNavigationRequest: request.isNavigationRequest(),
         contentType: response.headers()["content-type"] ?? null,
       });
     });
 
     const timeoutMs = normalizedConfig.navigation.timeoutMs;
     const waitUntil = normalizedConfig.navigation.waitUntil;
+    console.log(`[openpeec-runner] navigating to provider: ${deepLinkUrl}`);
     await page.goto(deepLinkUrl, { waitUntil, timeout: timeoutMs });
 
     if (normalizedConfig.assertions.waitForSelector) {
@@ -1140,8 +1582,50 @@ export async function runMonitor(config, options = {}) {
           const submit = page
             .locator(normalizedConfig.prompt.submitSelector)
             .first();
-          if ((await submit.count()) > 0) {
-            await submit.click({ timeout: 2000 });
+          const submitReady =
+            (await submit.count()) > 0 &&
+            (await submit.isVisible().catch(() => false)) &&
+            (await submit.isEnabled().catch(() => true));
+          if (submitReady) {
+            let usedKeyboardSubmitFallback = false;
+            try {
+              await submit.click({ timeout: 2000 });
+            } catch (error) {
+              usedKeyboardSubmitFallback = true;
+              warnings.push(
+                `Submit button click failed; retried with keyboard submit: ${
+                  error instanceof Error
+                    ? error.message.split("\n")[0]
+                    : "unknown error"
+                }`
+              );
+              await input.click({ timeout: 2000 }).catch(() => {});
+              await page.keyboard.press(normalizedConfig.prompt.submitKey);
+            }
+            await page.waitForTimeout(1500);
+            const remainingInputText = normalizeText(
+              await input
+                .evaluate((node) => {
+                  if (node instanceof HTMLTextAreaElement) {
+                    return node.value;
+                  }
+                  if (node instanceof HTMLElement) {
+                    return node.innerText || node.textContent || "";
+                  }
+                  return "";
+                })
+                .catch(() => "")
+            );
+            if (
+              remainingInputText === expectedPrompt &&
+              !usedKeyboardSubmitFallback
+            ) {
+              warnings.push(
+                "Submit button click left the prompt in the composer; retried with keyboard submit."
+              );
+              await input.click({ timeout: 2000 }).catch(() => {});
+              await page.keyboard.press(normalizedConfig.prompt.submitKey);
+            }
           } else {
             await page.keyboard.press(normalizedConfig.prompt.submitKey);
           }
@@ -1191,9 +1675,11 @@ export async function runMonitor(config, options = {}) {
       title: extracted.pageTitle,
       finalUrl: extracted.finalUrl,
       browser: {
+        engine: normalizedConfig.browser.engine,
         channel: normalizedConfig.browser.channel,
         userAgent: browserUserAgent,
         persistentProfileDir,
+        storageStatePath: normalizedConfig.browser.storageStatePath,
       },
       responseContainerSelector:
         normalizedConfig.extraction.responseContainerSelector,
@@ -1239,6 +1725,25 @@ export async function runMonitor(config, options = {}) {
 
     if (normalizedConfig.prompt.text && !responseText) {
       warnings.push("No response text extracted from assistant output.");
+    }
+
+    if (
+      status === "success" &&
+      normalizedConfig.prompt.text &&
+      !promptSubmitted
+    ) {
+      status = "failed";
+      fallbackUsed = true;
+      summary = "Prompt submission failed before ChatGPT received the prompt.";
+      responseSummary = summary;
+    }
+
+    if (status === "success" && isOpenAiGenerationErrorResponse(responseText)) {
+      status = "failed";
+      fallbackUsed = true;
+      summary =
+        "ChatGPT returned an error while generating the response instead of a normal answer.";
+      responseSummary = summary;
     }
 
     if (status === "success") {
@@ -1369,10 +1874,14 @@ export async function runMonitor(config, options = {}) {
       }
     }
     if (context) {
-      await context.close();
+      await persistStorageStateIfConfigured(
+        context,
+        normalizedConfig,
+        warnings
+      );
     }
-    if (browser) {
-      await browser.close();
+    if (browserSession && ownsBrowserSession) {
+      await browserSession.close();
     }
   }
 
@@ -1382,9 +1891,8 @@ export async function runMonitor(config, options = {}) {
     monitorId: normalizedConfig.monitorId,
     promptId: normalizedConfig.promptId,
     runLabel: normalizedConfig.runLabel,
-    client: normalizedConfig.client,
+    provider: normalizedConfig.provider,
     platform: normalizedConfig.platform,
-    model: normalizedConfig.model,
     status,
     startedAt,
     finishedAt,

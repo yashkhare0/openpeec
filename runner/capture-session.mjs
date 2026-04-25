@@ -4,15 +4,24 @@ import process from "node:process";
 import readline from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 
-import { chromium } from "playwright";
-
+import {
+  CAMOUFOX_ENGINE,
+  launchRunnerBrowserContext,
+  normalizeBrowserEngine,
+} from "./browser-engine.mjs";
 import { warmUpSession } from "./session-warmup.mjs";
+
+const DEFAULT_PLAYWRIGHT_STORAGE_STATE_PATH =
+  "runner/chatgpt.storage-state.json";
+const DEFAULT_CAMOUFOX_STORAGE_STATE_PATH =
+  "runner/camoufox.storage-state.json";
 
 export function parseArgs(argv) {
   const args = {
-    out: "runner/chatgpt.storage-state.json",
+    out: undefined,
     url: "https://chatgpt.com/",
     browser: "chrome",
+    engine: process.env.OPENPEEC_BROWSER_ENGINE ?? "camoufox",
     profileDir: "runner/profiles/chatgpt-chrome",
   };
 
@@ -33,6 +42,15 @@ export function parseArgs(argv) {
       i += 1;
       continue;
     }
+    if (token === "--engine") {
+      args.engine = argv[i + 1];
+      i += 1;
+      continue;
+    }
+    if (token === "--camoufox") {
+      args.engine = "camoufox";
+      continue;
+    }
     if (token === "--profile-dir") {
       args.profileDir = argv[i + 1];
       i += 1;
@@ -49,18 +67,67 @@ export function resolvePathIfRelative(inputPath) {
   return path.resolve(process.cwd(), inputPath);
 }
 
+async function dismissCookieBanner(page) {
+  const selectors = [
+    "button:has-text('Reject non-essential')",
+    "button:has-text('Reject all')",
+    "button:has-text('Accept all')",
+    "button:has-text('Accept all cookies')",
+    "button:has-text('I agree')",
+    "button[aria-label='Close']",
+    "button[aria-label='Dismiss']",
+  ];
+
+  for (const selector of selectors) {
+    const button = page.locator(selector).first();
+    const exists = await button.count().catch(() => 0);
+    if (!exists) {
+      continue;
+    }
+    const visible = await button.isVisible().catch(() => false);
+    if (!visible) {
+      continue;
+    }
+    try {
+      await button.click({ timeout: 2500 });
+      return true;
+    } catch {
+      continue;
+    }
+  }
+
+  return false;
+}
+
 export async function openCaptureSession(options = {}) {
+  const engine = normalizeBrowserEngine(options.engine);
   const outputPath = resolvePathIfRelative(
-    options.out ?? "runner/chatgpt.storage-state.json"
+    options.out ??
+      (engine === CAMOUFOX_ENGINE
+        ? DEFAULT_CAMOUFOX_STORAGE_STATE_PATH
+        : DEFAULT_PLAYWRIGHT_STORAGE_STATE_PATH)
   );
-  const profileDir = resolvePathIfRelative(
-    options.profileDir ?? "runner/profiles/chatgpt-chrome"
-  );
-  await fs.mkdir(profileDir, { recursive: true });
-  const context = await chromium.launchPersistentContext(profileDir, {
-    channel: options.browser ?? "chrome",
-    headless: false,
+  const profileDir =
+    engine === CAMOUFOX_ENGINE
+      ? null
+      : resolvePathIfRelative(
+          options.profileDir ?? "runner/profiles/chatgpt-chrome"
+        );
+  if (profileDir) {
+    await fs.mkdir(profileDir, { recursive: true });
+  }
+  const browserSession = await launchRunnerBrowserContext({
+    browserOptions: {
+      engine,
+      channel: options.browser ?? "chrome",
+      headless: false,
+      camoufox: options.camoufox ?? {},
+    },
+    contextOptions: {},
+    persistentProfileDir: profileDir,
+    headed: true,
   });
+  const { context } = browserSession;
   const page =
     context.pages().find((existingPage) => !existingPage.isClosed()) ??
     (await context.newPage());
@@ -69,10 +136,12 @@ export async function openCaptureSession(options = {}) {
     waitUntil: "domcontentloaded",
     timeout: 45000,
   });
+  await dismissCookieBanner(page);
 
   return {
     context,
     page,
+    engine,
     outputPath,
     profileDir,
     async save() {
@@ -81,10 +150,11 @@ export async function openCaptureSession(options = {}) {
       return {
         outputPath,
         profileDir,
+        engine,
       };
     },
     async close() {
-      await context.close();
+      await browserSession.close();
     },
   };
 }
@@ -115,7 +185,13 @@ export async function captureSession(options = {}) {
   const saved = await session.save();
 
   console.log(`Saved storage state to ${saved.outputPath}`);
-  console.log(`Persistent Chrome profile is available at ${saved.profileDir}`);
+  if (saved.profileDir) {
+    console.log(
+      `Persistent Chrome profile is available at ${saved.profileDir}`
+    );
+  } else {
+    console.log("Camoufox session state was saved as Playwright storageState.");
+  }
 
   await session.close();
   return saved.outputPath;

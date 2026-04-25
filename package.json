@@ -26,7 +26,10 @@
     "runner:monitor:example": "node runner/run-monitor.mjs --config runner/example.monitor.json --output runner/last-run.json",
     "runner:prompt:example": "node runner/run-monitor.mjs --config runner/example.monitor.json --output runner/last-run.json",
     "runner:capture-session": "node runner/capture-session.mjs",
+    "runner:open-session": "node runner/open-session-window.mjs",
     "runner:install-browsers": "playwright install chromium",
+    "runner:install-camoufox": "${CAMOUFOX_PYTHON:-python3} -m pip install -U 'camoufox[geoip]' && ${CAMOUFOX_PYTHON:-python3} -m camoufox fetch",
+    "runner:stealth-smoke": "node runner/stealth-smoke.mjs --engine camoufox",
     "runner:queue": "node runner/process-queued-runs.mjs --config runner/example.monitor.json --poll-interval-ms 1000 --headed",
     "runner:queue:once": "node runner/process-queued-runs.mjs --config runner/example.monitor.json --once --headed"
   },

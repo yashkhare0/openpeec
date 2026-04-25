@@ -92,7 +92,8 @@ export function SourcesPage({
     latestResponses?: Array<{
       runId: Id<"promptRuns">;
       promptId: Id<"prompts">;
-      promptName: string;
+      promptExcerpt: string;
+      providerName: string;
       startedAt: number;
       responseSummary: string;
       position: number;
@@ -234,12 +235,13 @@ export function SourcesPage({
                             {source.latestResponses?.[0] ? (
                               <>
                                 <p className="text-sm font-medium">
-                                  {source.latestResponses[0].promptName}
+                                  {source.latestResponses[0].promptExcerpt}
                                 </p>
                                 <p className="text-muted-foreground text-xs">
                                   {formatFreshness(
                                     source.latestResponses[0].startedAt
                                   )}{" "}
+                                  | {source.latestResponses[0].providerName}{" "}
                                   | #{source.latestResponses[0].position}
                                 </p>
                               </>
