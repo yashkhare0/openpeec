@@ -21,7 +21,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarRail,
   SidebarSeparator,
   useSidebar,
 } from "@/components/ui/sidebar";
@@ -128,7 +127,6 @@ export function AppSidebar({
       <SidebarFooter className="gap-2 px-3 pt-2 pb-3">
         <ModeToggle className={navButtonClassName} />
       </SidebarFooter>
-      <SidebarRail />
     </Sidebar>
   );
 }

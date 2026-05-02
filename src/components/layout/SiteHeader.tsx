@@ -18,8 +18,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 
 type RangeOption = { label: string; days: number };
@@ -89,9 +87,6 @@ export function SiteHeader({
 
   return (
     <header className="bg-background flex min-h-14 shrink-0 items-center gap-2 border-b px-4 py-2">
-      <SidebarTrigger className="-ml-1" />
-      <Separator orientation="vertical" className="mr-2 hidden h-4 sm:block" />
-
       <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
           {breadcrumbs?.length ? (

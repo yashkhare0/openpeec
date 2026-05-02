@@ -1,4 +1,7 @@
-import { ArrowUpRightIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeftIcon, ArrowRightIcon, ArrowUpRightIcon } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { Id } from "../../../convex/_generated/dataModel";
 
 import { Badge } from "@/components/ui/badge";
@@ -79,7 +82,9 @@ function parseOutputPayload(value: string | undefined) {
   }
 }
 
-function artifactUrlFromPath(filePath: string | undefined): string | null {
+function artifactUrlFromPath(
+  filePath: string | null | undefined
+): string | null {
   if (!filePath) return null;
   const normalized = filePath.replace(/\\/g, "/");
   const marker = "runner/artifacts/";
@@ -104,11 +109,60 @@ const typeTone: Record<string, string> = {
   other: "bg-muted text-muted-foreground",
 };
 
+type EvidenceImage = {
+  label: string;
+  description: string;
+  url: string;
+};
+
+function buildEvidenceImages({
+  evidencePath,
+  pageScreenshotPath,
+  responseScreenshotPath,
+}: {
+  evidencePath: string | undefined;
+  pageScreenshotPath: string | undefined;
+  responseScreenshotPath: string | undefined;
+}): EvidenceImage[] {
+  const candidates = [
+    {
+      label: "Response screenshot",
+      description: "Captured answer area after the run completed.",
+      filePath: responseScreenshotPath,
+    },
+    {
+      label: "Page screenshot",
+      description: "Final page state from the runner checkpoint.",
+      filePath: pageScreenshotPath,
+    },
+    {
+      label: "Evidence screenshot",
+      description: "Primary image saved with this run.",
+      filePath: evidencePath,
+    },
+  ];
+
+  const seen = new Set<string>();
+  return candidates.flatMap((candidate) => {
+    const url = artifactUrlFromPath(candidate.filePath);
+    if (!candidate.filePath || !url || seen.has(url)) {
+      return [];
+    }
+
+    seen.add(url);
+    return [
+      {
+        label: candidate.label,
+        description: candidate.description,
+        url,
+      },
+    ];
+  });
+}
+
 export function ResponseDetailPage({
   loading = false,
   runDetail,
-  onBack,
-  backLabel = "Back to prompt",
   onOpenPrompt,
   onRetryRun,
   onCancelRun,
@@ -129,6 +183,7 @@ export function ResponseDetailPage({
           channelName?: string;
           sessionMode?: "guest" | "stored";
           promptExcerpt: string;
+          responseText?: string;
           responseSummary?: string;
           sourceCount?: number;
           citationQualityScore?: number;
@@ -167,8 +222,6 @@ export function ResponseDetailPage({
         }>;
       }
     | undefined;
-  onBack: () => void;
-  backLabel?: string;
   onOpenPrompt?: () => void;
   onRetryRun?: (runId: Id<"promptRuns">) => void | Promise<void>;
   onCancelRun?: (runId: Id<"promptRuns">) => void | Promise<void>;
@@ -176,12 +229,6 @@ export function ResponseDetailPage({
   if (loading) {
     return (
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-        <div className="flex items-center gap-2 px-4 lg:px-6">
-          <Button variant="outline" size="sm" onClick={onBack}>
-            {backLabel}
-          </Button>
-        </div>
-
         <div className="grid gap-4 px-4 lg:px-6 xl:grid-cols-[minmax(0,1.05fr)_380px]">
           <DashboardCardSkeleton
             titleWidth="w-40"
@@ -233,7 +280,6 @@ export function ResponseDetailPage({
     outputPayload?.artifacts?.responseScreenshot ?? undefined;
   const screenshotPath =
     runDetail?.run.evidencePath ?? responseScreenshotPath ?? pageScreenshotPath;
-  const screenshotUrl = artifactUrlFromPath(screenshotPath);
 
   if (!runDetail) {
     return (
@@ -250,6 +296,17 @@ export function ResponseDetailPage({
   const isRetryable = runStatus === "failed" || runStatus === "blocked";
   const isCancelable = runStatus === "queued" || runStatus === "running";
   const runSummaryLabel = isSuccessfulRun ? "Response Summary" : "Run Summary";
+  const responseText =
+    runDetail.run.responseText?.trim() || runDetail.run.responseSummary?.trim();
+  const evidenceImages = buildEvidenceImages({
+    evidencePath: runDetail.run.evidencePath,
+    pageScreenshotPath,
+    responseScreenshotPath,
+  });
+  const hasRunActions =
+    Boolean(onOpenPrompt) ||
+    (isRetryable && Boolean(onRetryRun)) ||
+    (isCancelable && Boolean(onCancelRun));
   const noCitationMessage =
     runStatus === "blocked"
       ? "This run was blocked before ChatGPT produced a valid response, so no citations were recorded."
@@ -259,38 +316,37 @@ export function ResponseDetailPage({
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="flex items-center gap-2 px-4 lg:px-6">
-        <Button variant="outline" size="sm" onClick={onBack}>
-          {backLabel}
-        </Button>
-        {onOpenPrompt ? (
-          <Button variant="ghost" size="sm" onClick={onOpenPrompt}>
-            Open prompt
-          </Button>
-        ) : null}
-        {isRetryable && onRetryRun ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              void onRetryRun(runDetail.run._id);
-            }}
-          >
-            Retry run
-          </Button>
-        ) : null}
-        {isCancelable && onCancelRun ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              void onCancelRun(runDetail.run._id);
-            }}
-          >
-            Cancel run
-          </Button>
-        ) : null}
-      </div>
+      {hasRunActions ? (
+        <div className="flex items-center gap-2 px-4 lg:px-6">
+          {onOpenPrompt ? (
+            <Button variant="ghost" size="sm" onClick={onOpenPrompt}>
+              Open prompt
+            </Button>
+          ) : null}
+          {isRetryable && onRetryRun ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                void onRetryRun(runDetail.run._id);
+              }}
+            >
+              Retry run
+            </Button>
+          ) : null}
+          {isCancelable && onCancelRun ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                void onCancelRun(runDetail.run._id);
+              }}
+            >
+              Cancel run
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="grid gap-4 px-4 lg:px-6 xl:grid-cols-[minmax(0,1.05fr)_380px]">
         <div className="flex flex-col gap-4">
@@ -353,14 +409,12 @@ export function ResponseDetailPage({
                 </section>
               ) : null}
 
-              {runDetail.run.responseSummary ? (
+              {responseText ? (
                 <section className="bg-muted/20 rounded-xl border p-4">
                   <p className="text-muted-foreground text-[11px] font-medium tracking-[0.16em] uppercase">
                     {runSummaryLabel}
                   </p>
-                  <p className="text-foreground/90 mt-2 text-sm leading-6">
-                    {runDetail.run.responseSummary}
-                  </p>
+                  <MarkdownContent content={responseText} />
                 </section>
               ) : null}
 
@@ -496,31 +550,7 @@ export function ResponseDetailPage({
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {screenshotUrl ? (
-                <a
-                  href={screenshotUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block overflow-hidden rounded-xl border"
-                >
-                  <img
-                    src={screenshotUrl}
-                    alt="Run screenshot"
-                    className="max-h-[320px] w-full object-cover"
-                    loading="lazy"
-                  />
-                </a>
-              ) : (
-                <InlineEmpty text="Screenshot preview unavailable for this run." />
-              )}
-
-              <div className="text-muted-foreground space-y-2 text-xs">
-                {runDetail.run.deeplinkUsed ? (
-                  <p className="break-all">
-                    Deep link: {runDetail.run.deeplinkUsed}
-                  </p>
-                ) : null}
-              </div>
+              <RunImageDetail images={evidenceImages} />
 
               <details className="rounded-xl border p-3 text-xs">
                 <summary className="text-muted-foreground cursor-pointer font-medium">
@@ -591,6 +621,90 @@ export function ResponseDetailPage({
             </CardContent>
           </Card>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function MarkdownContent({ content }: { content: string }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [content]);
+
+  return (
+    <div ref={scrollRef} className="mt-2 max-h-[28rem] overflow-y-auto pr-2">
+      <div className="text-foreground/90 [&_blockquote]:bg-muted/20 [&_code]:bg-muted [&_pre]:bg-muted flex flex-col gap-3 text-sm leading-6 [&_a]:font-medium [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:border [&_blockquote]:px-3 [&_blockquote]:py-2 [&_code]:rounded-md [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs [&_li]:pl-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_strong]:font-semibold [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:px-2 [&_th]:py-1 [&_ul]:list-disc [&_ul]:pl-5">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      </div>
+    </div>
+  );
+}
+
+function RunImageDetail({ images }: { images: EvidenceImage[] }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const safeIndex = Math.min(activeIndex, Math.max(images.length - 1, 0));
+  const image = images[safeIndex];
+
+  if (!image) {
+    return <InlineEmpty text="Screenshot preview unavailable for this run." />;
+  }
+
+  const hasPrevious = safeIndex > 0;
+  const hasNext = safeIndex < images.length - 1;
+
+  return (
+    <div className="overflow-hidden rounded-xl border">
+      <div className="flex items-start justify-between gap-3 p-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">{image.label}</p>
+          <p className="text-muted-foreground mt-1 text-xs">
+            {image.description}
+          </p>
+        </div>
+        <Badge variant="outline" className="shrink-0">
+          {safeIndex + 1}/{images.length}
+        </Badge>
+      </div>
+
+      <a
+        href={image.url}
+        target="_blank"
+        rel="noreferrer"
+        className="bg-muted/20 block border-y"
+      >
+        <img
+          src={image.url}
+          alt={image.label}
+          className="max-h-[420px] w-full object-contain"
+          loading="lazy"
+        />
+      </a>
+
+      <div className="flex items-center justify-between gap-2 p-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={!hasPrevious}
+          onClick={() => setActiveIndex((index) => Math.max(index - 1, 0))}
+        >
+          <ArrowLeftIcon data-icon="inline-start" />
+          Back
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={!hasNext}
+          onClick={() =>
+            setActiveIndex((index) => Math.min(index + 1, images.length - 1))
+          }
+        >
+          Next
+          <ArrowRightIcon data-icon="inline-end" />
+        </Button>
       </div>
     </div>
   );

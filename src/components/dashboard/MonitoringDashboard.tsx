@@ -160,6 +160,10 @@ export function MonitoringDashboard() {
     page === "responses" &&
     runDetailContext === "responses" &&
     selectedRunId !== null;
+  const showingRunDetail =
+    (isPromptsPage && promptView === "response") ||
+    showingRunDetailForRuns ||
+    showingRunDetailForResponses;
   const shouldLoadPromptAnalytics = isPromptsPage && promptView === "list";
   const shouldLoadRunsList =
     isOverviewPage ||
@@ -510,18 +514,20 @@ export function MonitoringDashboard() {
         },
       ];
 
+      if (promptView === "response") {
+        items.push({
+          label:
+            runDetail?.prompt?.excerpt ??
+            runDetail?.run.promptExcerpt ??
+            "Response",
+        });
+        return items;
+      }
+
       if (promptView !== "list" && promptAnalysis?.prompt.excerpt) {
         items.push({
           label: promptAnalysis.prompt.excerpt,
-          onClick:
-            promptView === "response"
-              ? () => openRunFromPromptDetail(null)
-              : undefined,
         });
-      }
-
-      if (promptView === "response") {
-        items.push({ label: "Response Detail" });
       }
 
       return items;
@@ -530,7 +536,7 @@ export function MonitoringDashboard() {
     if (showingRunDetailForRuns) {
       return [
         { label: "Runs", onClick: () => openGlobalRunDetail("runs", null) },
-        { label: "Run Detail" },
+        { label: runDetail?.run.promptExcerpt ?? "Run" },
       ];
     }
 
@@ -540,7 +546,7 @@ export function MonitoringDashboard() {
           label: "Responses",
           onClick: () => openGlobalRunDetail("responses", null),
         },
-        { label: "Response Detail" },
+        { label: runDetail?.run.promptExcerpt ?? "Response" },
       ];
     }
 
@@ -564,8 +570,10 @@ export function MonitoringDashboard() {
             providerFilter={providerFilter}
             onProviderFilter={setProviderFilter}
             providerOptions={providerOptions}
-            showRangeFilter={!isProvidersPage}
-            showProviderFilter={!isPromptsPage && !isProvidersPage}
+            showRangeFilter={!isProvidersPage && !showingRunDetail}
+            showProviderFilter={
+              !isPromptsPage && !isProvidersPage && !showingRunDetail
+            }
             searchValue={
               isPromptsPage && promptView === "list" ? promptSearch : undefined
             }
@@ -641,7 +649,6 @@ export function MonitoringDashboard() {
                   <ResponseDetailPage
                     loading={runDetailLoading}
                     runDetail={runDetail}
-                    onBack={() => openRunFromPromptDetail(null)}
                     onRetryRun={handleRetryRun}
                     onCancelRun={handleCancelRun}
                   />
@@ -654,8 +661,6 @@ export function MonitoringDashboard() {
                 <ResponseDetailPage
                   loading={runDetailLoading}
                   runDetail={runDetail}
-                  backLabel="Back to runs"
-                  onBack={() => openGlobalRunDetail("runs", null)}
                   onRetryRun={handleRetryRun}
                   onCancelRun={handleCancelRun}
                   onOpenPrompt={
@@ -680,8 +685,6 @@ export function MonitoringDashboard() {
                 <ResponseDetailPage
                   loading={runDetailLoading}
                   runDetail={runDetail}
-                  backLabel="Back to responses"
-                  onBack={() => openGlobalRunDetail("responses", null)}
                   onRetryRun={handleRetryRun}
                   onCancelRun={handleCancelRun}
                   onOpenPrompt={
