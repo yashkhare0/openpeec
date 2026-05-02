@@ -1,0 +1,110 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: >
+      sh -lc "pnpm exec vite --host 0.0.0.0 --port 5999 --strictPort"
+    environment:
+      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: frontend
+      VITE_CONVEX_URL: http://127.0.0.1:3212
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "5999:5999"
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+    healthcheck:
+      test:
+        ["CMD", "curl", "-fsS", "http://localhost:5999/nodriver-fixture.html"]
+      interval: 5s
+      timeout: 5s
+      start_period: 10m
+      retries: 24
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: >
+      sh -lc "if [ -f .env.local ]; then cp .env.local /tmp/openpeec-env.local.backup; fi;
+      restore_env() { if [ -f /tmp/openpeec-env.local.backup ]; then cp /tmp/openpeec-env.local.backup .env.local; else rm -f .env.local; fi; };
+      trap restore_env EXIT INT TERM;
+      pnpm dev:backend"
+    environment:
+      CONVEX_AGENT_MODE: anonymous
+      CONVEX_DEPLOYMENT: ""
+      OPENPEEC_CONVEX_CONFIGURE_LOCAL: "1"
+      OPENPEEC_CONVEX_LOCAL_CLOUD_PORT: "3212"
+      OPENPEEC_CONVEX_LOCAL_SITE_PORT: "3213"
+      VITE_CONVEX_URL: http://127.0.0.1:3212
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "3212:3212"
+      - "3213:3213"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sS -o /dev/null -w '%{http_code}' http://localhost:3212/ | grep -Eq '^[234][0-9][0-9]$'",
+        ]
+      interval: 5s
+      timeout: 5s
+      start_period: 10m
+      retries: 24
+
+  runner-camoufox:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: >
+      sh -lc "curl -fsS http://frontend:5999/ >/dev/null &&
+      curl -sS -o /dev/null -w '%{http_code}' http://backend:3212/ | grep -Eq '^[234][0-9][0-9]$' &&
+      pnpm runner:queue:docker"
+    environment:
+      CAMOUFOX_PYTHON: /usr/bin/python3
+      VITE_CONVEX_URL: http://backend:3212
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+
+  runner-nodriver:
+    profiles:
+      - verify
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: >
+      sh -lc "curl -fsS http://frontend:5999/nodriver-fixture.html >/dev/null &&
+      curl -sS -o /dev/null -w '%{http_code}' http://backend:3212/ | grep -Eq '^[234][0-9][0-9]$' &&
+      pnpm runner:nodriver:fixture:docker"
+    environment:
+      OPENPEEC_NODRIVER_BROWSER_PATH: /usr/bin/chromium
+      OPENPEEC_NODRIVER_PYTHON: /usr/bin/python3
+      VITE_CONVEX_URL: http://backend:3212
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+
+volumes:
+  node_modules:

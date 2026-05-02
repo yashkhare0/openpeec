@@ -1,0 +1,55 @@
+{
+  "runLabel": "nodriver-chatgpt-queue",
+  "provider": "openai",
+  "platform": "web",
+  "sessionMode": "guest",
+  "browser": {
+    "engine": "nodriver",
+    "headless": true,
+    "nodriver": {
+      "noSandbox": true
+    }
+  },
+  "navigation": {
+    "url": "https://chatgpt.com/",
+    "submitStrategy": "type",
+    "waitUntil": "domcontentloaded",
+    "timeoutMs": 30000,
+    "domainHops": []
+  },
+  "prompt": {
+    "text": "Hi how are you",
+    "inputSelector": "div#prompt-textarea[contenteditable='true'], #prompt-textarea[contenteditable='true'], [contenteditable='true']:visible, textarea:visible",
+    "submitSelector": "button[data-testid='send-button'], button[aria-label*='Send']",
+    "submitKey": "Enter",
+    "clearExisting": true
+  },
+  "extraction": {
+    "responseContainerSelector": "[data-message-author-role='assistant']:not([data-message-id*='request-placeholder']):last-of-type",
+    "responseTextSelector": "[data-message-author-role='assistant']:not([data-message-id*='request-placeholder']):last-of-type",
+    "citationLinkSelector": "a[href]",
+    "maxCitations": 20
+  },
+  "assertions": {
+    "urlIncludes": "chatgpt.com"
+  },
+  "timing": {
+    "healthCheckTimeoutMs": 15000,
+    "promptReadyTimeoutMs": 20000,
+    "responseStartTimeoutMs": 60000,
+    "responseTimeoutMs": 180000,
+    "settleDelayMs": 1500,
+    "warmupGotoTimeoutMs": 30000,
+    "postHopSettleMinMs": 0,
+    "hopNetworkIdleMaxMs": 0
+  },
+  "worker": {
+    "maxConcurrent": 1,
+    "maxAttempts": 1,
+    "staleThresholdMs": 600000,
+    "staleRecoveryIntervalMs": 30000
+  },
+  "ingest": {
+    "target": "auto"
+  }
+}

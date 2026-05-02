@@ -10,6 +10,7 @@ dist
 dist-ssr
 explorations
 node_modules
+.pnpm-store/
 playground-temp
 temp
 .eslintcache
@@ -19,7 +20,8 @@ playwright-report/
 test-results/
 runner/artifacts/
 runner/camoufox.storage-state.json
+runner/.venv-nodriver/
 runner/profiles/
-runner/last-run.json
+runner/last-run*.json
 __pycache__/
 .gstack/

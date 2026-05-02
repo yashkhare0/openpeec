@@ -62,7 +62,7 @@ describe("PromptsPage", () => {
     toast.error.mockReset();
   });
 
-  it("queues a prompt from the overflow actions menu using the excerpt label", async () => {
+  it("queues a Camoufox prompt run from the overflow actions menu", async () => {
     const user = userEvent.setup();
     const onTriggerSelectedNow = vi.fn().mockResolvedValue({ queuedCount: 1 });
 
@@ -83,15 +83,18 @@ describe("PromptsPage", () => {
         name: /actions for best ai visibility tools/i,
       })
     );
-    await user.click(screen.getByRole("menuitem", { name: /^run$/i }));
+    await user.click(
+      screen.getByRole("menuitem", { name: /^run with camoufox$/i })
+    );
 
     await waitFor(() => {
       expect(onTriggerSelectedNow).toHaveBeenCalledWith({
         promptIds: ["prompt_1"],
         label: "Best AI visibility tools",
+        browserEngine: "camoufox",
       });
     });
-    expect(toast.success).toHaveBeenCalledWith("Provider run queued.");
+    expect(toast.success).toHaveBeenCalledWith("Camoufox run queued.");
   });
 
   it("creates a prompt with only text", async () => {

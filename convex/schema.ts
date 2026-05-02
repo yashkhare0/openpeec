@@ -166,6 +166,13 @@ export default defineSchema({
     transport: v.optional(v.literal("browser")),
     sessionMode: v.optional(v.union(v.literal("guest"), v.literal("stored"))),
     sessionProfileDir: v.optional(v.string()),
+    browserEngine: v.optional(
+      v.union(
+        v.literal("playwright"),
+        v.literal("camoufox"),
+        v.literal("nodriver")
+      )
+    ),
     promptQueryParam: v.optional(v.string()),
     submitStrategy: v.optional(
       v.union(v.literal("type"), v.literal("deeplink"))

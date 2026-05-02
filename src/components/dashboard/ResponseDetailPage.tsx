@@ -64,6 +64,7 @@ function parseOutputPayload(value: string | undefined) {
       artifacts?: {
         runDir?: string;
         screenshot?: string;
+        responseScreenshot?: string | null;
         video?: string | null;
         trace?: string;
         pageHtml?: string;
@@ -227,8 +228,11 @@ export function ResponseDetailPage({
   }
 
   const outputPayload = parseOutputPayload(runDetail?.run.output);
+  const pageScreenshotPath = outputPayload?.artifacts?.screenshot;
+  const responseScreenshotPath =
+    outputPayload?.artifacts?.responseScreenshot ?? undefined;
   const screenshotPath =
-    runDetail?.run.evidencePath ?? outputPayload?.artifacts?.screenshot;
+    runDetail?.run.evidencePath ?? responseScreenshotPath ?? pageScreenshotPath;
   const screenshotUrl = artifactUrlFromPath(screenshotPath);
 
   if (!runDetail) {
@@ -300,8 +304,7 @@ export function ResponseDetailPage({
                 {runDetail.run.channelName
                   ? ` | ${runDetail.run.channelName}`
                   : ""}{" "}
-                |{" "}
-                {titleCase(runDetail.run.status)} |{" "}
+                | {titleCase(runDetail.run.status)} |{" "}
                 {formatFreshness(runDetail.run.startedAt)}
               </CardDescription>
             </CardHeader>
@@ -524,7 +527,24 @@ export function ResponseDetailPage({
                   Technical artifacts
                 </summary>
                 <div className="text-muted-foreground mt-3 space-y-2">
-                  <ArtifactRow label="Screenshot" filePath={screenshotPath} />
+                  <ArtifactRow
+                    label="Evidence screenshot"
+                    filePath={screenshotPath}
+                  />
+                  {responseScreenshotPath &&
+                  responseScreenshotPath !== screenshotPath ? (
+                    <ArtifactRow
+                      label="Response screenshot"
+                      filePath={responseScreenshotPath}
+                    />
+                  ) : null}
+                  {pageScreenshotPath &&
+                  pageScreenshotPath !== screenshotPath ? (
+                    <ArtifactRow
+                      label="Page screenshot"
+                      filePath={pageScreenshotPath}
+                    />
+                  ) : null}
                   <ArtifactRow
                     label="Video"
                     filePath={outputPayload?.artifacts?.video ?? undefined}

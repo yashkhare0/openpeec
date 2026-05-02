@@ -29,9 +29,18 @@
     "runner:open-session": "node runner/open-session-window.mjs",
     "runner:install-browsers": "playwright install chromium",
     "runner:install-camoufox": "${CAMOUFOX_PYTHON:-python3} -m pip install -U 'camoufox[geoip]' && ${CAMOUFOX_PYTHON:-python3} -m camoufox fetch",
+    "runner:install-nodriver": "node runner/install-nodriver.mjs",
+    "runner:nodriver:fixture": "node runner/run-monitor.mjs --config runner/example.nodriver-fixture.json --output runner/last-run.nodriver.json && node runner/assert-nodriver-fixture-result.mjs runner/last-run.nodriver.json",
+    "runner:nodriver:fixture:docker": "node runner/run-monitor.mjs --config runner/example.nodriver-fixture.docker.json --output runner/last-run.nodriver.json && node runner/assert-nodriver-fixture-result.mjs runner/last-run.nodriver.json",
     "runner:stealth-smoke": "node runner/stealth-smoke.mjs --engine camoufox",
     "runner:queue": "node runner/process-queued-runs.mjs --config runner/example.monitor.json --poll-interval-ms 1000 --headed",
-    "runner:queue:once": "node runner/process-queued-runs.mjs --config runner/example.monitor.json --once --headed"
+    "runner:queue:once": "node runner/process-queued-runs.mjs --config runner/example.monitor.json --once --headed",
+    "runner:queue:docker": "node runner/process-queued-runs.mjs --config runner/example.monitor.docker.json --poll-interval-ms 1000",
+    "runner:queue:docker:once": "node runner/process-queued-runs.mjs --config runner/example.monitor.docker.json --once",
+    "runner:queue:nodriver": "node runner/process-queued-runs.mjs --config runner/example.nodriver-chatgpt.json --poll-interval-ms 1000",
+    "runner:queue:nodriver:once": "node runner/process-queued-runs.mjs --config runner/example.nodriver-chatgpt.json --once",
+    "docker:dev": "docker compose up --build",
+    "docker:nodriver:fixture": "docker compose run --build --rm runner-nodriver"
   },
   "dependencies": {
     "@convex-dev/crons": "^0.1.9",

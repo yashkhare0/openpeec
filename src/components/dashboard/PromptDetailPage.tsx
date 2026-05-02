@@ -129,6 +129,7 @@ export function PromptDetailPage({
           responseCount: number;
         }>;
       }
+    | null
     | undefined;
   onBack: () => void;
   selectedRunId: Id<"promptRuns"> | null;

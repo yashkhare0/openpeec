@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { cn } from "@/lib/utils";
 
 type RangeOption = { label: string; days: number };
 type ProviderOption = { label: string; value: string };
@@ -94,18 +95,35 @@ export function SiteHeader({
       <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
           {breadcrumbs?.length ? (
-            <Breadcrumb>
-              <BreadcrumbList>
+            <Breadcrumb className="min-w-0">
+              <BreadcrumbList className="min-w-0 flex-nowrap overflow-hidden">
                 {breadcrumbs.map((item, index) => {
                   const isLast = index === breadcrumbs.length - 1;
                   return (
                     <div key={`${item.label}-${index}`} className="contents">
-                      <BreadcrumbItem>
+                      <BreadcrumbItem
+                        className={cn(
+                          "min-w-0",
+                          index === 0 ? "shrink-0" : "flex-1"
+                        )}
+                      >
                         {isLast || !item.onClick ? (
-                          <BreadcrumbPage>{item.label}</BreadcrumbPage>
+                          <BreadcrumbPage
+                            className="block truncate"
+                            title={item.label}
+                          >
+                            {item.label}
+                          </BreadcrumbPage>
                         ) : (
-                          <BreadcrumbLink asChild>
-                            <button type="button" onClick={item.onClick}>
+                          <BreadcrumbLink
+                            asChild
+                            className="block min-w-0 truncate"
+                          >
+                            <button
+                              type="button"
+                              title={item.label}
+                              onClick={item.onClick}
+                            >
                               {item.label}
                             </button>
                           </BreadcrumbLink>

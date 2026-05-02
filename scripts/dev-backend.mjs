@@ -126,11 +126,47 @@ async function reuseExistingBackend(convexUrl) {
 }
 
 function runConvexDev() {
+  // Keep pnpm dev non-interactive when Convex needs to migrate the local backend binary.
+  const args = [
+    "exec",
+    "convex",
+    "dev",
+    "--local",
+    "--tail-logs",
+    "--local-force-upgrade",
+  ];
+  const envFile = process.env.OPENPEEC_CONVEX_ENV_FILE?.trim();
+  const localCloudPort = process.env.OPENPEEC_CONVEX_LOCAL_CLOUD_PORT?.trim();
+  const localSitePort = process.env.OPENPEEC_CONVEX_LOCAL_SITE_PORT?.trim();
+
+  if (process.env.OPENPEEC_CONVEX_CONFIGURE_LOCAL === "1") {
+    args.push("--configure", "new", "--dev-deployment", "local");
+  }
+
+  if (envFile) {
+    args.push("--env-file", envFile);
+  }
+
+  if (localCloudPort || localSitePort) {
+    if (!localCloudPort || !localSitePort) {
+      console.error(
+        "[dev:backend] OPENPEEC_CONVEX_LOCAL_CLOUD_PORT and OPENPEEC_CONVEX_LOCAL_SITE_PORT must be set together."
+      );
+      process.exit(1);
+    }
+    args.push(
+      "--local-cloud-port",
+      localCloudPort,
+      "--local-site-port",
+      localSitePort
+    );
+  }
+
   const child =
     process.platform === "win32"
       ? spawn(
           process.env.ComSpec ?? "cmd.exe",
-          ["/d", "/s", "/c", "pnpm.cmd exec convex dev --local --tail-logs"],
+          ["/d", "/s", "/c", `pnpm.cmd ${args.join(" ")}`],
           {
             cwd: process.cwd(),
             stdio: "inherit",
@@ -138,7 +174,7 @@ function runConvexDev() {
             env: process.env,
           }
         )
-      : spawn("pnpm", ["exec", "convex", "dev", "--local", "--tail-logs"], {
+      : spawn("pnpm", args, {
           cwd: process.cwd(),
           stdio: "inherit",
           shell: false,
@@ -163,6 +199,14 @@ function runConvexDev() {
 
 async function main() {
   const convexUrl = await resolveConvexUrl();
+  const convexDeployment = await resolveEnvValue("CONVEX_DEPLOYMENT");
+  if (
+    convexDeployment?.startsWith("anonymous:") &&
+    !process.env.CONVEX_AGENT_MODE
+  ) {
+    process.env.CONVEX_AGENT_MODE = "anonymous";
+  }
+
   let warnedAboutForeignBackend = false;
 
   while (true) {

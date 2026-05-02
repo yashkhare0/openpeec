@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -12,10 +13,12 @@ import {
 } from "./anti-bot-detector.mjs";
 import {
   CAMOUFOX_ENGINE,
+  NODRIVER_ENGINE,
   browserEngineRunnerName,
   getBrowserEnginePreflight,
   launchRunnerBrowserContext,
   normalizeBrowserEngine,
+  resolveNodriverPython,
 } from "./browser-engine.mjs";
 import {
   DEFAULT_DOMAIN_HOPS,
@@ -25,6 +28,7 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DEFAULT_LOCAL_CONVEX_URL = "http://127.0.0.1:3210";
+const NODRIVER_WORKER_SCRIPT = path.join(__dirname, "nodriver-worker.py");
 
 function parseArgs(argv) {
   const args = {
@@ -677,6 +681,7 @@ export function normalizeRunnerConfig(rawConfig) {
       userDataDir,
       storageStatePath,
       camoufox: browser.camoufox ?? rawConfig.camoufox ?? {},
+      nodriver: browser.nodriver ?? rawConfig.nodriver ?? {},
     },
     authProfile: sessionMode === "stored" ? rawConfig.authProfile : undefined,
     navigation: {
@@ -906,6 +911,44 @@ async function dismissCookieBanner(page) {
   return false;
 }
 
+const CHATGPT_LOGGED_OUT_UPSELL_SELECTORS = [
+  "button:has-text('Stay logged out')",
+  "a:has-text('Stay logged out')",
+  "[role='button']:has-text('Stay logged out')",
+  "[role='link']:has-text('Stay logged out')",
+  "text=/^\\s*Stay logged out\\s*$/i",
+];
+
+export async function dismissChatGptLoggedOutUpsell(page, options = {}) {
+  const timeoutMs = options.timeoutMs ?? 2500;
+  const settleMs = options.settleMs ?? 300;
+
+  for (const selector of CHATGPT_LOGGED_OUT_UPSELL_SELECTORS) {
+    const control = page.locator(selector).first();
+    const exists = await control.count().catch(() => 0);
+    if (!exists) {
+      continue;
+    }
+
+    const visible = await control.isVisible().catch(() => false);
+    if (!visible) {
+      continue;
+    }
+
+    try {
+      await control.click({ timeout: timeoutMs });
+      if (settleMs > 0) {
+        await page.waitForTimeout(settleMs);
+      }
+      return { dismissed: true, selector };
+    } catch {
+      continue;
+    }
+  }
+
+  return { dismissed: false, selector: null };
+}
+
 async function isPromptComposerVisible(page, selector) {
   const input = page.locator(selector).first();
   const exists = await input.count().catch(() => 0);
@@ -923,6 +966,7 @@ async function waitForChatGptComposer(page, config, networkEvents) {
 
   while (Date.now() < deadline) {
     await dismissCookieBanner(page);
+    await dismissChatGptLoggedOutUpsell(page);
 
     const promptVisible = await isPromptComposerVisible(
       page,
@@ -996,13 +1040,17 @@ async function waitForAssistantResponse(page, config, networkEvents) {
   const response = page
     .locator(config.extraction.responseContainerSelector)
     .first();
+  let dismissedLoggedOutUpsell = false;
 
   while (Date.now() < deadline) {
+    const dismissal = await dismissChatGptLoggedOutUpsell(page);
+    dismissedLoggedOutUpsell ||= dismissal.dismissed;
+
     const responseVisible =
       (await response.count().catch(() => 0)) > 0 &&
       (await response.isVisible().catch(() => false));
     if (responseVisible) {
-      return { ok: true };
+      return { ok: true, dismissedLoggedOutUpsell };
     }
 
     const promptVisible = await isPromptComposerVisible(
@@ -1024,6 +1072,7 @@ async function waitForAssistantResponse(page, config, networkEvents) {
         ok: false,
         status: "blocked",
         reason: pageState.reason,
+        dismissedLoggedOutUpsell,
       };
     }
 
@@ -1034,80 +1083,89 @@ async function waitForAssistantResponse(page, config, networkEvents) {
     ok: false,
     status: "failed",
     reason: `Response did not start within ${timeoutMs}ms.`,
+    dismissedLoggedOutUpsell,
   };
 }
 
-async function extractResponseAndCitations(page, config) {
-  const payload = await page.evaluate(
-    ({
-      responseContainerSelector,
-      responseTextSelector,
-      citationLinkSelector,
-      maxCitations,
-    }) => {
-      const fallbackContainer = document.querySelector("main") ?? document.body;
-      const explicitResponseContainer = document.querySelector(
-        responseContainerSelector
-      );
-      const responseContainer = explicitResponseContainer ?? fallbackContainer;
-      const responseContainerFound = Boolean(explicitResponseContainer);
+async function isAssistantResponseStreaming(page) {
+  const stopControl = page
+    .locator(
+      [
+        "button[data-testid='stop-button']",
+        "button[aria-label*='Stop']",
+        "button[aria-label*='stop']",
+        "button[aria-label*='stream']",
+      ].join(", ")
+    )
+    .first();
 
-      const responseTextNode = responseContainer.matches?.(responseTextSelector)
-        ? responseContainer
-        : (responseContainer.querySelector?.(responseTextSelector) ??
-          responseContainer);
-
-      const responseText = (responseTextNode?.innerText ?? "").trim();
-      const rawLinks = responseContainerFound
-        ? Array.from(
-            responseContainer.querySelectorAll(citationLinkSelector)
-          ).slice(0, maxCitations)
-        : [];
-
-      const citations = rawLinks.map((anchor, index) => {
-        const href = anchor.getAttribute("href") ?? "";
-        const absoluteUrl = href
-          ? new URL(href, window.location.href).toString()
-          : window.location.href;
-
-        const nearestTextContainer =
-          anchor.closest("li, article, section, div, p") ?? anchor;
-
-        return {
-          index: index + 1,
-          url: absoluteUrl,
-          rawTitle:
-            (anchor.textContent ?? anchor.getAttribute("aria-label") ?? "")
-              .replace(/\s+/g, " ")
-              .trim() || absoluteUrl,
-          snippet: (nearestTextContainer.textContent ?? "")
-            .replace(/\s+/g, " ")
-            .trim()
-            .slice(0, 260),
-        };
-      });
-
-      return {
-        pageTitle: document.title,
-        finalUrl: window.location.href,
-        responseContainerFound,
-        responseText: responseText || fallbackContainer.innerText || "",
-        responseHtml: responseContainer.outerHTML ?? "",
-        citations,
-      };
-    },
-    {
-      responseContainerSelector: config.extraction.responseContainerSelector,
-      responseTextSelector: config.extraction.responseTextSelector,
-      citationLinkSelector: config.extraction.citationLinkSelector,
-      maxCitations: config.extraction.maxCitations,
-    }
+  return (
+    (await stopControl.count().catch(() => 0)) > 0 &&
+    (await stopControl.isVisible().catch(() => false))
   );
+}
 
+async function waitForStableAssistantResponse(page, config) {
+  const responseTimeoutMs = config.timing.responseTimeoutMs ?? 300000;
+  const timeoutMs = clamp(
+    Math.floor(
+      config.timing.responseStableTimeoutMs ??
+        Math.min(responseTimeoutMs, 120000)
+    ),
+    5000,
+    responseTimeoutMs
+  );
+  const stableMs = clamp(
+    Math.floor(config.timing.responseStableMs ?? 3500),
+    1000,
+    timeoutMs
+  );
+  const deadline = Date.now() + timeoutMs;
+  let latestExtracted = null;
+  let lastText = "";
+  let stableSince = 0;
+  let dismissedLoggedOutUpsell = false;
+
+  while (Date.now() < deadline) {
+    const dismissal = await dismissChatGptLoggedOutUpsell(page);
+    dismissedLoggedOutUpsell ||= dismissal.dismissed;
+
+    latestExtracted = await extractResponseAndCitations(page, config).catch(
+      () => null
+    );
+    const responseText = latestExtracted?.responseText ?? "";
+    const streaming = await isAssistantResponseStreaming(page);
+
+    if (responseText && responseText === lastText && !streaming) {
+      stableSince ||= Date.now();
+      if (Date.now() - stableSince >= stableMs) {
+        return {
+          ok: true,
+          extracted: latestExtracted,
+          dismissedLoggedOutUpsell,
+        };
+      }
+    } else {
+      lastText = responseText;
+      stableSince = 0;
+    }
+
+    await page.waitForTimeout(750);
+  }
+
+  return {
+    ok: false,
+    extracted: latestExtracted,
+    reason: `Response text did not stabilize within ${timeoutMs}ms.`,
+    dismissedLoggedOutUpsell,
+  };
+}
+
+export function normalizeExtractedPayload(payload) {
   const seen = new Set();
   const citations = [];
   const sourceArtifacts = [];
-  for (const item of payload.citations) {
+  for (const item of payload.citations ?? []) {
     const originalUrl = normalizeText(item.url);
     const url = canonicalizeCitationUrl(originalUrl);
     if (!url || seen.has(url)) {
@@ -1141,14 +1199,116 @@ async function extractResponseAndCitations(page, config) {
   }
 
   return {
-    pageTitle: payload.pageTitle,
-    finalUrl: payload.finalUrl,
-    responseContainerFound: payload.responseContainerFound,
+    pageTitle: payload.pageTitle ?? "",
+    finalUrl: payload.finalUrl ?? "",
+    responseContainerFound: Boolean(payload.responseContainerFound),
     responseText: normalizeText(payload.responseText),
-    responseHtml: payload.responseHtml,
+    responseHtml: payload.responseHtml ?? "",
     citations,
     sourceArtifacts,
   };
+}
+
+export async function extractResponseAndCitations(page, config) {
+  const payload = await page.evaluate(
+    ({
+      responseContainerSelector,
+      responseTextSelector,
+      citationLinkSelector,
+      maxCitations,
+    }) => {
+      const fallbackContainer = document.querySelector("main") ?? document.body;
+      const explicitResponseContainer = document.querySelector(
+        responseContainerSelector
+      );
+      const responseContainer = explicitResponseContainer ?? fallbackContainer;
+      const responseContainerFound = Boolean(explicitResponseContainer);
+
+      const responseTextNode = responseContainer.matches?.(responseTextSelector)
+        ? responseContainer
+        : (responseContainer.querySelector?.(responseTextSelector) ??
+          responseContainer);
+
+      const responseText = (
+        responseTextNode?.innerText ??
+        responseTextNode?.textContent ??
+        ""
+      ).trim();
+      const rawLinks = responseContainerFound
+        ? Array.from(
+            responseContainer.querySelectorAll(citationLinkSelector)
+          ).slice(0, maxCitations)
+        : [];
+
+      const citations = rawLinks.map((anchor, index) => {
+        const href = anchor.getAttribute("href") ?? "";
+        const absoluteUrl = href
+          ? new URL(href, window.location.href).toString()
+          : window.location.href;
+
+        const nearestTextContainer =
+          anchor.closest("li, article, section, div, p") ?? anchor;
+
+        return {
+          index: index + 1,
+          url: absoluteUrl,
+          rawTitle:
+            (anchor.textContent ?? anchor.getAttribute("aria-label") ?? "")
+              .replace(/\s+/g, " ")
+              .trim() || absoluteUrl,
+          snippet: (nearestTextContainer.textContent ?? "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 260),
+        };
+      });
+
+      return {
+        pageTitle: document.title,
+        finalUrl: window.location.href,
+        responseContainerFound,
+        responseText:
+          responseText ||
+          fallbackContainer.innerText ||
+          fallbackContainer.textContent ||
+          "",
+        responseHtml: responseContainer.outerHTML ?? "",
+        citations,
+      };
+    },
+    {
+      responseContainerSelector: config.extraction.responseContainerSelector,
+      responseTextSelector: config.extraction.responseTextSelector,
+      citationLinkSelector: config.extraction.citationLinkSelector,
+      maxCitations: config.extraction.maxCitations,
+    }
+  );
+
+  return normalizeExtractedPayload(payload);
+}
+
+export async function captureResponseScreenshot(
+  page,
+  config,
+  responseScreenshotPath
+) {
+  const response = page
+    .locator(config.extraction.responseContainerSelector)
+    .first();
+  const responseFound = (await response.count().catch(() => 0)) > 0;
+  if (!responseFound) {
+    return null;
+  }
+
+  const responseVisible = await response.isVisible().catch(() => false);
+  if (!responseVisible) {
+    return null;
+  }
+
+  await response.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(250).catch(() => {});
+  await response.screenshot({ path: responseScreenshotPath, timeout: 15000 });
+  return responseScreenshotPath;
 }
 
 function computeAnalytics(resultFields) {
@@ -1279,6 +1439,313 @@ async function ingestRunIfRequested(config, result, shouldIngest) {
   return { ok: false, skipped: "No ingestion path succeeded" };
 }
 
+function collectProcessOutput(child, input, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      reject(new Error(`Process timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    child.stdout?.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.on("exit", (code) => {
+      clearTimeout(timeout);
+      resolve({ code, stdout, stderr });
+    });
+    child.stdin?.end(input);
+  });
+}
+
+function parseWorkerJson(stdout) {
+  const trimmed = String(stdout ?? "").trim();
+  if (!trimmed) {
+    throw new Error("Nodriver worker did not return JSON.");
+  }
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const start = trimmed.indexOf("{");
+    if (start === -1) {
+      throw new Error("Nodriver worker did not return a JSON object.");
+    }
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < trimmed.length; index += 1) {
+      const char = trimmed[index];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+      if (inString) {
+        continue;
+      }
+      if (char === "{") {
+        depth += 1;
+      } else if (char === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          return JSON.parse(trimmed.slice(start, index + 1));
+        }
+      }
+    }
+    throw new Error("Nodriver worker returned incomplete JSON.");
+  }
+}
+
+async function invokeNodriverWorker(payload, config) {
+  const python = resolveNodriverPython(config.browser);
+  const child = spawn(python, [NODRIVER_WORKER_SCRIPT], {
+    env: {
+      ...process.env,
+      ...(config.browser.nodriver?.executablePath
+        ? {
+            OPENPEEC_NODRIVER_BROWSER_PATH:
+              config.browser.nodriver.executablePath,
+          }
+        : {}),
+      OPENPEEC_NODRIVER_ARTIFACTS_DIR:
+        config.browser.nodriver?.artifactsDir ??
+        path.resolve(__dirname, "artifacts"),
+    },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const timeoutMs = Math.max(
+    30_000,
+    Math.floor(
+      (config.navigation.timeoutMs ?? 30_000) +
+        (config.timing.responseTimeoutMs ?? 300_000) +
+        15_000
+    )
+  );
+  const result = await collectProcessOutput(
+    child,
+    JSON.stringify(payload),
+    timeoutMs
+  );
+
+  try {
+    return {
+      worker: parseWorkerJson(result.stdout),
+      stderr: result.stderr.trim(),
+      code: result.code,
+    };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Nodriver worker parse failed.";
+    throw new Error(
+      `${message}${result.stderr.trim() ? ` ${result.stderr.trim()}` : ""}`
+    );
+  }
+}
+
+async function runNodriverMonitor(normalizedConfig, options, initialWarnings) {
+  const startedAt = Date.now();
+  const deepLinkUrl = buildDeepLinkUrl(normalizedConfig);
+  if (!deepLinkUrl) {
+    throw new Error("Missing navigation.url (or deepLink.url)");
+  }
+  ensureWebDeepLink(deepLinkUrl);
+
+  const artifactsDir = path.resolve(__dirname, "artifacts");
+  await fs.mkdir(artifactsDir, { recursive: true });
+  const monitorSlug = sanitizeForFilename(normalizedConfig.runLabel);
+  const runDir = path.join(artifactsDir, `${monitorSlug}-${startedAt}`);
+  await fs.mkdir(runDir, { recursive: true });
+
+  const warnings = [
+    ...initialWarnings,
+    "Nodriver is enabled as an experimental local-only runner engine.",
+  ];
+  const persistentProfileDir = normalizedConfig.browser.userDataDir
+    ? resolvePathIfRelative(normalizedConfig.browser.userDataDir)
+    : null;
+  if (normalizedConfig.authProfile || normalizedConfig.sessionJson) {
+    warnings.push(
+      "Nodriver spike does not apply provider auth material; use it only with local fixture configs."
+    );
+  }
+
+  let workerPayload = null;
+  try {
+    const result = await invokeNodriverWorker(
+      {
+        config: normalizedConfig,
+        deeplinkUrl: deepLinkUrl,
+        runDir,
+        headed: Boolean(options.headed),
+      },
+      normalizedConfig
+    );
+    workerPayload = result.worker;
+    if (result.stderr && workerPayload.status !== "success") {
+      warnings.push(`Nodriver stderr: ${summarizeText(result.stderr, 300)}`);
+    }
+  } catch (error) {
+    workerPayload = {
+      status: "failed",
+      summary: error instanceof Error ? error.message : "Nodriver failed.",
+      fallbackUsed: true,
+      warnings: ["Nodriver worker failed before completing the run."],
+      citations: [],
+      artifacts: {
+        runDir,
+        result: path.join(runDir, "result.json"),
+      },
+    };
+  }
+
+  warnings.push(...(workerPayload.warnings ?? []));
+  const extracted = normalizeExtractedPayload({
+    pageTitle: workerPayload.pageTitle,
+    finalUrl: workerPayload.finalUrl ?? deepLinkUrl,
+    responseContainerFound: Boolean(workerPayload.responseText),
+    responseText: workerPayload.responseText ?? "",
+    responseHtml: workerPayload.responseHtml ?? "",
+    citations: workerPayload.citations ?? [],
+  });
+
+  let status = workerPayload.status ?? "failed";
+  let summary = workerPayload.summary ?? "Nodriver run completed.";
+  let fallbackUsed = Boolean(workerPayload.fallbackUsed);
+  let responseText = extracted.responseText;
+  let responseSummary = status === "success" ? "" : summary;
+  let citations = extracted.citations;
+  let sourceArtifacts = extracted.sourceArtifacts;
+  let sourceCount = undefined;
+  let visibilityScore = undefined;
+  let citationQualityScore = undefined;
+  let averageCitationPosition = undefined;
+
+  const blockerReason = getAccessBlockerReason(
+    workerPayload.pageTitle,
+    workerPayload.bodyText || workerPayload.responseText,
+    {
+      html: workerPayload.pageHtml,
+      url: workerPayload.finalUrl,
+    }
+  );
+  if (blockerReason) {
+    status = "blocked";
+    fallbackUsed = true;
+    summary = blockerReason;
+    responseText = "";
+    responseSummary = summary;
+    citations = [];
+    sourceArtifacts = [];
+    warnings.push(
+      "Access blocker detected by nodriver; metrics are not treated as a valid monitoring run."
+    );
+  }
+
+  if (
+    status === "success" &&
+    normalizedConfig.prompt.text &&
+    !responseText &&
+    citations.length === 0
+  ) {
+    status = "failed";
+    fallbackUsed = true;
+    summary =
+      "Nodriver prompt flow completed but no response/citations were extracted.";
+    responseSummary = summary;
+  }
+
+  if (status === "success") {
+    const metrics = computeAnalytics({ responseText, citations });
+    responseSummary = metrics.responseSummary;
+    sourceCount = metrics.sourceCount;
+    visibilityScore = metrics.visibilityScore;
+    citationQualityScore = metrics.citationQualityScore;
+    averageCitationPosition = metrics.averageCitationPosition;
+  }
+
+  const artifacts = {
+    runDir,
+    screenshot: workerPayload.artifacts?.screenshot ?? null,
+    responseScreenshot: workerPayload.artifacts?.responseScreenshot ?? null,
+    trace: workerPayload.artifacts?.trace ?? null,
+    video: workerPayload.artifacts?.video ?? null,
+    pageHtml: workerPayload.artifacts?.pageHtml ?? null,
+    responseHtml: workerPayload.artifacts?.responseHtml ?? null,
+    sources: workerPayload.artifacts?.sources ?? null,
+    network: workerPayload.artifacts?.network ?? null,
+    console: workerPayload.artifacts?.console ?? null,
+    result: workerPayload.artifacts?.result ?? path.join(runDir, "result.json"),
+  };
+  const output = {
+    title: extracted.pageTitle || workerPayload.pageTitle || "",
+    finalUrl: extracted.finalUrl || workerPayload.finalUrl || deepLinkUrl,
+    screenshot: artifacts.screenshot,
+    browser: {
+      engine: NODRIVER_ENGINE,
+      channel: normalizedConfig.browser.channel,
+      userAgent: null,
+      persistentProfileDir,
+      storageStatePath: normalizedConfig.browser.storageStatePath,
+    },
+    responseContainerSelector:
+      normalizedConfig.extraction.responseContainerSelector,
+    citationsExtracted: citations.length,
+    sourcesRecorded: sourceArtifacts.length,
+    artifacts,
+  };
+  const finishedAt = Date.now();
+  const result = {
+    schemaVersion: 2,
+    monitorId: normalizedConfig.monitorId,
+    promptId: normalizedConfig.promptId,
+    runLabel: normalizedConfig.runLabel,
+    provider: normalizedConfig.provider,
+    platform: normalizedConfig.platform,
+    status,
+    startedAt,
+    finishedAt,
+    latencyMs: finishedAt - startedAt,
+    summary,
+    deeplinkUsed: deepLinkUrl,
+    evidencePath: artifacts.screenshot,
+    fallbackUsed,
+    warnings,
+    responseText,
+    responseSummary,
+    sourceCount,
+    citations,
+    visibilityScore,
+    citationQualityScore,
+    averageCitationPosition,
+    output,
+  };
+
+  await writeJson(artifacts.sources, sourceArtifacts).catch(() => {});
+  await writeJson(artifacts.result, result).catch(() => {});
+
+  const ingest = await ingestRunIfRequested(
+    normalizedConfig,
+    result,
+    options.ingest
+  );
+  return { ...result, ingest };
+}
+
 export async function runMonitor(config, options = {}) {
   const normalizedConfig = normalizeRunnerConfig(config);
   const warnings = [];
@@ -1360,6 +1827,10 @@ export async function runMonitor(config, options = {}) {
     warnings.push(preflight.warning);
   }
 
+  if (normalizedConfig.browser.engine === NODRIVER_ENGINE) {
+    return await runNodriverMonitor(normalizedConfig, options, warnings);
+  }
+
   const startedAt = Date.now();
   let status = "success";
   let summary = "Run completed";
@@ -1396,6 +1867,7 @@ export async function runMonitor(config, options = {}) {
   let context;
   let page;
   let pageVideo = null;
+  let responseStarted = false;
   let runDir = null;
   let tracePath = null;
   let videoPath = null;
@@ -1404,6 +1876,17 @@ export async function runMonitor(config, options = {}) {
   let sourcesPath = null;
   let networkPath = null;
   let consolePath = null;
+  let loggedOutUpsellDismissed = false;
+
+  const noteLoggedOutUpsellDismissal = (dismissed) => {
+    if (!dismissed || loggedOutUpsellDismissed) {
+      return;
+    }
+    loggedOutUpsellDismissed = true;
+    warnings.push(
+      "ChatGPT logged-out upsell appeared; clicked Stay logged out and continued response extraction."
+    );
+  };
 
   try {
     const artifactsDir = path.resolve(__dirname, "artifacts");
@@ -1480,6 +1963,7 @@ export async function runMonitor(config, options = {}) {
     pageVideo = page.video();
     const browserUserAgent = await page.evaluate(() => navigator.userAgent);
     const screenshotPath = path.join(runDir, "page.png");
+    const responseScreenshotPath = path.join(runDir, "response.png");
     tracePath = path.join(runDir, "trace.zip");
     pageHtmlPath = path.join(runDir, "page.html");
     responseHtmlPath = path.join(runDir, "response.html");
@@ -1648,6 +2132,8 @@ export async function runMonitor(config, options = {}) {
         normalizedConfig,
         networkEvents
       );
+      responseStarted = responseStart.ok;
+      noteLoggedOutUpsellDismissal(responseStart.dismissedLoggedOutUpsell);
       if (!responseStart.ok) {
         if (responseStart.status === "blocked") {
           status = "blocked";
@@ -1664,6 +2150,20 @@ export async function runMonitor(config, options = {}) {
         }
       }
     }
+
+    if (promptSubmitted && responseStarted) {
+      const stableResponse = await waitForStableAssistantResponse(
+        page,
+        normalizedConfig
+      );
+      noteLoggedOutUpsellDismissal(stableResponse.dismissedLoggedOutUpsell);
+      if (!stableResponse.ok) {
+        warnings.push(stableResponse.reason);
+      }
+    }
+
+    const finalLoggedOutDismissal = await dismissChatGptLoggedOutUpsell(page);
+    noteLoggedOutUpsellDismissal(finalLoggedOutDismissal.dismissed);
 
     await page.waitForTimeout(normalizedConfig.timing.settleDelayMs);
 
@@ -1793,14 +2293,29 @@ export async function runMonitor(config, options = {}) {
     await writeText(pageHtmlPath, await page.content());
     await writeText(responseHtmlPath, extracted.responseHtml ?? "");
     await writeJson(sourcesPath, sourceArtifacts);
+    let responseScreenshotEvidencePath = null;
+    try {
+      responseScreenshotEvidencePath = await captureResponseScreenshot(
+        page,
+        normalizedConfig,
+        responseScreenshotPath
+      );
+    } catch (error) {
+      warnings.push(
+        `Response screenshot failed: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`
+      );
+    }
     await page.screenshot({ path: screenshotPath, fullPage: true });
-    evidencePath = screenshotPath;
-    output.screenshot = screenshotPath;
+    evidencePath = responseScreenshotEvidencePath ?? screenshotPath;
+    output.screenshot = evidencePath;
     output.citationsExtracted = citations.length;
     output.sourcesRecorded = sourceArtifacts.length;
     output.artifacts = {
       runDir,
       screenshot: screenshotPath,
+      responseScreenshot: responseScreenshotEvidencePath,
       trace: tracePath,
       video: null,
       pageHtml: pageHtmlPath,

@@ -20,6 +20,12 @@ const vRunStatus = v.union(
   v.literal("failed")
 );
 
+const vBrowserEngine = v.union(
+  v.literal("playwright"),
+  v.literal("camoufox"),
+  v.literal("nodriver")
+);
+
 const vEntityKind = v.union(
   v.literal("brand"),
   v.literal("competitor"),
@@ -44,6 +50,7 @@ type CitationDoc = Doc<"citations">;
 type TrackedEntityDoc = Doc<"trackedEntities">;
 type RunEntityMentionDoc = Doc<"runEntityMentions">;
 type PatchObject = Record<string, unknown>;
+type BrowserEngine = "playwright" | "camoufox" | "nodriver";
 
 const crons = new Crons(components.crons);
 
@@ -139,6 +146,26 @@ function providerSnapshot(provider: ProviderDoc) {
     submitStrategy:
       provider.submitStrategy ?? defaults?.submitStrategy ?? "type",
   };
+}
+
+function runnerNameMatchesEngine(
+  runner: string | undefined,
+  browserEngine: BrowserEngine
+) {
+  return runner?.includes(browserEngine) ?? false;
+}
+
+function runMatchesWorkerEngine(
+  run: Pick<PromptRunDoc, "browserEngine" | "runner">,
+  browserEngine: BrowserEngine | undefined
+) {
+  if (!browserEngine) {
+    return true;
+  }
+  if (run.browserEngine) {
+    return run.browserEngine === browserEngine;
+  }
+  return !run.runner || runnerNameMatchesEngine(run.runner, browserEngine);
 }
 
 function sanitizeSlug(input: string): string {
@@ -444,6 +471,7 @@ async function enqueuePromptRunDocs(
   options?: {
     attempt?: number;
     retryOfRunId?: Id<"promptRuns">;
+    browserEngine?: "playwright" | "camoufox" | "nodriver";
   }
 ): Promise<number> {
   const queuedAt = Date.now();
@@ -460,6 +488,7 @@ async function enqueuePromptRunDocs(
         ctx.db.insert("promptRuns", {
           promptId: prompt._id,
           ...providerSnapshot(provider),
+          browserEngine: options?.browserEngine,
           promptExcerpt,
           status: "queued",
           attempt: options?.attempt ?? 1,
@@ -1129,10 +1158,13 @@ export const triggerSelectedPromptsNow = mutation({
   args: {
     promptIds: v.array(v.id("prompts")),
     label: v.optional(v.string()),
+    browserEngine: v.optional(vBrowserEngine),
   },
   handler: async (ctx, args) => {
     const prompts = await assertPromptIdsOwned(ctx, args.promptIds);
-    const queuedCount = await enqueuePromptRunDocs(ctx, prompts, args.label);
+    const queuedCount = await enqueuePromptRunDocs(ctx, prompts, args.label, {
+      browserEngine: args.browserEngine,
+    });
     return { queuedCount };
   },
 });
@@ -1164,6 +1196,7 @@ export const retryPromptRun = mutation({
       transport: run.transport,
       sessionMode: run.sessionMode,
       sessionProfileDir: run.sessionProfileDir,
+      browserEngine: run.browserEngine,
       promptQueryParam: run.promptQueryParam,
       submitStrategy: run.submitStrategy,
       promptExcerpt: run.promptExcerpt,
@@ -1310,24 +1343,30 @@ export const getQueueStatus = query({
 export const claimNextQueuedPromptRun = mutation({
   args: {
     runner: v.optional(v.string()),
+    browserEngine: v.optional(vBrowserEngine),
     maxConcurrent: v.optional(v.float64()),
   },
   handler: async (ctx, args) => {
     const maxConcurrent = Math.max(1, Math.floor(args.maxConcurrent ?? 2));
-    const activeRuns = await ctx.db
-      .query("promptRuns")
-      .withIndex("status_startedAt", (q) => q.eq("status", "running"))
-      .collect();
+    const activeRuns = (
+      await ctx.db
+        .query("promptRuns")
+        .withIndex("status_startedAt", (q) => q.eq("status", "running"))
+        .collect()
+    ).filter((run) => runMatchesWorkerEngine(run, args.browserEngine));
 
     if (activeRuns.length >= maxConcurrent) {
       return null;
     }
 
-    const queuedRun = await ctx.db
+    const queuedRuns = await ctx.db
       .query("promptRuns")
       .withIndex("status_startedAt", (q) => q.eq("status", "queued"))
       .order("asc")
-      .first();
+      .collect();
+    const queuedRun = queuedRuns.find((run) =>
+      runMatchesWorkerEngine(run, args.browserEngine)
+    );
 
     if (queuedRun == null) {
       return null;
@@ -1341,6 +1380,7 @@ export const claimNextQueuedPromptRun = mutation({
         responseSummary: "Prompt was deleted before the run could execute.",
         warnings: ["Prompt was deleted before execution."],
         runner: args.runner?.trim() || "local-playwright-worker",
+        browserEngine: args.browserEngine ?? queuedRun.browserEngine,
       });
       return null;
     }
@@ -1378,6 +1418,7 @@ export const claimNextQueuedPromptRun = mutation({
       startedAt,
       warnings: undefined,
       runner: args.runner?.trim() || "local-playwright-worker",
+      browserEngine: args.browserEngine ?? queuedRun.browserEngine,
     });
 
     return {
@@ -1402,6 +1443,7 @@ export const claimNextQueuedPromptRun = mutation({
         sessionProfileDir:
           queuedRun.sessionProfileDir ??
           queuedProviderSnapshot.sessionProfileDir,
+        browserEngine: queuedRun.browserEngine ?? args.browserEngine,
         promptQueryParam:
           queuedRun.promptQueryParam ?? queuedProviderSnapshot.promptQueryParam,
         submitStrategy:
@@ -1477,6 +1519,7 @@ export const completePromptRun = mutation({
     output: v.optional(v.string()),
     warnings: v.optional(v.array(v.string())),
     runner: v.optional(v.string()),
+    browserEngine: v.optional(vBrowserEngine),
     sessionMode: v.optional(v.union(v.literal("guest"), v.literal("stored"))),
     citations: v.optional(
       v.array(
@@ -1562,6 +1605,7 @@ export const completePromptRun = mutation({
       output: args.output,
       warnings: mergedWarnings.length ? mergedWarnings : undefined,
       runner: args.runner ?? run.runner,
+      browserEngine: args.browserEngine ?? run.browserEngine,
       sessionMode: args.sessionMode ?? run.sessionMode,
     });
 
@@ -1749,6 +1793,7 @@ export const ingestPromptRun = mutation({
     evidencePath: v.optional(v.string()),
     output: v.optional(v.string()),
     warnings: v.optional(v.array(v.string())),
+    browserEngine: v.optional(vBrowserEngine),
     ingestKey: v.optional(v.string()),
     citations: v.optional(
       v.array(
@@ -1841,6 +1886,7 @@ export const ingestPromptRun = mutation({
       evidencePath: args.evidencePath,
       output: args.output,
       warnings: args.warnings,
+      browserEngine: args.browserEngine,
       ingestId: args.ingestId?.trim(),
     });
 
@@ -1933,6 +1979,7 @@ export const listPromptRuns = query({
       channelName: run.channelName,
       transport: run.transport,
       sessionMode: run.sessionMode,
+      browserEngine: run.browserEngine,
       status: run.status,
       queuedAt: run.queuedAt,
       startedAt: run.startedAt,
@@ -1948,6 +1995,7 @@ export const listPromptRuns = query({
         ? run.sourceCount
         : undefined,
       runLabel: run.runLabel,
+      runner: run.runner,
       warnings: run.warnings,
       citationCount: citationMap.get(run._id)?.length ?? 0,
     }));
@@ -2137,7 +2185,11 @@ export const getPromptAnalysis = query({
     rangeDays: v.optional(v.float64()),
   },
   handler: async (ctx, args) => {
-    const prompt = await assertPromptOwnership(ctx, args.promptId);
+    const prompt = await ctx.db.get(args.promptId);
+    if (prompt == null) {
+      return null;
+    }
+
     const promptRuns = await ctx.db
       .query("promptRuns")
       .withIndex("promptId_startedAt", (q) => q.eq("promptId", args.promptId))
@@ -2185,6 +2237,7 @@ export const getPromptAnalysis = query({
         providerSlug: run.providerSlug,
         providerName: run.providerName,
         providerUrl: run.providerUrl,
+        browserEngine: run.browserEngine,
         attempt: run.attempt ?? 1,
         visibilityScore: isSuccessfulRunStatus(run.status)
           ? run.visibilityScore

@@ -6,10 +6,13 @@ import {
   Globe2,
   Link2,
   MessageSquareText,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 
 import { ModeToggle } from "@/components/ModeToggle";
 import { OpenPeecMark } from "@/components/layout/OpenPeecMark";
+import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -18,7 +21,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarRail,
   SidebarSeparator,
+  useSidebar,
 } from "@/components/ui/sidebar";
 
 type PageKey =
@@ -43,6 +48,31 @@ const pageItems: PageItem[] = [
 const navButtonClassName =
   "h-9 rounded-lg border border-transparent px-3 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground data-[active=true]:border-sidebar-border/80 data-[active=true]:bg-sidebar-accent/85 data-[active=true]:text-sidebar-foreground data-[active=true]:shadow-none group-data-[collapsible=icon]:size-9! group-data-[collapsible=icon]:p-2!";
 
+function SidebarCollapseButton() {
+  const { state, toggleSidebar, isMobile } = useSidebar();
+
+  if (isMobile) {
+    return null;
+  }
+
+  const isExpanded = state === "expanded";
+  const Icon = isExpanded ? PanelLeftClose : PanelLeftOpen;
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      aria-label={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
+      title={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
+      className="text-sidebar-foreground/60 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground group-data-[collapsible=icon]:size-9 group-data-[collapsible=icon]:rounded-lg"
+      onClick={toggleSidebar}
+    >
+      <Icon />
+    </Button>
+  );
+}
+
 export function AppSidebar({
   page,
   onPage,
@@ -54,20 +84,23 @@ export function AppSidebar({
   return (
     <Sidebar collapsible="icon" variant="inset" {...props}>
       <SidebarHeader className="px-3 pt-3 pb-2">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              size="lg"
-              tooltip="Overview"
-              className="hover:bg-sidebar-accent/45 h-10 rounded-xl px-2.5 group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:p-0!"
-              onClick={() => startTransition(() => onPage("overview"))}
-            >
-              <div className="bg-sidebar-primary/8 text-sidebar-foreground border-sidebar-border/70 flex size-8 shrink-0 items-center justify-center rounded-lg border">
-                <OpenPeecMark className="size-4" />
-              </div>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <div className="flex items-center gap-2 group-data-[collapsible=icon]:justify-center">
+          <SidebarMenu className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                size="lg"
+                tooltip="Overview"
+                className="hover:bg-sidebar-accent/45 h-10 rounded-xl px-2.5"
+                onClick={() => startTransition(() => onPage("overview"))}
+              >
+                <div className="bg-sidebar-primary/8 text-sidebar-foreground border-sidebar-border/70 flex size-8 shrink-0 items-center justify-center rounded-lg border">
+                  <OpenPeecMark className="size-5" />
+                </div>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+          <SidebarCollapseButton />
+        </div>
       </SidebarHeader>
 
       <SidebarSeparator className="mx-3" />
@@ -95,6 +128,7 @@ export function AppSidebar({
       <SidebarFooter className="gap-2 px-3 pt-2 pb-3">
         <ModeToggle className={navButtonClassName} />
       </SidebarFooter>
+      <SidebarRail />
     </Sidebar>
   );
 }

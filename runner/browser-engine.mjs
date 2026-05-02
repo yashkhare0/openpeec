@@ -9,9 +9,11 @@ import { chromium, firefox } from "playwright";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const CAMOUFOX_SERVER_SCRIPT = path.join(__dirname, "camoufox-server.py");
+const NODRIVER_WORKER_SCRIPT = path.join(__dirname, "nodriver-worker.py");
 
 export const DEFAULT_BROWSER_ENGINE = "playwright";
 export const CAMOUFOX_ENGINE = "camoufox";
+export const NODRIVER_ENGINE = "nodriver";
 export const PLAYWRIGHT_ENGINE = "playwright";
 
 const CAMOUFOX_OPTION_ALIASES = {
@@ -43,6 +45,9 @@ export function normalizeBrowserEngine(value) {
   if (["camoufox", "firefox-stealth", "stealth-firefox"].includes(normalized)) {
     return CAMOUFOX_ENGINE;
   }
+  if (["nodriver", "cdp", "undetected-chromedriver"].includes(normalized)) {
+    return NODRIVER_ENGINE;
+  }
   if (["playwright", "chromium", "chrome"].includes(normalized)) {
     return PLAYWRIGHT_ENGINE;
   }
@@ -52,7 +57,11 @@ export function normalizeBrowserEngine(value) {
 export function browserEngineRunnerName(engine, suffix = "") {
   const normalized = normalizeBrowserEngine(engine);
   const base =
-    normalized === CAMOUFOX_ENGINE ? "local-camoufox" : "local-playwright";
+    normalized === CAMOUFOX_ENGINE
+      ? "local-camoufox"
+      : normalized === NODRIVER_ENGINE
+        ? "local-nodriver"
+        : "local-playwright";
   return suffix ? `${base}-${suffix}` : base;
 }
 
@@ -67,6 +76,36 @@ export function resolveCamoufoxPython(browserOptions = {}) {
     browserOptions.camoufox?.python ??
     process.env.CAMOUFOX_PYTHON ??
     process.env.PYTHON ??
+    (bundledCodexPython && fs.existsSync(bundledCodexPython)
+      ? bundledCodexPython
+      : null) ??
+    "python3"
+  );
+}
+
+export function resolveNodriverPython(browserOptions = {}) {
+  const projectNodriverPython = path.join(
+    __dirname,
+    ".venv-nodriver",
+    "bin",
+    "python"
+  );
+  const bundledCodexPython = process.env.HOME
+    ? path.join(
+        process.env.HOME,
+        ".cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3"
+      )
+    : null;
+  const localPython312 = process.env.HOME
+    ? path.join(process.env.HOME, ".local/bin/python3.12")
+    : null;
+  return (
+    browserOptions.nodriver?.python ??
+    process.env.OPENPEEC_NODRIVER_PYTHON ??
+    process.env.NODRIVER_PYTHON ??
+    process.env.PYTHON ??
+    (fs.existsSync(projectNodriverPython) ? projectNodriverPython : null) ??
+    (localPython312 && fs.existsSync(localPython312) ? localPython312 : null) ??
     (bundledCodexPython && fs.existsSync(bundledCodexPython)
       ? bundledCodexPython
       : null) ??
@@ -118,6 +157,54 @@ function collectProcessOutput(child, timeoutMs = 15000) {
 
 export async function getBrowserEnginePreflight(browserOptions = {}) {
   const engine = normalizeBrowserEngine(browserOptions.engine);
+  if (engine === NODRIVER_ENGINE) {
+    const python = resolveNodriverPython(browserOptions);
+    const child = spawn(python, [NODRIVER_WORKER_SCRIPT, "--check"], {
+      env: {
+        ...process.env,
+        ...(browserOptions.nodriver?.executablePath
+          ? {
+              OPENPEEC_NODRIVER_BROWSER_PATH:
+                browserOptions.nodriver.executablePath,
+            }
+          : {}),
+        ...(browserOptions.nodriver?.artifactsDir
+          ? {
+              OPENPEEC_NODRIVER_ARTIFACTS_DIR:
+                browserOptions.nodriver.artifactsDir,
+            }
+          : {}),
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    try {
+      const result = await collectProcessOutput(child);
+      if (result.code === 0) {
+        return {
+          ok: true,
+          status: "success",
+          details: result.stdout.trim(),
+        };
+      }
+      return {
+        ok: false,
+        status: "blocked",
+        reason:
+          result.stderr.trim() ||
+          result.stdout.trim() ||
+          "Nodriver is not installed or Chrome/Chromium is not available.",
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        status: "blocked",
+        reason:
+          error instanceof Error ? error.message : "Nodriver preflight failed.",
+      };
+    }
+  }
+
   if (engine !== CAMOUFOX_ENGINE) {
     return { ok: true, status: "success" };
   }

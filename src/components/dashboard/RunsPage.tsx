@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Id } from "../../../convex/_generated/dataModel";
 
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -30,6 +31,8 @@ type RunRow = {
   providerUrl?: string;
   channelName?: string;
   sessionMode?: "guest" | "stored";
+  browserEngine?: BrowserEngine;
+  runner?: string;
   status: string;
   startedAt: number;
   finishedAt?: number;
@@ -41,6 +44,8 @@ type RunRow = {
   warnings?: string[];
   runLabel?: string;
 };
+
+type BrowserEngine = "playwright" | "camoufox" | "nodriver";
 
 export function RunsPage({
   loading = false,
@@ -67,7 +72,7 @@ export function RunsPage({
       if (!needle) {
         return true;
       }
-      return `${run.promptExcerpt} ${run.providerName} ${run.runLabel ?? ""} ${run.responseSummary ?? ""} ${(run.warnings ?? []).join(" ")}`
+      return `${run.promptExcerpt} ${run.providerName} ${formatBrowserEngine(resolveBrowserEngine(run))} ${run.runLabel ?? ""} ${run.responseSummary ?? ""} ${(run.warnings ?? []).join(" ")}`
         .toLowerCase()
         .includes(needle);
     });
@@ -115,6 +120,7 @@ export function RunsPage({
                     <TableRow>
                       <TableHead>Started</TableHead>
                       <TableHead>Prompt</TableHead>
+                      <TableHead>Engine</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Runtime</TableHead>
                       <TableHead className="text-right">Sources</TableHead>
@@ -155,18 +161,21 @@ export function RunsPage({
                               event.stopPropagation();
                               onOpenPrompt(run.promptId);
                             }}
-                            >
+                          >
                             <p className="font-medium">{run.promptExcerpt}</p>
                             <p className="text-muted-foreground mt-1 text-xs">
                               {run.providerName}
-                              {run.channelName
-                                ? ` · ${run.channelName}`
-                                : ""}
+                              {run.channelName ? ` · ${run.channelName}` : ""}
                               {run.sessionMode
                                 ? ` · ${formatSessionMode(run.sessionMode)}`
                                 : ""}
                             </p>
                           </button>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">
+                            {formatBrowserEngine(resolveBrowserEngine(run))}
+                          </Badge>
                         </TableCell>
                         <TableCell>
                           <span className={statusClassName(run.status)}>
@@ -234,6 +243,37 @@ function formatScore(value: number | undefined) {
     return "-";
   }
   return `${Math.round(value)}`;
+}
+
+function resolveBrowserEngine(
+  run: Pick<RunRow, "browserEngine" | "runner">
+): BrowserEngine | undefined {
+  if (run.browserEngine) {
+    return run.browserEngine;
+  }
+  if (run.runner?.includes("camoufox")) {
+    return "camoufox";
+  }
+  if (run.runner?.includes("nodriver")) {
+    return "nodriver";
+  }
+  if (run.runner?.includes("playwright")) {
+    return "playwright";
+  }
+  return undefined;
+}
+
+function formatBrowserEngine(engine: BrowserEngine | undefined) {
+  if (engine === "camoufox") {
+    return "Camoufox";
+  }
+  if (engine === "nodriver") {
+    return "Nodriver";
+  }
+  if (engine === "playwright") {
+    return "Playwright";
+  }
+  return "Unknown";
 }
 
 function statusClassName(status: string) {

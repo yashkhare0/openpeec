@@ -423,4 +423,42 @@ describe("buildRunConfig", () => {
       "runner/camoufox.storage-state.json"
     );
   });
+
+  it("propagates nodriver queue engine config without using Camoufox storage state", async () => {
+    const { buildRunConfig } =
+      await import("../runner/process-queued-runs.mjs");
+
+    const config = buildRunConfig(
+      {
+        browser: {
+          engine: "nodriver",
+          userDataDir: "runner/profiles/nodriver-chrome",
+          nodriver: {
+            executablePath: "/usr/bin/chromium",
+          },
+        },
+        navigation: {
+          url: "http://127.0.0.1:5999/nodriver-fixture.html",
+          domainHops: [],
+        },
+        prompt: {},
+      },
+      {
+        prompt: {
+          id: "prompt_123",
+          excerpt: "Fixture check",
+          promptText: "What is OpenPeec?",
+          providerSlug: "openai",
+          providerUrl: "http://127.0.0.1:5999/nodriver-fixture.html",
+        },
+        runLabel: "Fixture run",
+      }
+    );
+
+    expect(config.browser.engine).toBe("nodriver");
+    expect(config.browser.userDataDir).toBe("runner/profiles/nodriver-chrome");
+    expect(config.browser.storageStatePath).toBeUndefined();
+    expect(config.browser.nodriver.executablePath).toBe("/usr/bin/chromium");
+    expect(config.navigation.domainHops).toEqual([]);
+  });
 });

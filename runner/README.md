@@ -15,21 +15,29 @@ This is an operator tool for recurring checks, not a generic browser automation 
 
 - `pnpm runner:install-browsers`
 - `pnpm runner:install-camoufox`
+- `pnpm runner:install-nodriver`
 - `pnpm runner:capture-session`
 - `pnpm runner:open-session`
 - `pnpm runner:stealth-smoke`
+- `pnpm runner:nodriver:fixture`
+- `pnpm docker:nodriver:fixture`
 - `pnpm runner:monitor -- --config runner/example.monitor.json`
 - `pnpm runner:monitor -- --config runner/example.monitor.json --output runner/last-run.json --ingest`
 - `pnpm runner:prompt:example`
 - `pnpm runner:queue`
 - `pnpm runner:queue:once`
+- `pnpm runner:queue:docker`
+- `pnpm runner:queue:docker:once`
+- `pnpm runner:queue:nodriver`
+- `pnpm runner:queue:nodriver:once`
+- `pnpm docker:dev`
 
 ## Operator Workflow
 
 1. Install Camoufox once with `pnpm runner:install-camoufox`. Keep `pnpm runner:install-browsers` for the app e2e suite and the fallback Playwright engine.
 2. **Prime the Camoufox session once** with `pnpm runner:capture-session -- --engine camoufox`: log in or complete whatever ChatGPT needs in the opened browser. This saves a Playwright storage-state file at `runner/camoufox.storage-state.json`.
 3. If a run is blocked, repeat the capture step and retry. For debugging only, set `"sessionMode": "guest"` in the monitor config to force a fresh browser context with no stored cookies.
-4. Run a monitoring check with `pnpm runner:prompt:example`, or queue prompts from the dashboard and process them with `pnpm runner:queue` or `pnpm runner:queue:once`.
+4. Run a monitoring check with `pnpm runner:prompt:example`, or queue prompts from the dashboard and process them with `pnpm runner:queue` or `pnpm runner:queue:once`. The dashboard can queue an explicit browser engine per run; use `pnpm runner:queue` for Camoufox/default runs and `pnpm runner:queue:nodriver` for nodriver-tagged runs.
 5. The queue worker keeps one Camoufox browser server and browser context warm for the life of the worker, then runs queued prompts sequentially inside that same session. Standalone `runner:monitor` commands are one-shot and close after the run.
 6. Review `runner/last-run.json` and the evidence bundle in `runner/artifacts/<run-label>-<timestamp>/`.
 7. Inspect:
@@ -42,12 +50,22 @@ Queue runs use the configured browser engine and still capture screenshots,
 video, trace, DOM, and source artifacts.
 The dashboard Providers page exposes the same Camoufox local session opener through the Vite-only `/local-provider-session/open` endpoint. That endpoint exists for local open-source development; it launches an interactive Camoufox window, saves `runner/camoufox.storage-state.json`, and does not automate account login or verification.
 
+`pnpm docker:dev` runs the same local stack through Compose: frontend, local
+Convex, and the Camoufox queue worker. The Docker image installs Camoufox,
+nodriver, Chromium, and the browser runtime dependencies during build, so the
+runner does not fail later with a missing Camoufox package. The Docker
+Camoufox worker uses `runner/example.monitor.docker.json`, which is the same
+runner contract as `runner/example.monitor.json` but headless for containers.
+The one-shot nodriver fixture service is kept behind the `verify` Compose
+profile and still runs through `pnpm docker:nodriver:fixture`.
+
 ## Browser Engines
 
 `browser.engine` controls the runner browser:
 
 - `"camoufox"`: official Python Camoufox launched through its Playwright remote server. This is the default in `runner/example.monitor.json`. Stored sessions use `browser.storageStatePath`, not `browser.userDataDir`; the queue worker also reuses one warm Camoufox browser/context across runs.
 - `"playwright"`: regular Playwright Chromium. Stored sessions use `browser.userDataDir`, defaulting to `runner/profiles/chatgpt-chrome` for OpenAI.
+- `"nodriver"`: experimental Python nodriver adapter for local-only runner learning. It delegates from `runMonitor()` to `runner/nodriver-worker.py` and preserves the runner result/artifact contract for controlled fixtures. It is not used for Playwright e2e or as the default provider runner.
 
 Camoufox setup:
 
@@ -65,6 +83,27 @@ CAMOUFOX_PYTHON=/path/to/python3 pnpm runner:install-camoufox
 ```
 
 `pnpm runner:stealth-smoke` records a local fingerprint probe under `runner/artifacts/`. Add `-- --detectors` to also visit public detector pages, or `-- --engine all` to compare regular Playwright and Camoufox in the same run.
+
+Nodriver fixture setup:
+
+```sh
+pnpm runner:install-nodriver
+pnpm dev:frontend
+pnpm runner:nodriver:fixture
+```
+
+The fixture command is self-verifying: it fails unless the runner records the
+exact fixture response text, two expected citations, and the artifact files.
+
+`nodriver==0.48.1` needs Python 3.10+ in practice. If your system `python3`
+is older, set `OPENPEEC_NODRIVER_PYTHON=/path/to/python3.12`. The fixture is
+served from `public/nodriver-fixture.html` and intentionally avoids ChatGPT or
+other third-party provider flows. To verify the containerized full local stack,
+run:
+
+```sh
+pnpm docker:nodriver:fixture
+```
 
 ## Prompt-Oriented Config Contract
 

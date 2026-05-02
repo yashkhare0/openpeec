@@ -1,0 +1,11 @@
+.git
+node_modules
+dist
+coverage
+test-results
+playwright-report
+runner/artifacts
+runner/profiles
+runner/*.storage-state.json
+runner/last-run*.json
+.DS_Store

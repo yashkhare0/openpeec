@@ -1,0 +1,50 @@
+{
+  "runLabel": "nodriver-local-fixture",
+  "provider": "openai",
+  "platform": "web",
+  "sessionMode": "guest",
+  "browser": {
+    "engine": "nodriver",
+    "headless": true,
+    "nodriver": {
+      "noSandbox": true
+    }
+  },
+  "navigation": {
+    "url": "http://127.0.0.1:5999/nodriver-fixture.html",
+    "submitStrategy": "type",
+    "waitUntil": "domcontentloaded",
+    "timeoutMs": 30000,
+    "domainHops": []
+  },
+  "prompt": {
+    "text": "Explain OpenPeec in one sentence.",
+    "inputSelector": "div#prompt-textarea[contenteditable='true'], #prompt-textarea[contenteditable='true'], [contenteditable='true']:visible, textarea:visible",
+    "submitSelector": "button[data-testid='send-button'], button[aria-label*='Send']",
+    "submitKey": "Enter",
+    "clearExisting": true
+  },
+  "extraction": {
+    "responseContainerSelector": "[data-message-author-role='assistant']:not([data-message-id*='request-placeholder']):last-of-type",
+    "responseTextSelector": "[data-message-author-role='assistant']:not([data-message-id*='request-placeholder']):last-of-type",
+    "citationLinkSelector": "a[href]",
+    "maxCitations": 20
+  },
+  "assertions": {
+    "urlIncludes": "nodriver-fixture.html",
+    "titleIncludes": "OpenPeec Nodriver Fixture"
+  },
+  "timing": {
+    "healthCheckTimeoutMs": 15000,
+    "promptReadyTimeoutMs": 15000,
+    "responseStartTimeoutMs": 15000,
+    "responseTimeoutMs": 45000,
+    "settleDelayMs": 500,
+    "warmupGotoTimeoutMs": 30000,
+    "postHopSettleMinMs": 0,
+    "hopNetworkIdleMaxMs": 0
+  },
+  "ingest": {
+    "target": "auto"
+  }
+}

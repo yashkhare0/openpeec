@@ -221,7 +221,7 @@ export function MonitoringDashboard() {
   );
   const promptAnalysis = useQuery(
     api.analytics.getPromptAnalysis,
-    selectedPromptId
+    promptView === "prompt" && selectedPromptId
       ? { promptId: selectedPromptId, provider, rangeDays }
       : "skip"
   );

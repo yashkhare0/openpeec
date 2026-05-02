@@ -186,6 +186,7 @@ function resolveWorkerConfig(baseConfig, cliArgs) {
   );
 
   return {
+    browserEngine,
     runnerName: browserEngineRunnerName(browserEngine, "worker"),
     maxConcurrent:
       hasPersistentProfile || browserEngine === CAMOUFOX_ENGINE
@@ -404,6 +405,7 @@ async function claimNextRun(client, workerConfig, cliArgs) {
   try {
     return await client.mutation(api.analytics.claimNextQueuedPromptRun, {
       runner: workerConfig.runnerName,
+      browserEngine: workerConfig.browserEngine,
       maxConcurrent: workerConfig.maxConcurrent,
     });
   } catch (error) {
@@ -453,6 +455,7 @@ async function processClaimedRun(
       warnings: result.warnings?.length ? result.warnings : undefined,
       citations: result.citations,
       runner: workerConfig.runnerName,
+      browserEngine: workerConfig.browserEngine,
       sessionMode: runConfig.sessionMode,
     });
 

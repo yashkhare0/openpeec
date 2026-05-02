@@ -1,22 +1,45 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { createRequire } from "node:module";
 
 import {
   DEFAULT_CAMOUFOX_STORAGE_STATE_PATH,
   DEFAULT_OPENAI_USER_DATA_DIR,
+  captureResponseScreenshot,
   classifyChatGptPageState,
   detectAccessBlocker,
+  dismissChatGptLoggedOutUpsell,
+  extractResponseAndCitations,
   getAccessBlockerReason,
   isOpenAiGenerationErrorResponse,
   loadRunnerSessionMaterial,
+  normalizeExtractedPayload,
   normalizeRunnerConfig,
   parseSessionJsonMaterial,
   runMonitor,
 } from "../runner/run-monitor.mjs";
 import {
+  browserEngineRunnerName,
+  getBrowserEnginePreflight,
+  normalizeBrowserEngine,
+} from "../runner/browser-engine.mjs";
+import {
+  assertNodriverFixtureResult,
+  NODRIVER_FIXTURE_CITATIONS,
+  NODRIVER_FIXTURE_RESPONSE_TEXT,
+} from "../runner/nodriver-fixture-contract.mjs";
+import {
   detectAntiBotBlock,
   detectAntiBotNetworkBlock,
 } from "../runner/anti-bot-detector.mjs";
 import { DEFAULT_DOMAIN_HOPS } from "../runner/session-warmup.mjs";
+
+const require = createRequire(import.meta.url);
+const { JSDOM } = require("jsdom") as {
+  JSDOM: new (
+    html: string,
+    options?: { url?: string }
+  ) => { window: Window & typeof globalThis };
+};
 
 describe("detectAntiBotBlock", () => {
   it("detects structural Cloudflare challenge markup", () => {
@@ -77,6 +100,40 @@ describe("detectAccessBlocker", () => {
     expect(
       getAccessBlockerReason("ChatGPT", "Verify you are human Cloudflare")
     ).toContain("runner:capture-session");
+  });
+});
+
+describe("dismissChatGptLoggedOutUpsell", () => {
+  it("clicks Stay logged out when ChatGPT shows the logged-out upsell", async () => {
+    const click = vi.fn().mockResolvedValue(undefined);
+    const waitForTimeout = vi.fn().mockResolvedValue(undefined);
+    const visibleControl = {
+      first: () => visibleControl,
+      count: vi.fn().mockResolvedValue(1),
+      isVisible: vi.fn().mockResolvedValue(true),
+      click,
+    };
+    const emptyControl = {
+      first: () => emptyControl,
+      count: vi.fn().mockResolvedValue(0),
+      isVisible: vi.fn().mockResolvedValue(false),
+      click: vi.fn(),
+    };
+    const page = {
+      locator: vi.fn((selector: string) =>
+        selector.startsWith("button:has-text") ? visibleControl : emptyControl
+      ),
+      waitForTimeout,
+    };
+
+    await expect(
+      dismissChatGptLoggedOutUpsell(page, { settleMs: 0 })
+    ).resolves.toMatchObject({
+      dismissed: true,
+      selector: "button:has-text('Stay logged out')",
+    });
+    expect(click).toHaveBeenCalledWith({ timeout: 2500 });
+    expect(waitForTimeout).not.toHaveBeenCalled();
   });
 });
 
@@ -197,6 +254,137 @@ describe("classifyChatGptPageState", () => {
   });
 });
 
+describe("extractResponseAndCitations", () => {
+  it("records the assistant response without mixing in the logged-out upsell", async () => {
+    const html = `
+      <main>
+        <article data-message-author-role="user">Hi how are you</article>
+        <article data-message-author-role="assistant">
+          <p>Hey! I’m doing well, thanks for asking. How about you?</p>
+        </article>
+        <div role="dialog" aria-modal="true">
+          <h2>Thanks for trying ChatGPT</h2>
+          <p>Log in or sign up to get smarter responses.</p>
+          <button>Log in</button>
+          <a href="#">Stay logged out</a>
+        </div>
+      </main>
+    `;
+    const config = normalizeRunnerConfig({
+      navigation: {
+        url: "https://chatgpt.com/",
+        domainHops: [],
+      },
+      prompt: {
+        text: "Hi how are you",
+      },
+    });
+    const page = {
+      evaluate: async (callback: (args: unknown) => unknown, args: unknown) => {
+        const dom = new JSDOM(html, { url: "https://chatgpt.com/" });
+        const globalWithDom = globalThis as typeof globalThis & {
+          document?: Document;
+          window?: Window;
+        };
+        const previousDocument = globalWithDom.document;
+        const previousWindow = globalWithDom.window;
+        globalWithDom.document = dom.window.document;
+        globalWithDom.window = dom.window;
+
+        try {
+          return callback(args);
+        } finally {
+          if (previousDocument) {
+            globalWithDom.document = previousDocument;
+          } else {
+            Reflect.deleteProperty(globalWithDom, "document");
+          }
+          if (previousWindow) {
+            globalWithDom.window = previousWindow;
+          } else {
+            Reflect.deleteProperty(globalWithDom, "window");
+          }
+        }
+      },
+    };
+
+    const extracted = await extractResponseAndCitations(page, config);
+
+    expect(extracted.responseContainerFound).toBe(true);
+    expect(extracted.responseText).toBe(
+      "Hey! I’m doing well, thanks for asking. How about you?"
+    );
+    expect(extracted.responseText).not.toContain("Thanks for trying ChatGPT");
+  });
+});
+
+describe("captureResponseScreenshot", () => {
+  it("scrolls to the assistant response before capturing it", async () => {
+    const response = {
+      first: vi.fn(),
+      count: vi.fn().mockResolvedValue(1),
+      isVisible: vi.fn().mockResolvedValue(true),
+      scrollIntoViewIfNeeded: vi.fn().mockResolvedValue(undefined),
+      screenshot: vi.fn().mockResolvedValue(undefined),
+    };
+    response.first.mockReturnValue(response);
+    const page = {
+      locator: vi.fn().mockReturnValue(response),
+      waitForTimeout: vi.fn().mockResolvedValue(undefined),
+    };
+    const config = normalizeRunnerConfig({
+      navigation: {
+        url: "https://chatgpt.com/",
+        domainHops: [],
+      },
+    });
+
+    await expect(
+      captureResponseScreenshot(page, config, "/tmp/response.png")
+    ).resolves.toBe("/tmp/response.png");
+
+    expect(page.locator).toHaveBeenCalledWith(
+      config.extraction.responseContainerSelector
+    );
+    expect(response.scrollIntoViewIfNeeded).toHaveBeenCalledWith({
+      timeout: 5000,
+    });
+    expect(response.screenshot).toHaveBeenCalledWith({
+      path: "/tmp/response.png",
+      timeout: 15000,
+    });
+  });
+
+  it("skips capture when the response container is missing", async () => {
+    const response = {
+      first: vi.fn(),
+      count: vi.fn().mockResolvedValue(0),
+      isVisible: vi.fn().mockResolvedValue(false),
+      scrollIntoViewIfNeeded: vi.fn().mockResolvedValue(undefined),
+      screenshot: vi.fn().mockResolvedValue(undefined),
+    };
+    response.first.mockReturnValue(response);
+    const page = {
+      locator: vi.fn().mockReturnValue(response),
+      waitForTimeout: vi.fn().mockResolvedValue(undefined),
+    };
+    const config = normalizeRunnerConfig({
+      navigation: {
+        url: "https://chatgpt.com/",
+        domainHops: [],
+      },
+    });
+
+    await expect(
+      captureResponseScreenshot(page, config, "/tmp/response.png")
+    ).resolves.toBeNull();
+
+    expect(response.scrollIntoViewIfNeeded).not.toHaveBeenCalled();
+    expect(response.screenshot).not.toHaveBeenCalled();
+    expect(page.waitForTimeout).not.toHaveBeenCalled();
+  });
+});
+
 describe("normalizeRunnerConfig", () => {
   it("defaults openai to stored mode with the local profile directory", () => {
     const config = normalizeRunnerConfig({
@@ -295,6 +483,28 @@ describe("normalizeRunnerConfig", () => {
     );
   });
 
+  it("preserves experimental nodriver options", () => {
+    const config = normalizeRunnerConfig({
+      sessionMode: "guest",
+      navigation: {
+        url: "http://127.0.0.1:5999/nodriver-fixture.html",
+      },
+      browser: {
+        engine: "nodriver",
+        headless: true,
+        nodriver: {
+          executablePath: "/usr/bin/chromium",
+          noSandbox: true,
+        },
+      },
+    });
+
+    expect(config.browser.engine).toBe("nodriver");
+    expect(config.browser.userDataDir).toBeNull();
+    expect(config.browser.nodriver.executablePath).toBe("/usr/bin/chromium");
+    expect(config.browser.nodriver.noSandbox).toBe(true);
+  });
+
   it("defaults the provider contract to openai", () => {
     expect(
       normalizeRunnerConfig({
@@ -350,6 +560,106 @@ describe("normalizeRunnerConfig", () => {
 
     expect(config.navigation.submitStrategy).toBe("deeplink");
     expect(config.navigation.promptQueryParam).toBe("q");
+  });
+});
+
+describe("browser engine helpers", () => {
+  it("normalizes nodriver and resolves its runner name", () => {
+    expect(normalizeBrowserEngine("nodriver")).toBe("nodriver");
+    expect(browserEngineRunnerName("nodriver")).toBe("local-nodriver");
+    expect(browserEngineRunnerName("nodriver", "worker")).toBe(
+      "local-nodriver-worker"
+    );
+  });
+
+  it("fails nodriver preflight cleanly when the configured python is invalid", async () => {
+    const result = await getBrowserEnginePreflight({
+      engine: "nodriver",
+      nodriver: {
+        python: process.execPath,
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe("blocked");
+    expect(result.reason).toBeTruthy();
+  });
+});
+
+describe("normalizeExtractedPayload", () => {
+  it("maps fixture response text and citations into the runner citation contract", () => {
+    const extracted = normalizeExtractedPayload({
+      pageTitle: "OpenPeec Nodriver Fixture",
+      finalUrl: "http://127.0.0.1:5999/nodriver-fixture.html",
+      responseContainerFound: true,
+      responseText:
+        "OpenPeec tracks how a brand appears in AI answer surfaces.",
+      responseHtml: "<article>OpenPeec</article>",
+      citations: [
+        {
+          index: 1,
+          url: "https://example.com/openpeec-guide?utm_source=test",
+          rawTitle: "OpenPeec guide",
+          snippet: "Useful references: OpenPeec guide",
+        },
+      ],
+    });
+
+    expect(extracted.responseText).toContain("OpenPeec tracks");
+    expect(extracted.citations).toHaveLength(1);
+    expect(extracted.citations[0].domain).toBe("example.com");
+    expect(extracted.citations[0].url).toBe(
+      "https://example.com/openpeec-guide"
+    );
+    expect(extracted.sourceArtifacts[0].rawTitle).toBe("OpenPeec guide");
+  });
+});
+
+describe("nodriver fixture result contract", () => {
+  const fixtureCitations = NODRIVER_FIXTURE_CITATIONS as Array<{
+    domain: string;
+    title: string;
+    url: string;
+  }>;
+  const successfulFixtureResult = {
+    status: "success",
+    responseText: NODRIVER_FIXTURE_RESPONSE_TEXT,
+    sourceCount: fixtureCitations.length,
+    citations: fixtureCitations.map((citation, index) => ({
+      position: index + 1,
+      qualityScore: 100,
+      type: index === 0 ? "corporate" : "docs",
+      snippet: "Useful references: OpenPeec guide and AI visibility docs.",
+      ...citation,
+    })),
+    output: {
+      citationsExtracted: NODRIVER_FIXTURE_CITATIONS.length,
+      sourcesRecorded: NODRIVER_FIXTURE_CITATIONS.length,
+      artifacts: {},
+    },
+  };
+
+  it("passes only when the exact fixture response text was recorded", async () => {
+    await expect(
+      assertNodriverFixtureResult(successfulFixtureResult, {
+        checkArtifacts: false,
+      })
+    ).resolves.toMatchObject({
+      responseText: NODRIVER_FIXTURE_RESPONSE_TEXT,
+      citations: fixtureCitations.map((citation) => citation.url),
+    });
+  });
+
+  it("fails when the fixture response text is missing or changed", async () => {
+    await expect(
+      assertNodriverFixtureResult(
+        {
+          ...successfulFixtureResult,
+          responseText: "",
+        },
+        { checkArtifacts: false }
+      )
+    ).rejects.toThrow("Expected nodriver fixture responseText");
   });
 });
 

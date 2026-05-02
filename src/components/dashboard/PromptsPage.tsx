@@ -55,6 +55,14 @@ type PromptRow = {
   active: boolean;
 };
 
+type BrowserEngine = "camoufox" | "nodriver" | "playwright";
+
+const browserEngineOptions: Array<{ value: BrowserEngine; label: string }> = [
+  { value: "camoufox", label: "Camoufox" },
+  { value: "nodriver", label: "Nodriver" },
+  { value: "playwright", label: "Playwright" },
+];
+
 function formatPercent(value: number | undefined): string {
   if (value === undefined) return "-";
   return `${Math.round(value)}%`;
@@ -138,7 +146,11 @@ function PromptActions({
 }: {
   row: PromptRow;
   compact?: boolean;
-  onRun: (promptId: Id<"prompts">, label: string) => Promise<void>;
+  onRun: (
+    promptId: Id<"prompts">,
+    label: string,
+    browserEngine: BrowserEngine
+  ) => Promise<void>;
   onToggle: (row: PromptRow) => Promise<void>;
   onDelete: (row: PromptRow) => Promise<void>;
 }) {
@@ -159,10 +171,15 @@ function PromptActions({
         align="end"
         onClick={(event) => event.stopPropagation()}
       >
-        <DropdownMenuItem onClick={() => void onRun(row.id, row.excerpt)}>
-          <Play className="size-4" />
-          Run
-        </DropdownMenuItem>
+        {browserEngineOptions.map((option) => (
+          <DropdownMenuItem
+            key={option.value}
+            onClick={() => void onRun(row.id, row.excerpt, option.value)}
+          >
+            <Play className="size-4" />
+            Run with {option.label}
+          </DropdownMenuItem>
+        ))}
         <DropdownMenuItem onClick={() => void onToggle(row)}>
           {row.active ? "Pause" : "Resume"}
         </DropdownMenuItem>
@@ -189,7 +206,11 @@ function PromptTable({
   rows: PromptRow[];
   selectedPromptId: Id<"prompts"> | null;
   onSelectPrompt: (value: Id<"prompts"> | null) => void;
-  onRun: (promptId: Id<"prompts">, label: string) => Promise<void>;
+  onRun: (
+    promptId: Id<"prompts">,
+    label: string,
+    browserEngine: BrowserEngine
+  ) => Promise<void>;
   onToggle: (row: PromptRow) => Promise<void>;
   onDelete: (row: PromptRow) => Promise<void>;
 }) {
@@ -319,7 +340,11 @@ function PromptCompactList({
   rows: PromptRow[];
   selectedPromptId: Id<"prompts"> | null;
   onSelectPrompt: (value: Id<"prompts"> | null) => void;
-  onRun: (promptId: Id<"prompts">, label: string) => Promise<void>;
+  onRun: (
+    promptId: Id<"prompts">,
+    label: string,
+    browserEngine: BrowserEngine
+  ) => Promise<void>;
   onToggle: (row: PromptRow) => Promise<void>;
   onDelete: (row: PromptRow) => Promise<void>;
 }) {
@@ -426,6 +451,7 @@ export function PromptsPage({
   onTriggerSelectedNow: (args: {
     promptIds: Array<Id<"prompts">>;
     label?: string;
+    browserEngine?: BrowserEngine;
   }) => Promise<{ queuedCount: number }>;
 }) {
   const compactLayout = useCompactPromptsLayout();
@@ -434,16 +460,24 @@ export function PromptsPage({
   const isCreateOpen = createOpen ?? internalCreateOpen;
   const setCreateOpen = onCreateOpenChange ?? setInternalCreateOpen;
 
-  const queuePrompt = async (promptId: Id<"prompts">, label: string) => {
+  const queuePrompt = async (
+    promptId: Id<"prompts">,
+    label: string,
+    browserEngine: BrowserEngine
+  ) => {
     try {
       const result = await onTriggerSelectedNow({
         promptIds: [promptId],
         label,
+        browserEngine,
       });
+      const engineLabel =
+        browserEngineOptions.find((option) => option.value === browserEngine)
+          ?.label ?? "Selected engine";
       toast.success(
         result.queuedCount === 1
-          ? "Provider run queued."
-          : `${result.queuedCount} provider runs queued.`
+          ? `${engineLabel} run queued.`
+          : `${result.queuedCount} ${engineLabel} provider runs queued.`
       );
     } catch (error) {
       toast.error(errorMessage(error));

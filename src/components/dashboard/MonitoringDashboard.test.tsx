@@ -62,9 +62,7 @@ vi.mock("@/components/ui/sidebar", () => ({
   SidebarInset: ({ children }: { children: ReactNode }) => (
     <div>{children}</div>
   ),
-  Sidebar: ({ children }: { children: ReactNode }) => (
-    <aside>{children}</aside>
-  ),
+  Sidebar: ({ children }: { children: ReactNode }) => <aside>{children}</aside>,
   SidebarHeader: ({ children }: { children: ReactNode }) => (
     <div>{children}</div>
   ),
@@ -74,9 +72,8 @@ vi.mock("@/components/ui/sidebar", () => ({
   SidebarFooter: ({ children }: { children: ReactNode }) => (
     <div>{children}</div>
   ),
-  SidebarMenu: ({ children }: { children: ReactNode }) => (
-    <div>{children}</div>
-  ),
+  SidebarRail: () => null,
+  SidebarMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   SidebarMenuItem: ({ children }: { children: ReactNode }) => (
     <div>{children}</div>
   ),
@@ -88,6 +85,11 @@ vi.mock("@/components/ui/sidebar", () => ({
     onClick?: () => void;
   }) => <button onClick={onClick}>{children}</button>,
   SidebarSeparator: () => <hr />,
+  useSidebar: () => ({
+    state: "expanded",
+    toggleSidebar: vi.fn(),
+    isMobile: false,
+  }),
 }));
 
 vi.mock("@/components/ui/tooltip", () => ({
@@ -130,9 +132,7 @@ vi.mock("@/components/layout/SiteHeader", () => ({
 }));
 
 vi.mock("./PromptsPage", () => ({
-  PromptsPage: (props: {
-    rows: Array<{ excerpt: string }>;
-  }) => {
+  PromptsPage: (props: { rows: Array<{ excerpt: string }> }) => {
     promptsPageMock(props);
     return (
       <div>
@@ -366,5 +366,22 @@ describe("MonitoringDashboard", () => {
         searchValue: "openpeec",
       })
     );
+  });
+
+  it("does not query prompt analysis while showing a prompt run detail", async () => {
+    const { MonitoringDashboard } = await import("./MonitoringDashboard");
+    window.history.replaceState(
+      {},
+      "",
+      "/?page=prompts&prompt=prompt_missing&run=run_1&context=prompts"
+    );
+
+    render(<MonitoringDashboard />);
+
+    expect(await screen.findByText("Response Detail Surface")).toBeTruthy();
+    const promptAnalysisCalls = useQueryMock.mock.calls.filter(
+      ([name]) => name === "getPromptAnalysis"
+    );
+    expect(promptAnalysisCalls).toEqual([["getPromptAnalysis", "skip"]]);
   });
 });

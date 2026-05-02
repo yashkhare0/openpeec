@@ -5,14 +5,16 @@ test("dashboard shell loads and prompts workspace is reachable", async ({
 }) => {
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Toggle Sidebar" }).click();
+  await page
+    .getByRole("main")
+    .getByRole("button", { name: "Toggle Sidebar" })
+    .click();
   await page.getByRole("button", { name: "Prompts" }).click();
 
-  await expect(
-    page
-      .getByText("Loading analytics data...")
-      .or(page.getByPlaceholder("Search prompts..."))
-  ).toBeVisible({
+  await expect(page.getByRole("button", { name: "New prompt" })).toBeVisible({
     timeout: 15_000,
   });
+  await expect(
+    page.getByRole("columnheader", { name: "Prompt" })
+  ).toBeVisible();
 });

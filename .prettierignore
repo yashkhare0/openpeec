@@ -2,10 +2,14 @@
 convex/_generated
 dist
 node_modules
+.pnpm-store
 runner/artifacts
 runner/profiles
+runner/last-run*.json
 .tmp-vite.log
 .tmp-vite.err.log
 package-lock.json
 pnpm-lock.yaml
+Dockerfile.dev
+runner/requirements-*.txt
 *.tsbuildinfo
