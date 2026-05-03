@@ -5,44 +5,56 @@ import type { Id } from "../../../convex/_generated/dataModel";
 
 import { RunsPage } from "./RunsPage";
 
-const baseRun = {
-  _id: "run_1" as Id<"promptRuns">,
+const baseGroup = {
+  id: "run_group_1",
   promptId: "prompt_1" as Id<"prompts">,
   promptExcerpt: "Best AI visibility tools",
-  providerSlug: "openai",
-  providerName: "OpenAI",
-  channelName: "ChatGPT web",
-  sessionMode: "stored" as const,
+  runLabel: "Manual run",
   status: "success",
+  queuedAt: Date.now(),
   startedAt: Date.now(),
   finishedAt: Date.now(),
-  latencyMs: 1200,
-  responseSummary: "OpenPeec is cited in the result.",
-  citationQualityScore: 81,
   sourceCount: 3,
-  citationCount: 3,
+  citationCount: 4,
+  providers: [
+    {
+      runId: "run_1" as Id<"promptRuns">,
+      providerSlug: "openai",
+      providerName: "OpenAI",
+      channelName: "ChatGPT web",
+      sessionMode: "stored" as const,
+      browserEngine: "camoufox" as const,
+      status: "success",
+      startedAt: Date.now(),
+      finishedAt: Date.now(),
+      latencyMs: 1200,
+      responseSummary: "OpenPeec is cited in the result.",
+      sourceCount: 3,
+      citationCount: 3,
+    },
+  ],
 };
 
 describe("RunsPage", () => {
-  it("shows the queued browser engine as a run chip", () => {
+  it("shows provider engine chips on grouped runs", () => {
     render(
       <RunsPage
-        runs={[{ ...baseRun, browserEngine: "nodriver" }]}
-        selectedRunId={null}
-        onOpenRun={vi.fn()}
+        groups={[baseGroup]}
+        selectedRunGroupId={null}
+        onOpenRunGroup={vi.fn()}
         onOpenPrompt={vi.fn()}
       />
     );
 
-    expect(screen.getByText("Nodriver")).toBeTruthy();
+    expect(screen.getByText("OpenAI · Camoufox")).toBeTruthy();
   });
 
-  it("keeps prompt details under the Prompt column and engine under Engine", () => {
+  it("keeps prompt details under the Prompt column and providers under Providers", () => {
     render(
       <RunsPage
-        runs={[{ ...baseRun, browserEngine: "nodriver" }]}
-        selectedRunId={null}
-        onOpenRun={vi.fn()}
+        groups={[baseGroup]}
+        selectedRunGroupId={null}
+        onOpenRunGroup={vi.fn()}
         onOpenPrompt={vi.fn()}
       />
     );
@@ -54,19 +66,31 @@ describe("RunsPage", () => {
 
     const cells = within(dataRow!).getAllByRole("cell");
     expect(cells[1]?.textContent).toContain("Best AI visibility tools");
-    expect(cells[2]?.textContent).toBe("Nodriver");
+    expect(cells[2]?.textContent).toContain("OpenAI");
+    expect(cells[2]?.textContent).toContain("Camoufox");
   });
 
-  it("derives older run engine chips from the runner name", () => {
+  it("derives older provider engine chips from the runner name", () => {
     render(
       <RunsPage
-        runs={[{ ...baseRun, runner: "local-camoufox-worker" }]}
-        selectedRunId={null}
-        onOpenRun={vi.fn()}
+        groups={[
+          {
+            ...baseGroup,
+            providers: [
+              {
+                ...baseGroup.providers[0],
+                browserEngine: undefined,
+                runner: "local-nodriver-worker",
+              },
+            ],
+          },
+        ]}
+        selectedRunGroupId={null}
+        onOpenRunGroup={vi.fn()}
         onOpenPrompt={vi.fn()}
       />
     );
 
-    expect(screen.getByText("Camoufox")).toBeTruthy();
+    expect(screen.getByText("OpenAI · Nodriver")).toBeTruthy();
   });
 });

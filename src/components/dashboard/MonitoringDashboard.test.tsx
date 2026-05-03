@@ -34,10 +34,12 @@ vi.mock("../../../convex/_generated/api", () => ({
       listPromptResponseAnalytics: "listPromptResponseAnalytics",
       getQueueStatus: "getQueueStatus",
       listPromptRuns: "listPromptRuns",
+      listRunGroups: "listRunGroups",
       listSources: "listSources",
       getPromptAnalysis: "getPromptAnalysis",
       listTrackedEntities: "listTrackedEntities",
       getPromptRun: "getPromptRun",
+      getRunGroup: "getRunGroup",
       createPrompt: "createPrompt",
       updatePrompt: "updatePrompt",
       deletePrompt: "deletePrompt",
@@ -103,6 +105,7 @@ vi.mock("@/components/layout/SiteHeader", () => ({
     providerFilter: string;
     providerOptions: Array<{ label: string; value: string }>;
     onProviderFilter: (value: string) => void;
+    showRangeFilter?: boolean;
     showProviderFilter?: boolean;
     searchValue?: string;
     onSearchValue?: (value: string) => void;
@@ -188,14 +191,12 @@ const promptRows = [
   {
     id: "prompt_1",
     excerpt: "Best AI visibility tools",
-    providerCount: 2,
-    providerNames: ["OpenAI", "Claude"],
-    latestProviderName: "OpenAI",
     latestCitationQuality: 81,
     latestRunAt: Date.now(),
     latestStatus: "success",
     latestResponseSummary: "OpenPeec is cited in the result.",
     latestSourceCount: 3,
+    runCount: 2,
     responseCount: 3,
     sourceDiversity: 4,
     topSources: ["docs.openpeec.ai"],
@@ -282,6 +283,8 @@ describe("MonitoringDashboard", () => {
           };
         case "listPromptRuns":
           return args === "skip" ? undefined : runRows;
+        case "listRunGroups":
+          return args === "skip" ? undefined : [];
         case "listSources":
           return args === "skip"
             ? undefined
@@ -291,6 +294,8 @@ describe("MonitoringDashboard", () => {
         case "listTrackedEntities":
           return [];
         case "getPromptRun":
+          return undefined;
+        case "getRunGroup":
           return undefined;
         default:
           return undefined;
@@ -318,6 +323,7 @@ describe("MonitoringDashboard", () => {
 
     expect(siteHeaderMock).toHaveBeenCalledWith(
       expect.objectContaining({
+        showRangeFilter: false,
         showProviderFilter: false,
         providerFilter: "openai",
         providerOptions: expect.arrayContaining([
@@ -326,6 +332,10 @@ describe("MonitoringDashboard", () => {
         ]),
       })
     );
+    const promptAnalyticsCall = useQueryMock.mock.calls.find(
+      ([name]) => name === "listPromptResponseAnalytics"
+    );
+    expect(promptAnalyticsCall?.[1]).toEqual({});
 
     await waitFor(() => {
       expect(mutationFns.ensureProvidersSeeded).toHaveBeenCalledWith({});

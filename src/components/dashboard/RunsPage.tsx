@@ -22,13 +22,12 @@ import {
 import { InlineEmpty } from "./components/EmptyState";
 import { DashboardTableCardSkeleton } from "./components/LoadingState";
 
-type RunRow = {
-  _id: Id<"promptRuns">;
-  promptId: Id<"prompts">;
-  promptExcerpt: string;
+type BrowserEngine = "playwright" | "camoufox" | "nodriver";
+
+type ProviderRun = {
+  runId: Id<"promptRuns">;
   providerSlug: string;
   providerName: string;
-  providerUrl?: string;
   channelName?: string;
   sessionMode?: "guest" | "stored";
   browserEngine?: BrowserEngine;
@@ -38,45 +37,60 @@ type RunRow = {
   finishedAt?: number;
   latencyMs?: number;
   responseSummary?: string;
-  citationQualityScore?: number;
   sourceCount?: number;
   citationCount: number;
   warnings?: string[];
-  runLabel?: string;
 };
 
-type BrowserEngine = "playwright" | "camoufox" | "nodriver";
+type RunGroupRow = {
+  id: string;
+  promptId: Id<"prompts">;
+  promptExcerpt: string;
+  runLabel?: string;
+  status: string;
+  queuedAt: number;
+  startedAt: number;
+  finishedAt?: number;
+  sourceCount: number;
+  citationCount: number;
+  providers: ProviderRun[];
+};
 
 export function RunsPage({
   loading = false,
-  runs,
-  selectedRunId,
-  onOpenRun,
+  groups,
+  selectedRunGroupId,
+  onOpenRunGroup,
   onOpenPrompt,
 }: {
   loading?: boolean;
-  runs: RunRow[];
-  selectedRunId: Id<"promptRuns"> | null;
-  onOpenRun: (runId: Id<"promptRuns">) => void;
+  groups: RunGroupRow[];
+  selectedRunGroupId: string | null;
+  onOpenRunGroup: (runGroupId: string) => void;
   onOpenPrompt: (promptId: Id<"prompts">) => void;
 }) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
 
-  const filteredRuns = useMemo(() => {
+  const filteredGroups = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return runs.filter((run) => {
-      if (status !== "all" && run.status !== status) {
+    return groups.filter((group) => {
+      if (status !== "all" && group.status !== status) {
         return false;
       }
       if (!needle) {
         return true;
       }
-      return `${run.promptExcerpt} ${run.providerName} ${formatBrowserEngine(resolveBrowserEngine(run))} ${run.runLabel ?? ""} ${run.responseSummary ?? ""} ${(run.warnings ?? []).join(" ")}`
+      return `${group.promptExcerpt} ${group.runLabel ?? ""} ${group.status} ${group.providers
+        .map(
+          (run) =>
+            `${run.providerName} ${formatBrowserEngine(resolveBrowserEngine(run))} ${run.status} ${run.responseSummary ?? ""} ${(run.warnings ?? []).join(" ")}`
+        )
+        .join(" ")}`
         .toLowerCase()
         .includes(needle);
     });
-  }, [runs, search, status]);
+  }, [groups, search, status]);
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -112,44 +126,44 @@ export function RunsPage({
               </div>
             </CardHeader>
             <CardContent>
-              {filteredRuns.length === 0 ? (
+              {filteredGroups.length === 0 ? (
                 <InlineEmpty text="No runs match the current filters." />
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Started</TableHead>
+                      <TableHead>Queued</TableHead>
                       <TableHead>Prompt</TableHead>
-                      <TableHead>Engine</TableHead>
+                      <TableHead>Providers</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Runtime</TableHead>
                       <TableHead className="text-right">Sources</TableHead>
-                      <TableHead className="text-right">Citation</TableHead>
+                      <TableHead className="text-right">Citations</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredRuns.map((run) => (
+                    {filteredGroups.map((group) => (
                       <TableRow
-                        key={String(run._id)}
+                        key={group.id}
                         className={
-                          selectedRunId === run._id ? "bg-muted/30" : ""
+                          selectedRunGroupId === group.id ? "bg-muted/30" : ""
                         }
                         tabIndex={0}
-                        onClick={() => onOpenRun(run._id)}
+                        onClick={() => onOpenRunGroup(group.id)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " ") {
                             event.preventDefault();
-                            onOpenRun(run._id);
+                            onOpenRunGroup(group.id);
                           }
                         }}
                       >
                         <TableCell>
                           <div className="space-y-1">
                             <p className="font-medium">
-                              {formatFreshness(run.startedAt)}
+                              {formatFreshness(group.queuedAt)}
                             </p>
                             <p className="text-muted-foreground text-xs">
-                              {formatTimestamp(run.startedAt)}
+                              {formatTimestamp(group.queuedAt)}
                             </p>
                           </div>
                         </TableCell>
@@ -159,37 +173,45 @@ export function RunsPage({
                             className="hover:text-foreground text-left transition-colors"
                             onClick={(event) => {
                               event.stopPropagation();
-                              onOpenPrompt(run.promptId);
+                              onOpenPrompt(group.promptId);
                             }}
                           >
-                            <p className="font-medium">{run.promptExcerpt}</p>
+                            <p className="font-medium">{group.promptExcerpt}</p>
                             <p className="text-muted-foreground mt-1 text-xs">
-                              {run.providerName}
-                              {run.channelName ? ` · ${run.channelName}` : ""}
-                              {run.sessionMode
-                                ? ` · ${formatSessionMode(run.sessionMode)}`
-                                : ""}
+                              {group.runLabel ?? "Manual run"}
                             </p>
                           </button>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">
-                            {formatBrowserEngine(resolveBrowserEngine(run))}
-                          </Badge>
+                          <div className="flex max-w-[360px] flex-wrap gap-1.5">
+                            {group.providers.map((run) => (
+                              <Badge
+                                key={String(run.runId)}
+                                variant={
+                                  run.status === "success"
+                                    ? "secondary"
+                                    : "outline"
+                                }
+                              >
+                                {run.providerName} ·{" "}
+                                {formatBrowserEngine(resolveBrowserEngine(run))}
+                              </Badge>
+                            ))}
+                          </div>
                         </TableCell>
                         <TableCell>
-                          <span className={statusClassName(run.status)}>
-                            {titleCase(run.status)}
+                          <span className={statusClassName(group.status)}>
+                            {titleCase(group.status)}
                           </span>
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {formatRuntime(run)}
+                          {formatGroupRuntime(group)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {run.sourceCount ?? run.citationCount}
+                          {group.sourceCount}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {formatScore(run.citationQualityScore)}
+                          {group.citationCount}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -205,7 +227,7 @@ export function RunsPage({
 }
 
 function getRuntimeMs(
-  run: Pick<RunRow, "latencyMs" | "startedAt" | "finishedAt">
+  run: Pick<ProviderRun, "latencyMs" | "startedAt" | "finishedAt">
 ) {
   if (typeof run.latencyMs === "number") {
     return run.latencyMs;
@@ -216,10 +238,19 @@ function getRuntimeMs(
   return undefined;
 }
 
-function formatRuntime(
-  run: Pick<RunRow, "latencyMs" | "startedAt" | "finishedAt">
-) {
-  return formatDuration(getRuntimeMs(run));
+function formatGroupRuntime(group: RunGroupRow) {
+  const providerRuntime = Math.max(
+    ...group.providers
+      .map((run) => getRuntimeMs(run))
+      .filter((value): value is number => typeof value === "number")
+  );
+  if (Number.isFinite(providerRuntime)) {
+    return formatDuration(providerRuntime);
+  }
+  if (typeof group.finishedAt === "number") {
+    return formatDuration(Math.max(0, group.finishedAt - group.startedAt));
+  }
+  return "-";
 }
 
 function formatDuration(value: number | undefined) {
@@ -238,15 +269,8 @@ function formatDuration(value: number | undefined) {
   return `${minutes}m ${remainder}s`;
 }
 
-function formatScore(value: number | undefined) {
-  if (value === undefined) {
-    return "-";
-  }
-  return `${Math.round(value)}`;
-}
-
 function resolveBrowserEngine(
-  run: Pick<RunRow, "browserEngine" | "runner">
+  run: Pick<ProviderRun, "browserEngine" | "runner">
 ): BrowserEngine | undefined {
   if (run.browserEngine) {
     return run.browserEngine;
@@ -300,10 +324,6 @@ function titleCase(value: string) {
     .split("_")
     .map((item) => item.charAt(0).toUpperCase() + item.slice(1).toLowerCase())
     .join(" ");
-}
-
-function formatSessionMode(value: "guest" | "stored") {
-  return value === "stored" ? "Local profile" : "Ephemeral";
 }
 
 function formatFreshness(timestamp: number) {

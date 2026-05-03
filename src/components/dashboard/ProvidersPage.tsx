@@ -32,6 +32,8 @@ type ProviderRow = {
   active: boolean;
 };
 
+const RUNNABLE_PROVIDER_SLUGS = new Set(["openai", "google-ai-mode"]);
+
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return "Action failed.";
@@ -163,9 +165,11 @@ export function ProvidersPage({
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
       <div className="grid gap-4 px-4 lg:px-6 xl:grid-cols-2">
         {sortedProviders.map((provider) => {
-          const sessionMode = provider.sessionMode ?? "stored";
-          const isOpenAi = provider.slug === "openai";
-          const runnable = isOpenAi && provider.active;
+          const sessionMode =
+            provider.sessionMode ??
+            (provider.slug === "openai" ? "stored" : "guest");
+          const supportsStoredSession = provider.slug === "openai";
+          const runnable = RUNNABLE_PROVIDER_SLUGS.has(provider.slug);
 
           return (
             <Card key={String(provider._id)} className="min-w-0">
@@ -188,7 +192,7 @@ export function ProvidersPage({
                     <Badge variant={provider.active ? "default" : "secondary"}>
                       {provider.active ? "Active" : "Inactive"}
                     </Badge>
-                    {!isOpenAi ? (
+                    {!runnable ? (
                       <Badge variant="outline">Runner pending</Badge>
                     ) : null}
                   </div>
@@ -240,7 +244,7 @@ export function ProvidersPage({
                     <Switch
                       id={`stored-session-${provider.slug}`}
                       checked={sessionMode === "stored"}
-                      disabled={!isOpenAi}
+                      disabled={!supportsStoredSession}
                       onCheckedChange={(checked) =>
                         void toggleStoredSession(provider, checked)
                       }
@@ -254,19 +258,15 @@ export function ProvidersPage({
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
                     type="button"
-                    variant={runnable ? "default" : "secondary"}
-                    disabled={!isOpenAi}
+                    variant={supportsStoredSession ? "default" : "secondary"}
+                    disabled={!supportsStoredSession}
                     onClick={() => void openSession(provider)}
                   >
                     <KeyRound data-icon="inline-start" />
                     Open session window
                   </Button>
                   <Button asChild variant="outline">
-                    <a
-                      href={provider.url}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
+                    <a href={provider.url} target="_blank" rel="noreferrer">
                       <ExternalLink data-icon="inline-start" />
                       Open provider
                     </a>

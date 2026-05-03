@@ -1,18 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeftIcon, ArrowRightIcon, ArrowUpRightIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ArrowUpRightIcon,
+  RefreshCcwIcon,
+  XCircleIcon,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Id } from "../../../convex/_generated/dataModel";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { InlineEmpty } from "./components/EmptyState";
 import {
   DashboardCardSkeleton,
@@ -108,6 +107,32 @@ const typeTone: Record<string, string> = {
   social: "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-300",
   other: "bg-muted text-muted-foreground",
 };
+
+function statusTone(status: string): string {
+  if (status === "success") {
+    return "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  }
+  if (status === "blocked") {
+    return "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+  }
+  if (status === "failed") {
+    return "border-rose-500/20 bg-rose-500/10 text-rose-700 dark:text-rose-300";
+  }
+  if (status === "running") {
+    return "border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300";
+  }
+  return "";
+}
+
+function formatSessionMode(value: "guest" | "stored" | undefined): string {
+  if (value === "stored") {
+    return "Stored session";
+  }
+  if (value === "guest") {
+    return "Guest session";
+  }
+  return "Session unknown";
+}
 
 type EvidenceImage = {
   label: string;
@@ -298,6 +323,11 @@ export function ResponseDetailPage({
   const runSummaryLabel = isSuccessfulRun ? "Response Summary" : "Run Summary";
   const responseText =
     runDetail.run.responseText?.trim() || runDetail.run.responseSummary?.trim();
+  const displayTitle = runDetail.prompt?.excerpt ?? runDetail.run.promptExcerpt;
+  const promptText = runDetail.prompt?.promptText?.trim();
+  const showPromptText = Boolean(
+    promptText && promptText !== displayTitle.trim()
+  );
   const evidenceImages = buildEvidenceImages({
     evidencePath: runDetail.run.evidencePath,
     pageScreenshotPath,
@@ -315,313 +345,303 @@ export function ResponseDetailPage({
         : "No citations were captured for this response.";
 
   return (
-    <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      {hasRunActions ? (
-        <div className="flex items-center gap-2 px-4 lg:px-6">
-          {onOpenPrompt ? (
-            <Button variant="ghost" size="sm" onClick={onOpenPrompt}>
-              Open prompt
-            </Button>
-          ) : null}
-          {isRetryable && onRetryRun ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                void onRetryRun(runDetail.run._id);
-              }}
-            >
-              Retry run
-            </Button>
-          ) : null}
-          {isCancelable && onCancelRun ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                void onCancelRun(runDetail.run._id);
-              }}
-            >
-              Cancel run
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="grid gap-4 px-4 lg:px-6 xl:grid-cols-[minmax(0,1.05fr)_380px]">
-        <div className="flex flex-col gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                {runDetail.prompt?.excerpt ?? runDetail.run.promptExcerpt}
-              </CardTitle>
-              <CardDescription>
+    <div className="py-4 md:py-6">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 lg:px-6">
+        <header className="flex flex-col gap-4 border-b pb-5 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className={statusTone(runStatus)}>
+                {titleCase(runDetail.run.status)}
+              </Badge>
+              <span className="text-muted-foreground text-sm">
                 {runDetail.run.providerName}
                 {runDetail.run.channelName
-                  ? ` | ${runDetail.run.channelName}`
-                  : ""}{" "}
-                | {titleCase(runDetail.run.status)} |{" "}
-                {formatFreshness(runDetail.run.startedAt)}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                {isSuccessfulRun ? (
-                  <Badge variant="secondary">
-                    {runDetail.run.sourceCount ?? runDetail.citations.length}{" "}
-                    sources
-                  </Badge>
-                ) : (
-                  <Badge variant="secondary">
-                    {titleCase(runDetail.run.status)}
-                  </Badge>
-                )}
-                {runDetail.run.citationQualityScore !== undefined ? (
-                  <Badge variant="outline">
-                    Citation {formatScore(runDetail.run.citationQualityScore)}
-                  </Badge>
-                ) : null}
-                <Badge variant="outline">
-                  Runtime{" "}
-                  {formatDuration(
-                    runDetail.run.startedAt,
-                    runDetail.run.finishedAt,
-                    runDetail.run.latencyMs
-                  )}
-                </Badge>
-                {runDetail.run.sessionMode ? (
-                  <Badge variant="outline">
-                    {runDetail.run.sessionMode === "stored"
-                      ? "Local profile"
-                      : "Ephemeral"}
-                  </Badge>
-                ) : null}
-              </div>
+                  ? ` · ${runDetail.run.channelName}`
+                  : ""}
+              </span>
+            </div>
+            <div>
+              <h1 className="text-2xl leading-tight font-semibold tracking-normal">
+                {displayTitle}
+              </h1>
+              <p className="text-muted-foreground mt-2 text-sm">
+                {formatFreshness(runDetail.run.startedAt)} · Runtime{" "}
+                {formatDuration(
+                  runDetail.run.startedAt,
+                  runDetail.run.finishedAt,
+                  runDetail.run.latencyMs
+                )}{" "}
+                · {formatSessionMode(runDetail.run.sessionMode)}
+              </p>
+            </div>
+          </div>
 
-              {runDetail.prompt?.promptText ? (
-                <section className="bg-muted/20 rounded-xl border p-4">
-                  <p className="text-muted-foreground text-[11px] font-medium tracking-[0.16em] uppercase">
-                    Prompt
-                  </p>
-                  <p className="text-foreground/90 mt-2 text-sm leading-6">
-                    {runDetail.prompt.promptText}
-                  </p>
-                </section>
+          {hasRunActions ? (
+            <div className="flex shrink-0 flex-wrap gap-2">
+              {onOpenPrompt ? (
+                <Button variant="outline" size="sm" onClick={onOpenPrompt}>
+                  <ArrowUpRightIcon data-icon="inline-start" />
+                  Open prompt
+                </Button>
               ) : null}
-
-              {responseText ? (
-                <section className="bg-muted/20 rounded-xl border p-4">
-                  <p className="text-muted-foreground text-[11px] font-medium tracking-[0.16em] uppercase">
-                    {runSummaryLabel}
-                  </p>
-                  <MarkdownContent content={responseText} />
-                </section>
+              {isRetryable && onRetryRun ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    void onRetryRun(runDetail.run._id);
+                  }}
+                >
+                  <RefreshCcwIcon data-icon="inline-start" />
+                  Retry run
+                </Button>
               ) : null}
+              {isCancelable && onCancelRun ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    void onCancelRun(runDetail.run._id);
+                  }}
+                >
+                  <XCircleIcon data-icon="inline-start" />
+                  Cancel run
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </header>
 
-              {runDetail.citations.length === 0 ? (
-                <InlineEmpty text={noCitationMessage} />
-              ) : (
-                <Card className="border-dashed shadow-none">
-                  <CardHeader>
-                    <CardTitle className="text-base">
-                      Sources Used in This Response
-                    </CardTitle>
-                    <CardDescription>
-                      These are the actual sources cited inside the captured
-                      answer.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {runDetail.citations.map((citation, index) => (
-                      <div
-                        key={`${citation.url}-${index}`}
-                        className="rounded-xl border p-4"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0 space-y-1">
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline">
-                                #{citation.position}
-                              </Badge>
-                              <p className="truncate text-sm font-medium">
-                                {citation.title || citation.domain}
-                              </p>
-                            </div>
-                            <p className="text-muted-foreground truncate text-xs">
-                              {domainFromUrl(citation.url) || citation.domain}
-                            </p>
-                          </div>
-                          <a
-                            href={citation.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-muted-foreground hover:text-foreground inline-flex shrink-0 items-center gap-1 text-xs font-medium transition-colors"
-                          >
-                            Open
-                            <ArrowUpRightIcon className="size-3.5" />
-                          </a>
-                        </div>
-                        <div className="mt-3 flex flex-wrap gap-1.5">
-                          <Badge
-                            variant="secondary"
-                            className={
-                              typeTone[citation.type.toLowerCase()] ?? ""
-                            }
-                          >
-                            {titleCase(citation.type)}
-                          </Badge>
-                          {citation.qualityScore !== undefined ? (
-                            <Badge variant="outline">
-                              Quality {formatScore(citation.qualityScore)}
-                            </Badge>
-                          ) : null}
-                          {citation.isOwned ? (
-                            <Badge variant="outline">Owned</Badge>
-                          ) : null}
-                          {citation.trackedEntity ? (
-                            <Badge variant="outline">
-                              {citation.trackedEntity.name}
-                            </Badge>
-                          ) : null}
-                        </div>
-                        {citation.snippet ? (
-                          <p className="text-muted-foreground mt-3 text-sm leading-6">
-                            {citation.snippet}
-                          </p>
-                        ) : null}
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+        <dl className="grid gap-x-6 gap-y-3 border-y py-4 sm:grid-cols-4">
+          <Metric label="Sources" value={runDetail.run.sourceCount ?? 0} />
+          <Metric label="Citations" value={runDetail.citations.length} />
+          <Metric
+            label="Citation score"
+            value={formatScore(runDetail.run.citationQualityScore)}
+          />
+          <Metric
+            label="Provider URL"
+            value={domainFromUrl(runDetail.run.providerUrl) || "-"}
+          />
+        </dl>
 
-        <div className="flex flex-col gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Entity Mentions</CardTitle>
-              <CardDescription>
-                Brands and tracked entities that surfaced in this response.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {runDetail.mentions?.length ? (
-                runDetail.mentions.map((mention) => (
-                  <div
-                    key={String(mention.entityId ?? mention.slug)}
-                    className="rounded-xl border p-3"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="font-medium">{mention.name}</p>
-                        <p className="text-muted-foreground text-xs">
-                          {titleCase(mention.kind)}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        <Badge variant="outline">
-                          {mention.mentionCount} mentions
-                        </Badge>
-                        <Badge variant="outline">
-                          {mention.citationCount} citations
-                        </Badge>
-                      </div>
+        {showPromptText ? (
+          <section className="rounded-lg border p-4">
+            <SectionLabel>Prompt</SectionLabel>
+            <p className="mt-2 text-sm leading-6">{promptText}</p>
+          </section>
+        ) : null}
+
+        {responseText ? (
+          <section className="rounded-lg border p-4">
+            <SectionLabel>{runSummaryLabel}</SectionLabel>
+            <MarkdownContent content={responseText} />
+          </section>
+        ) : null}
+
+        {runDetail.citations.length > 0 ? (
+          <section className="space-y-3">
+            <div>
+              <h2 className="text-base font-semibold">Sources</h2>
+              <p className="text-muted-foreground mt-1 text-sm">
+                Links cited inside the captured answer.
+              </p>
+            </div>
+            <div className="divide-border divide-y rounded-lg border">
+              {runDetail.citations.map((citation, index) => (
+                <div
+                  key={`${citation.url}-${index}`}
+                  className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between"
+                >
+                  <div className="min-w-0 space-y-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Badge variant="outline">#{citation.position}</Badge>
+                      <p className="truncate text-sm font-medium">
+                        {citation.title || citation.domain}
+                      </p>
                     </div>
+                    <p className="text-muted-foreground truncate text-xs">
+                      {domainFromUrl(citation.url) || citation.domain}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      <Badge
+                        variant="secondary"
+                        className={typeTone[citation.type.toLowerCase()] ?? ""}
+                      >
+                        {titleCase(citation.type)}
+                      </Badge>
+                      {citation.qualityScore !== undefined ? (
+                        <Badge variant="outline">
+                          Quality {formatScore(citation.qualityScore)}
+                        </Badge>
+                      ) : null}
+                      {citation.isOwned ? (
+                        <Badge variant="outline">Owned</Badge>
+                      ) : null}
+                      {citation.trackedEntity ? (
+                        <Badge variant="outline">
+                          {citation.trackedEntity.name}
+                        </Badge>
+                      ) : null}
+                    </div>
+                    {citation.snippet ? (
+                      <p className="text-muted-foreground text-sm leading-6">
+                        {citation.snippet}
+                      </p>
+                    ) : null}
+                  </div>
+                  <a
+                    href={citation.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-muted-foreground hover:text-foreground inline-flex shrink-0 items-center gap-1 text-xs font-medium transition-colors"
+                  >
+                    Open
+                    <ArrowUpRightIcon className="size-3.5" />
+                  </a>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : isSuccessfulRun ? (
+          <p className="text-muted-foreground text-sm">{noCitationMessage}</p>
+        ) : null}
+
+        {runDetail.mentions?.length ? (
+          <section className="space-y-3">
+            <div>
+              <h2 className="text-base font-semibold">Entity Mentions</h2>
+              <p className="text-muted-foreground mt-1 text-sm">
+                Tracked entities found in this response.
+              </p>
+            </div>
+            <div className="divide-border divide-y rounded-lg border">
+              {runDetail.mentions.map((mention) => (
+                <div
+                  key={String(mention.entityId ?? mention.slug)}
+                  className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="font-medium">{mention.name}</p>
+                    <p className="text-muted-foreground text-xs">
+                      {titleCase(mention.kind)}
+                    </p>
                     {mention.matchedTerms.length ? (
                       <p className="text-muted-foreground mt-2 text-xs">
                         Terms: {mention.matchedTerms.join(", ")}
                       </p>
                     ) : null}
                   </div>
-                ))
-              ) : (
-                <InlineEmpty text="No tracked entity mentions were detected for this response." />
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Run Evidence</CardTitle>
-              <CardDescription>
-                Screenshot and minimal debug context from this run.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <RunImageDetail images={evidenceImages} />
-
-              <details className="rounded-xl border p-3 text-xs">
-                <summary className="text-muted-foreground cursor-pointer font-medium">
-                  Technical artifacts
-                </summary>
-                <div className="text-muted-foreground mt-3 space-y-2">
-                  <ArtifactRow
-                    label="Evidence screenshot"
-                    filePath={screenshotPath}
-                  />
-                  {responseScreenshotPath &&
-                  responseScreenshotPath !== screenshotPath ? (
-                    <ArtifactRow
-                      label="Response screenshot"
-                      filePath={responseScreenshotPath}
-                    />
-                  ) : null}
-                  {pageScreenshotPath &&
-                  pageScreenshotPath !== screenshotPath ? (
-                    <ArtifactRow
-                      label="Page screenshot"
-                      filePath={pageScreenshotPath}
-                    />
-                  ) : null}
-                  <ArtifactRow
-                    label="Video"
-                    filePath={outputPayload?.artifacts?.video ?? undefined}
-                  />
-                  <ArtifactRow
-                    label="Trace"
-                    filePath={outputPayload?.artifacts?.trace}
-                  />
-                  <ArtifactRow
-                    label="Page HTML"
-                    filePath={outputPayload?.artifacts?.pageHtml}
-                  />
-                  <ArtifactRow
-                    label="Response HTML"
-                    filePath={outputPayload?.artifacts?.responseHtml}
-                  />
-                  <ArtifactRow
-                    label="Sources JSON"
-                    filePath={outputPayload?.artifacts?.sources}
-                  />
-                  <ArtifactRow
-                    label="Network JSON"
-                    filePath={outputPayload?.artifacts?.network}
-                  />
-                  <ArtifactRow
-                    label="Console JSON"
-                    filePath={outputPayload?.artifacts?.console}
-                  />
-                </div>
-              </details>
-
-              {runDetail.run.warnings?.length ? (
-                <details className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900">
-                  <summary className="cursor-pointer font-medium">
-                    Runner warnings
-                  </summary>
-                  <div className="mt-2 space-y-2">
-                    {runDetail.run.warnings.map((warning, index) => (
-                      <p key={`${warning}-${index}`}>{warning}</p>
-                    ))}
+                  <div className="flex flex-wrap gap-1.5">
+                    <Badge variant="outline">
+                      {mention.mentionCount} mentions
+                    </Badge>
+                    <Badge variant="outline">
+                      {mention.citationCount} citations
+                    </Badge>
                   </div>
-                </details>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-base font-semibold">Evidence</h2>
+            <p className="text-muted-foreground mt-1 text-sm">
+              Final page state and saved runner artifacts.
+            </p>
+          </div>
+
+          <RunImageDetail images={evidenceImages} />
+
+          <details className="rounded-lg border p-3 text-xs">
+            <summary className="text-muted-foreground cursor-pointer font-medium">
+              Technical artifacts
+            </summary>
+            <div className="text-muted-foreground mt-3 space-y-2">
+              <ArtifactRow
+                label="Evidence screenshot"
+                filePath={screenshotPath}
+              />
+              {responseScreenshotPath &&
+              responseScreenshotPath !== screenshotPath ? (
+                <ArtifactRow
+                  label="Response screenshot"
+                  filePath={responseScreenshotPath}
+                />
               ) : null}
-            </CardContent>
-          </Card>
-        </div>
+              {pageScreenshotPath && pageScreenshotPath !== screenshotPath ? (
+                <ArtifactRow
+                  label="Page screenshot"
+                  filePath={pageScreenshotPath}
+                />
+              ) : null}
+              <ArtifactRow
+                label="Video"
+                filePath={outputPayload?.artifacts?.video ?? undefined}
+              />
+              <ArtifactRow
+                label="Trace"
+                filePath={outputPayload?.artifacts?.trace}
+              />
+              <ArtifactRow
+                label="Page HTML"
+                filePath={outputPayload?.artifacts?.pageHtml}
+              />
+              <ArtifactRow
+                label="Response HTML"
+                filePath={outputPayload?.artifacts?.responseHtml}
+              />
+              <ArtifactRow
+                label="Sources JSON"
+                filePath={outputPayload?.artifacts?.sources}
+              />
+              <ArtifactRow
+                label="Network JSON"
+                filePath={outputPayload?.artifacts?.network}
+              />
+              <ArtifactRow
+                label="Console JSON"
+                filePath={outputPayload?.artifacts?.console}
+              />
+            </div>
+          </details>
+
+          {runDetail.run.warnings?.length ? (
+            <details className="rounded-lg border p-3 text-xs">
+              <summary className="text-muted-foreground cursor-pointer font-medium">
+                Runner notes
+              </summary>
+              <div className="text-muted-foreground mt-2 space-y-2">
+                {runDetail.run.warnings.map((warning, index) => (
+                  <p key={`${warning}-${index}`}>{warning}</p>
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </section>
       </div>
+    </div>
+  );
+}
+
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <p className="text-muted-foreground text-[11px] font-medium tracking-[0.16em] uppercase">
+      {children}
+    </p>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-muted-foreground text-xs">{label}</dt>
+      <dd className="mt-1 truncate text-sm font-medium tabular-nums">
+        {value}
+      </dd>
     </div>
   );
 }
@@ -630,7 +650,9 @@ function MarkdownContent({ content }: { content: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: 0 });
+    if (typeof scrollRef.current?.scrollTo === "function") {
+      scrollRef.current.scrollTo({ top: 0 });
+    }
   }, [content]);
 
   return (
@@ -653,6 +675,7 @@ function RunImageDetail({ images }: { images: EvidenceImage[] }) {
 
   const hasPrevious = safeIndex > 0;
   const hasNext = safeIndex < images.length - 1;
+  const hasMultipleImages = images.length > 1;
 
   return (
     <div className="overflow-hidden rounded-xl border">
@@ -663,9 +686,11 @@ function RunImageDetail({ images }: { images: EvidenceImage[] }) {
             {image.description}
           </p>
         </div>
-        <Badge variant="outline" className="shrink-0">
-          {safeIndex + 1}/{images.length}
-        </Badge>
+        {hasMultipleImages ? (
+          <Badge variant="outline" className="shrink-0">
+            {safeIndex + 1}/{images.length}
+          </Badge>
+        ) : null}
       </div>
 
       <a
@@ -682,30 +707,32 @@ function RunImageDetail({ images }: { images: EvidenceImage[] }) {
         />
       </a>
 
-      <div className="flex items-center justify-between gap-2 p-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={!hasPrevious}
-          onClick={() => setActiveIndex((index) => Math.max(index - 1, 0))}
-        >
-          <ArrowLeftIcon data-icon="inline-start" />
-          Back
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={!hasNext}
-          onClick={() =>
-            setActiveIndex((index) => Math.min(index + 1, images.length - 1))
-          }
-        >
-          Next
-          <ArrowRightIcon data-icon="inline-end" />
-        </Button>
-      </div>
+      {hasMultipleImages ? (
+        <div className="flex items-center justify-between gap-2 p-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!hasPrevious}
+            onClick={() => setActiveIndex((index) => Math.max(index - 1, 0))}
+          >
+            <ArrowLeftIcon data-icon="inline-start" />
+            Back
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!hasNext}
+            onClick={() =>
+              setActiveIndex((index) => Math.min(index + 1, images.length - 1))
+            }
+          >
+            Next
+            <ArrowRightIcon data-icon="inline-end" />
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

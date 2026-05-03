@@ -2,8 +2,10 @@
 
 Use this runner to execute internal monitoring prompts against provider web clients and capture response visibility and citation quality signals per run.
 
-OpenPeec v0 only executes OpenAI/ChatGPT runs. Other providers stay seeded for
-the data model, but they are inactive until provider-specific runners are added.
+OpenPeec executes runnable provider web clients through provider-specific
+adapters. OpenAI/ChatGPT and Google AI Mode are active by default; other seeded
+providers stay inactive until their browser flows and extraction contracts are
+implemented.
 
 This is an operator tool for recurring checks, not a generic browser automation script. Every run should answer:
 
@@ -38,7 +40,7 @@ This is an operator tool for recurring checks, not a generic browser automation 
 2. **Prime the Camoufox session once** with `pnpm runner:capture-session -- --engine camoufox`: log in or complete whatever ChatGPT needs in the opened browser. This saves a Playwright storage-state file at `runner/camoufox.storage-state.json`.
 3. If a run is blocked, repeat the capture step and retry. For debugging only, set `"sessionMode": "guest"` in the monitor config to force a fresh browser context with no stored cookies.
 4. Run a monitoring check with `pnpm runner:prompt:example`, or queue prompts from the dashboard and process them with `pnpm runner:queue` or `pnpm runner:queue:once`. The dashboard can queue an explicit browser engine per run; use `pnpm runner:queue` for Camoufox/default runs and `pnpm runner:queue:nodriver` for nodriver-tagged runs.
-5. The queue worker keeps one Camoufox browser server and browser context warm for the life of the worker, then runs queued prompts sequentially inside that same session. Standalone `runner:monitor` commands are one-shot and close after the run.
+5. The queue worker claims one prompt run group at a time. Inside that group it starts one independent browser session per enabled provider and waits for all provider children to settle. Standalone `runner:monitor` commands are one-shot and close after the run.
 6. Review `runner/last-run.json` and the evidence bundle in `runner/artifacts/<run-label>-<timestamp>/`.
 7. Inspect:
    `status`, `warnings`, `responseText`, `citations`, `visibilityScore`, `citationQualityScore`, `network.json`, `console.json`, `page.html`, `response.html`, `trace.zip`, and the recorded video.
@@ -47,7 +49,8 @@ This is an operator tool for recurring checks, not a generic browser automation 
 `pnpm dev` starts the queue worker automatically (`dev:runner`) so queued
 prompt jobs are picked up without manual worker startup.
 Queue runs use the configured browser engine and still capture screenshots,
-video, trace, DOM, and source artifacts.
+trace, DOM, network, console, and source artifacts. Camoufox does not support
+Playwright video recording through the remote Firefox server.
 The dashboard Providers page exposes the same Camoufox local session opener through the Vite-only `/local-provider-session/open` endpoint. That endpoint exists for local open-source development; it launches an interactive Camoufox window, saves `runner/camoufox.storage-state.json`, and does not automate account login or verification.
 
 `pnpm docker:dev` runs the same local stack through Compose: frontend, local
@@ -63,7 +66,7 @@ profile and still runs through `pnpm docker:nodriver:fixture`.
 
 `browser.engine` controls the runner browser:
 
-- `"camoufox"`: official Python Camoufox launched through its Playwright remote server. This is the default in `runner/example.monitor.json`. Stored sessions use `browser.storageStatePath`, not `browser.userDataDir`; the queue worker also reuses one warm Camoufox browser/context across runs.
+- `"camoufox"`: official Python Camoufox launched through its Playwright remote server. This is the default in `runner/example.monitor.json`. Stored sessions use `browser.storageStatePath`, not `browser.userDataDir`; grouped queue runs start independent provider sessions in parallel.
 - `"playwright"`: regular Playwright Chromium. Stored sessions use `browser.userDataDir`, defaulting to `runner/profiles/chatgpt-chrome` for OpenAI.
 - `"nodriver"`: experimental Python nodriver adapter for local-only runner learning. It delegates from `runMonitor()` to `runner/nodriver-worker.py` and preserves the runner result/artifact contract for controlled fixtures. It is not used for Playwright e2e or as the default provider runner.
 
@@ -75,12 +78,18 @@ pnpm runner:capture-session -- --engine camoufox
 pnpm runner:stealth-smoke
 ```
 
-If the system `python3` cannot install Camoufox cleanly, point the scripts at a
-newer interpreter:
+The local installer creates `runner/.venv-camoufox`, installs
+`runner/requirements-camoufox.txt`, fetches the Camoufox browser, and verifies
+`runner/camoufox-server.py --check`. It refuses Python 3.15 alpha builds; use a
+stable Python 3.10-3.14. To force a bootstrap interpreter:
 
 ```sh
-CAMOUFOX_PYTHON=/path/to/python3 pnpm runner:install-camoufox
+OPENPEEC_CAMOUFOX_BOOTSTRAP_PYTHON=/path/to/python3.12 pnpm runner:install-camoufox
 ```
+
+At runtime, an explicit `browser.camoufox.python` or `CAMOUFOX_PYTHON` wins.
+Otherwise the runner prefers `runner/.venv-camoufox/bin/python`, then known
+stable local Python 3.12 paths.
 
 `pnpm runner:stealth-smoke` records a local fingerprint probe under `runner/artifacts/`. Add `-- --detectors` to also visit public detector pages, or `-- --engine all` to compare regular Playwright and Camoufox in the same run.
 
@@ -259,13 +268,15 @@ If `--ingest` is provided and `VITE_CONVEX_URL` is set:
 
 For queued prompt execution:
 
-1. The dashboard creates `promptRuns` with `status: "queued"`.
-2. `pnpm runner:queue` claims the next queued run, launches the configured browser engine locally, and patches that same record to `running`, then `success` or `failed`.
-3. Citations, warnings, screenshot/video/trace paths, and the final deep link are written back onto the original queued run so the dashboard can inspect the evidence.
+1. The dashboard creates one run group per prompt dispatch and one queued `promptRuns` child row per enabled provider.
+2. `pnpm runner:queue` claims the oldest queued group, launches the configured browser engine locally for each provider child in parallel, and patches each original child row to `running`, then `success`, `blocked`, or `failed`.
+3. Citations, warnings, screenshot/trace paths, and the final deep link are written back onto each original queued provider row so the dashboard can compare all provider responses together.
 
-Queue execution is strictly sequential. Only one run can be in `running` state
-at a time; the next queued run starts after the previous run is completed.
-Camoufox queue execution is forced to one run at a time because all jobs share one warm browser context. When `"sessionMode": "stored"` and `browser.userDataDir` are configured for the Playwright engine, the worker also enforces a single concurrent run so the shared local Chrome profile is never used by multiple jobs at once.
+`--max-concurrent` and `worker.maxConcurrent` now cap concurrent run groups.
+Provider children inside a claimed group always start in parallel. When
+`"sessionMode": "stored"` and `browser.userDataDir` are configured for the
+Playwright engine, the worker still enforces one concurrent group so the shared
+local Chrome profile is never used by multiple groups at once.
 If a run waits 5 minutes for a usable assistant response and times out/stalls,
 the worker marks it failed and auto-queues one retry.
 

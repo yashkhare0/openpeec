@@ -71,6 +71,7 @@ export function PromptDetailPage({
   onBack,
   selectedRunId,
   onOpenRun,
+  onOpenRunGroup,
 }: {
   loading?: boolean;
   promptAnalysis:
@@ -88,6 +89,7 @@ export function PromptDetailPage({
         };
         responses: Array<{
           id: Id<"promptRuns">;
+          runGroupId?: string;
           status: string;
           startedAt: number;
           finishedAt?: number;
@@ -134,6 +136,7 @@ export function PromptDetailPage({
   onBack: () => void;
   selectedRunId: Id<"promptRuns"> | null;
   onOpenRun: (value: Id<"promptRuns">) => void;
+  onOpenRunGroup?: (value: string) => void;
 }) {
   if (loading) {
     return (
@@ -372,7 +375,11 @@ export function PromptDetailPage({
                   <button
                     key={String(response.id)}
                     type="button"
-                    onClick={() => onOpenRun(response.id)}
+                    onClick={() =>
+                      response.runGroupId && onOpenRunGroup
+                        ? onOpenRunGroup(response.runGroupId)
+                        : onOpenRun(response.id)
+                    }
                     className={`hover:border-foreground/30 hover:bg-muted/20 w-full rounded-xl border p-4 text-left transition-colors ${
                       selectedRunId === response.id
                         ? "border-primary bg-muted/30"

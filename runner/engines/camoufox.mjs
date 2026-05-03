@@ -50,6 +50,15 @@ function normalizeCamoufoxOptions(rawOptions = {}) {
 }
 
 export function resolveCamoufoxPython(browserOptions = {}) {
+  const projectCamoufoxPython = path.join(
+    RUNNER_DIR,
+    ".venv-camoufox",
+    "bin",
+    "python"
+  );
+  const localPython312 = process.env.HOME
+    ? path.join(process.env.HOME, ".local/bin/python3.12")
+    : null;
   const bundledCodexPython = process.env.HOME
     ? path.join(
         process.env.HOME,
@@ -59,7 +68,8 @@ export function resolveCamoufoxPython(browserOptions = {}) {
   return (
     browserOptions.camoufox?.python ??
     process.env.CAMOUFOX_PYTHON ??
-    process.env.PYTHON ??
+    (fs.existsSync(projectCamoufoxPython) ? projectCamoufoxPython : null) ??
+    (localPython312 && fs.existsSync(localPython312) ? localPython312 : null) ??
     (bundledCodexPython && fs.existsSync(bundledCodexPython)
       ? bundledCodexPython
       : null) ??

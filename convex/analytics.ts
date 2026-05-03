@@ -53,6 +53,7 @@ type PatchObject = Record<string, unknown>;
 type BrowserEngine = "playwright" | "camoufox" | "nodriver";
 
 const crons = new Crons(components.crons);
+const RUNNABLE_PROVIDER_SLUGS = new Set(["openai", "google-ai-mode"]);
 
 const DEFAULT_PROVIDER_DEFINITIONS = [
   {
@@ -66,6 +67,19 @@ const DEFAULT_PROVIDER_DEFINITIONS = [
     sessionProfileDir: "runner/profiles/chatgpt-chrome",
     promptQueryParam: undefined,
     submitStrategy: "type",
+    active: true,
+  },
+  {
+    slug: "google-ai-mode",
+    name: "Google AI Mode",
+    url: "https://www.google.com/search?udm=50",
+    channelSlug: "google-ai-mode-web",
+    channelName: "Google AI Mode web",
+    transport: "browser",
+    sessionMode: "guest",
+    sessionProfileDir: undefined,
+    promptQueryParam: "q",
+    submitStrategy: "deeplink",
     active: true,
   },
   {
@@ -166,6 +180,39 @@ function runMatchesWorkerEngine(
     return run.browserEngine === browserEngine;
   }
   return !run.runner || runnerNameMatchesEngine(run.runner, browserEngine);
+}
+
+function runGroupKey(run: Pick<PromptRunDoc, "_id" | "runGroupId">): string {
+  return run.runGroupId ?? String(run._id);
+}
+
+function runQueuedAt(
+  run: Pick<PromptRunDoc, "queuedAt" | "runGroupQueuedAt" | "startedAt">
+): number {
+  return run.runGroupQueuedAt ?? run.queuedAt ?? run.startedAt;
+}
+
+function summarizeRunGroupStatus(runs: PromptRunDoc[]): PromptRunDoc["status"] {
+  if (runs.some((run) => run.status === "running")) {
+    return "running";
+  }
+  if (runs.some((run) => run.status === "queued")) {
+    return "queued";
+  }
+  if (runs.every((run) => run.status === "success")) {
+    return "success";
+  }
+  if (runs.some((run) => run.status === "failed")) {
+    return "failed";
+  }
+  if (runs.some((run) => run.status === "blocked")) {
+    return "blocked";
+  }
+  return runs[0]?.status ?? "queued";
+}
+
+function latestRunStartedAt(runs: PromptRunDoc[]): number {
+  return Math.max(...runs.map((run) => run.startedAt));
 }
 
 function sanitizeSlug(input: string): string {
@@ -479,27 +526,35 @@ async function enqueuePromptRunDocs(
     (provider) => provider.active
   );
   if (!activeProviders.length) {
-    throw new Error("No active providers available");
+    throw new Error("No enabled providers available");
   }
-  await Promise.all(
-    prompts.flatMap((prompt) => {
-      const promptExcerpt = promptExcerptFor(prompt);
-      return activeProviders.map((provider) =>
-        ctx.db.insert("promptRuns", {
-          promptId: prompt._id,
-          ...providerSnapshot(provider),
-          browserEngine: options?.browserEngine,
-          promptExcerpt,
-          status: "queued",
-          attempt: options?.attempt ?? 1,
-          retryOfRunId: options?.retryOfRunId,
-          queuedAt,
-          startedAt: queuedAt,
-          runLabel: label?.trim() || promptExcerpt,
-        })
-      );
-    })
-  );
+
+  for (const prompt of prompts) {
+    const promptExcerpt = promptExcerptFor(prompt);
+    let runGroupId: string | undefined;
+
+    for (const provider of activeProviders) {
+      const runId = await ctx.db.insert("promptRuns", {
+        runGroupId,
+        runGroupQueuedAt: queuedAt,
+        promptId: prompt._id,
+        ...providerSnapshot(provider),
+        browserEngine: options?.browserEngine,
+        promptExcerpt,
+        status: "queued",
+        attempt: options?.attempt ?? 1,
+        retryOfRunId: options?.retryOfRunId,
+        queuedAt,
+        startedAt: queuedAt,
+        runLabel: label?.trim() || promptExcerpt,
+      });
+
+      if (!runGroupId) {
+        runGroupId = String(runId);
+        await ctx.db.patch(runId, { runGroupId });
+      }
+    }
+  }
   return prompts.length * activeProviders.length;
 }
 
@@ -894,8 +949,8 @@ export const updateProvider = mutation({
     if (provider == null) {
       throw new Error("Provider not found");
     }
-    if (provider.slug !== "openai" && args.active === true) {
-      throw new Error("OpenAI is the only runnable provider in v0");
+    if (!RUNNABLE_PROVIDER_SLUGS.has(provider.slug) && args.active === true) {
+      throw new Error("Provider runner is not implemented for this provider");
     }
 
     const patch = compactPatch({
@@ -1186,6 +1241,7 @@ export const retryPromptRun = mutation({
     const nextAttempt = (run.attempt ?? 1) + 1;
     const queuedAt = Date.now();
     const retryRunId = await ctx.db.insert("promptRuns", {
+      runGroupQueuedAt: queuedAt,
       promptId: run.promptId,
       providerId: run.providerId,
       providerSlug: run.providerSlug,
@@ -1211,6 +1267,7 @@ export const retryPromptRun = mutation({
         run.promptExcerpt ||
         promptExcerptFor(prompt),
     });
+    await ctx.db.patch(retryRunId, { runGroupId: String(retryRunId) });
     return { runId: retryRunId };
   },
 });
@@ -1340,6 +1397,70 @@ export const getQueueStatus = query({
   },
 });
 
+async function buildClaimedPromptRunPayload(
+  ctx: MutationCtx,
+  run: PromptRunDoc,
+  prompt: PromptDoc,
+  args: {
+    browserEngine?: BrowserEngine;
+  }
+) {
+  const provider = await ctx.db.get(run.providerId);
+  const providerDefaults = defaultProviderDefinitionFor(run.providerSlug);
+  const queuedProviderSnapshot = provider
+    ? providerSnapshot(provider)
+    : {
+        channelSlug:
+          run.channelSlug ??
+          providerDefaults?.channelSlug ??
+          `${run.providerSlug}-web`,
+        channelName:
+          run.channelName ??
+          providerDefaults?.channelName ??
+          `${run.providerName} web`,
+        transport: run.transport ?? "browser",
+        sessionMode:
+          run.sessionMode ?? providerDefaults?.sessionMode ?? "guest",
+        sessionProfileDir:
+          run.sessionProfileDir ?? providerDefaults?.sessionProfileDir,
+        promptQueryParam:
+          run.promptQueryParam ?? providerDefaults?.promptQueryParam,
+        submitStrategy:
+          run.submitStrategy ?? providerDefaults?.submitStrategy ?? "type",
+      };
+
+  return {
+    runId: run._id,
+    runGroupId: runGroupKey(run),
+    queuedAt: run.queuedAt ?? run.startedAt,
+    startedAt: run.startedAt,
+    prompt: {
+      id: prompt._id,
+      excerpt: run.promptExcerpt,
+      promptText: prompt.promptText,
+      providerId: run.providerId,
+      providerSlug: run.providerSlug,
+      providerName: run.providerName,
+      providerUrl: run.providerUrl,
+      channelSlug: run.channelSlug ?? queuedProviderSnapshot.channelSlug,
+      channelName: run.channelName ?? queuedProviderSnapshot.channelName,
+      transport: run.transport ?? queuedProviderSnapshot.transport,
+      sessionMode: run.sessionMode ?? queuedProviderSnapshot.sessionMode,
+      sessionProfileDir:
+        run.sessionProfileDir ?? queuedProviderSnapshot.sessionProfileDir,
+      browserEngine: run.browserEngine ?? args.browserEngine,
+      promptQueryParam:
+        run.promptQueryParam ?? queuedProviderSnapshot.promptQueryParam,
+      submitStrategy:
+        run.submitStrategy ?? queuedProviderSnapshot.submitStrategy,
+      providerSessionJson: provider?.sessionJson,
+    },
+    runLabel: run.runLabel ?? run.promptExcerpt,
+    attempt: run.attempt ?? 1,
+    retryOfRunId: run.retryOfRunId,
+  };
+}
+
 export const claimNextQueuedPromptRun = mutation({
   args: {
     runner: v.optional(v.string()),
@@ -1423,6 +1544,7 @@ export const claimNextQueuedPromptRun = mutation({
 
     return {
       runId: queuedRun._id,
+      runGroupId: runGroupKey(queuedRun),
       queuedAt: queuedRun.queuedAt ?? queuedRun.startedAt,
       startedAt,
       prompt: {
@@ -1453,6 +1575,126 @@ export const claimNextQueuedPromptRun = mutation({
       runLabel: queuedRun.runLabel ?? queuedRun.promptExcerpt,
       attempt: queuedRun.attempt ?? 1,
       retryOfRunId: queuedRun.retryOfRunId,
+    };
+  },
+});
+
+export const claimNextQueuedPromptRunGroup = mutation({
+  args: {
+    runner: v.optional(v.string()),
+    browserEngine: v.optional(vBrowserEngine),
+    maxConcurrent: v.optional(v.float64()),
+  },
+  handler: async (ctx, args) => {
+    const maxConcurrentGroups = Math.max(
+      1,
+      Math.floor(args.maxConcurrent ?? 1)
+    );
+    const activeRuns = (
+      await ctx.db
+        .query("promptRuns")
+        .withIndex("status_startedAt", (q) => q.eq("status", "running"))
+        .collect()
+    ).filter((run) => runMatchesWorkerEngine(run, args.browserEngine));
+
+    const activeGroups = new Set(activeRuns.map(runGroupKey));
+    if (activeGroups.size >= maxConcurrentGroups) {
+      return null;
+    }
+
+    const queuedRuns = await ctx.db
+      .query("promptRuns")
+      .withIndex("status_startedAt", (q) => q.eq("status", "queued"))
+      .order("asc")
+      .collect();
+    const queuedRun = queuedRuns.find((run) =>
+      runMatchesWorkerEngine(run, args.browserEngine)
+    );
+
+    if (queuedRun == null) {
+      return null;
+    }
+
+    const groupId = runGroupKey(queuedRun);
+    const groupRuns = queuedRun.runGroupId
+      ? await ctx.db
+          .query("promptRuns")
+          .withIndex("runGroupId", (q) => q.eq("runGroupId", groupId))
+          .collect()
+      : [queuedRun];
+    const queuedGroupRuns = groupRuns
+      .filter(
+        (run) =>
+          run.status === "queued" &&
+          runMatchesWorkerEngine(run, args.browserEngine)
+      )
+      .sort((left, right) =>
+        left.providerName.localeCompare(right.providerName)
+      );
+
+    if (!queuedGroupRuns.length) {
+      return null;
+    }
+
+    const prompt = await ctx.db.get(queuedRun.promptId);
+    if (prompt == null) {
+      await Promise.all(
+        queuedGroupRuns.map((run) =>
+          ctx.db.patch(run._id, {
+            status: "failed",
+            finishedAt: Date.now(),
+            responseSummary: "Prompt was deleted before the run could execute.",
+            warnings: ["Prompt was deleted before execution."],
+            runner: args.runner?.trim() || "local-playwright-worker",
+            browserEngine: args.browserEngine ?? run.browserEngine,
+          })
+        )
+      );
+      return null;
+    }
+
+    const startedAt = Date.now();
+    const runner = args.runner?.trim() || "local-playwright-worker";
+    await Promise.all(
+      queuedGroupRuns.map((run) =>
+        ctx.db.patch(run._id, {
+          status: "running",
+          startedAt,
+          warnings: undefined,
+          runner,
+          browserEngine: args.browserEngine ?? run.browserEngine,
+        })
+      )
+    );
+
+    const claimedRuns = await Promise.all(
+      queuedGroupRuns.map((run) =>
+        buildClaimedPromptRunPayload(
+          ctx,
+          {
+            ...run,
+            status: "running",
+            startedAt,
+            runner,
+            browserEngine: args.browserEngine ?? run.browserEngine,
+          },
+          prompt,
+          args
+        )
+      )
+    );
+
+    return {
+      runGroupId: groupId,
+      queuedAt: runQueuedAt(queuedRun),
+      startedAt,
+      runLabel: queuedRun.runLabel ?? queuedRun.promptExcerpt,
+      prompt: {
+        id: prompt._id,
+        excerpt: queuedRun.promptExcerpt,
+        promptText: prompt.promptText,
+      },
+      runs: claimedRuns,
     };
   },
 });
@@ -1856,6 +2098,7 @@ export const ingestPromptRun = mutation({
     }
 
     const runId = await ctx.db.insert("promptRuns", {
+      runGroupQueuedAt: args.startedAt,
       promptId: args.promptId,
       ...providerSnapshot(provider),
       promptExcerpt: promptExcerptFor(prompt),
@@ -1889,6 +2132,7 @@ export const ingestPromptRun = mutation({
       browserEngine: args.browserEngine,
       ingestId: args.ingestId?.trim(),
     });
+    await ctx.db.patch(runId, { runGroupId: String(runId) });
 
     if (shouldPersistCitations) {
       await insertCitationsForRun(ctx, runId, citationInputs);
@@ -1970,6 +2214,8 @@ export const listPromptRuns = query({
     return runs.map((run) => ({
       _id: run._id,
       _creationTime: run._creationTime,
+      runGroupId: runGroupKey(run),
+      runGroupQueuedAt: runQueuedAt(run),
       promptId: run.promptId,
       promptExcerpt: run.promptExcerpt,
       providerSlug: run.providerSlug,
@@ -2002,27 +2248,233 @@ export const listPromptRuns = query({
   },
 });
 
-export const listPromptResponseAnalytics = query({
+export const listRunGroups = query({
   args: {
     provider: v.optional(v.string()),
+    status: v.optional(vRunStatus),
+    limit: v.optional(v.float64()),
+  },
+  handler: async (ctx, args) => {
+    const limit = clamp(Math.floor(args.limit ?? 30), 1, 100);
+    const scanLimit = limit * 6;
+
+    let seedRuns: PromptRunDoc[];
+    if (args.provider) {
+      seedRuns = await ctx.db
+        .query("promptRuns")
+        .withIndex("providerSlug_startedAt", (q) =>
+          q.eq("providerSlug", args.provider!)
+        )
+        .order("desc")
+        .collect();
+    } else if (args.status) {
+      seedRuns = await ctx.db
+        .query("promptRuns")
+        .withIndex("status_startedAt", (q) => q.eq("status", args.status!))
+        .order("desc")
+        .collect();
+    } else {
+      seedRuns = await ctx.db
+        .query("promptRuns")
+        .withIndex("startedAt")
+        .order("desc")
+        .take(scanLimit);
+    }
+
+    seedRuns = seedRuns
+      .filter((run) => !args.status || run.status === args.status)
+      .slice(0, scanLimit);
+
+    const groupSeeds = new Map<string, PromptRunDoc>();
+    for (const run of seedRuns) {
+      const key = runGroupKey(run);
+      const existing = groupSeeds.get(key);
+      if (!existing || runQueuedAt(run) > runQueuedAt(existing)) {
+        groupSeeds.set(key, run);
+      }
+    }
+
+    const groupedRuns = await Promise.all(
+      [...groupSeeds.entries()].map(async ([groupId, seed]) => {
+        if (!seed.runGroupId) {
+          return [seed];
+        }
+        return await ctx.db
+          .query("promptRuns")
+          .withIndex("runGroupId", (q) => q.eq("runGroupId", groupId))
+          .collect();
+      })
+    );
+
+    const runIds = groupedRuns
+      .flat()
+      .filter((run) => isSuccessfulRunStatus(run.status))
+      .map((run) => run._id);
+    const citationsByRun = buildCitationMap(
+      await collectCitationsForRuns(ctx, runIds)
+    );
+
+    return groupedRuns
+      .filter((runs) => runs.length > 0)
+      .map((runs) => {
+        const sortedRuns = runs
+          .slice()
+          .sort((left, right) =>
+            left.providerName.localeCompare(right.providerName)
+          );
+        const latestRun = sortedRuns
+          .slice()
+          .sort((left, right) => right.startedAt - left.startedAt)[0];
+        const citations = sortedRuns.flatMap(
+          (run) => citationsByRun.get(run._id) ?? []
+        );
+        return {
+          id: runGroupKey(latestRun),
+          promptId: latestRun.promptId,
+          promptExcerpt: latestRun.promptExcerpt,
+          runLabel: latestRun.runLabel,
+          queuedAt: runQueuedAt(latestRun),
+          startedAt: latestRunStartedAt(sortedRuns),
+          finishedAt: sortedRuns
+            .map((run) => run.finishedAt)
+            .filter((value): value is number => typeof value === "number")
+            .sort((left, right) => right - left)[0],
+          status: summarizeRunGroupStatus(sortedRuns),
+          providerCount: sortedRuns.length,
+          sourceCount: uniqueStrings(
+            citations.map((citation) => citation.domain)
+          ).length,
+          citationCount: citations.length,
+          providers: sortedRuns.map((run) => ({
+            runId: run._id,
+            providerSlug: run.providerSlug,
+            providerName: run.providerName,
+            providerUrl: run.providerUrl,
+            channelName: run.channelName,
+            sessionMode: run.sessionMode,
+            browserEngine: run.browserEngine,
+            runner: run.runner,
+            status: run.status,
+            startedAt: run.startedAt,
+            finishedAt: run.finishedAt,
+            latencyMs: run.latencyMs,
+            responseSummary: run.responseSummary,
+            sourceCount: isSuccessfulRunStatus(run.status)
+              ? (run.sourceCount ?? citationsByRun.get(run._id)?.length ?? 0)
+              : undefined,
+            citationCount: citationsByRun.get(run._id)?.length ?? 0,
+            warnings: run.warnings,
+          })),
+        };
+      })
+      .sort((left, right) => right.queuedAt - left.queuedAt)
+      .slice(0, limit);
+  },
+});
+
+export const getRunGroup = query({
+  args: { runGroupId: v.string() },
+  handler: async (ctx, args) => {
+    let runs = await ctx.db
+      .query("promptRuns")
+      .withIndex("runGroupId", (q) => q.eq("runGroupId", args.runGroupId))
+      .collect();
+
+    if (!runs.length) {
+      const fallbackRun = await ctx.db.get(args.runGroupId as Id<"promptRuns">);
+      runs = fallbackRun ? [fallbackRun] : [];
+    }
+
+    if (!runs.length) {
+      throw new Error("Run group not found");
+    }
+
+    runs = runs
+      .slice()
+      .sort((left, right) =>
+        left.providerName.localeCompare(right.providerName)
+      );
+    const prompt = await ctx.db.get(runs[0].promptId);
+    const successfulRunIds = runs
+      .filter((run) => isSuccessfulRunStatus(run.status))
+      .map((run) => run._id);
+    const citationsByRun = buildCitationMap(
+      await collectCitationsForRuns(ctx, successfulRunIds)
+    );
+    const mentionsByRun = buildRunEntityMentionMap(
+      await collectRunEntityMentionsForRuns(ctx, successfulRunIds)
+    );
+    const allCitations = runs.flatMap(
+      (run) => citationsByRun.get(run._id) ?? []
+    );
+    const latestRun = runs
+      .slice()
+      .sort((left, right) => right.startedAt - left.startedAt)[0];
+
+    return {
+      group: {
+        id: runGroupKey(latestRun),
+        promptId: latestRun.promptId,
+        promptExcerpt: latestRun.promptExcerpt,
+        runLabel: latestRun.runLabel,
+        queuedAt: runQueuedAt(latestRun),
+        startedAt: latestRunStartedAt(runs),
+        finishedAt: runs
+          .map((run) => run.finishedAt)
+          .filter((value): value is number => typeof value === "number")
+          .sort((left, right) => right - left)[0],
+        status: summarizeRunGroupStatus(runs),
+        providerCount: runs.length,
+        sourceCount: uniqueStrings(
+          allCitations.map((citation) => citation.domain)
+        ).length,
+        citationCount: allCitations.length,
+      },
+      prompt: prompt
+        ? {
+            _id: prompt._id,
+            excerpt: promptExcerptFor(prompt),
+            promptText: prompt.promptText,
+          }
+        : null,
+      runs: runs.map((run) => ({
+        ...run,
+        runGroupId: runGroupKey(run),
+        runGroupQueuedAt: runQueuedAt(run),
+        sourceCount: isSuccessfulRunStatus(run.status)
+          ? run.sourceCount
+          : undefined,
+        citationQualityScore: isSuccessfulRunStatus(run.status)
+          ? run.citationQualityScore
+          : undefined,
+        averageCitationPosition: isSuccessfulRunStatus(run.status)
+          ? run.averageCitationPosition
+          : undefined,
+        visibilityScore: isSuccessfulRunStatus(run.status)
+          ? run.visibilityScore
+          : undefined,
+        citations: citationsByRun.get(run._id) ?? [],
+        mentions: mentionsByRun.get(run._id) ?? [],
+      })),
+    };
+  },
+});
+
+export const listPromptResponseAnalytics = query({
+  args: {
     active: v.optional(v.boolean()),
     rangeDays: v.optional(v.float64()),
   },
   handler: async (ctx, args) => {
-    const providers = await listProviderDocs(ctx);
-    const selectedProvider = args.provider
-      ? providers.find((provider) => provider.slug === args.provider)
-      : undefined;
-    const activeProviderNames = providers
-      .filter((provider) => provider.active)
-      .map((provider) => provider.name);
     let prompts = await ctx.db.query("prompts").collect();
 
     if (args.active !== undefined) {
       prompts = prompts.filter((prompt) => prompt.active === args.active);
     }
     const rangeStart =
-      Date.now() - (args.rangeDays ?? 30) * 24 * 60 * 60 * 1000;
+      args.rangeDays !== undefined
+        ? Date.now() - args.rangeDays * 24 * 60 * 60 * 1000
+        : undefined;
 
     const promptRunsByPrompt = new Map<Id<"prompts">, PromptRunDoc[]>();
     for (const prompt of prompts) {
@@ -2034,9 +2486,7 @@ export const listPromptResponseAnalytics = query({
       promptRunsByPrompt.set(
         prompt._id,
         runs.filter(
-          (run) =>
-            run.startedAt >= rangeStart &&
-            (!args.provider || run.providerSlug === args.provider)
+          (run) => rangeStart === undefined || run.startedAt >= rangeStart
         )
       );
     }
@@ -2063,6 +2513,7 @@ export const listPromptResponseAnalytics = query({
         const promptRuns = (promptRunsByPrompt.get(prompt._id) ?? []).sort(
           (left, right) => right.startedAt - left.startedAt
         );
+        const runCount = uniqueStrings(promptRuns.map(runGroupKey)).length;
         const successfulRuns = promptRuns.filter((run) =>
           isSuccessfulRunStatus(run.status)
         );
@@ -2136,21 +2587,13 @@ export const listPromptResponseAnalytics = query({
         return {
           id: prompt._id,
           excerpt: promptExcerptFor(prompt),
-          providerCount: args.provider
-            ? selectedProvider
-              ? 1
-              : 0
-            : activeProviderNames.length,
-          providerNames: args.provider
-            ? selectedProvider
-              ? [selectedProvider.name]
-              : []
-            : activeProviderNames,
-          latestProviderName: latestSuccessfulRun?.providerName,
           active: prompt.active,
           responseCount: successfulRuns.length,
           latestRunAt: latestSuccessfulRun?.startedAt,
           latestRunId: latestSuccessfulRun?._id,
+          latestRunGroupId: latestSuccessfulRun
+            ? runGroupKey(latestSuccessfulRun)
+            : undefined,
           latestStatus: latestSuccessfulRun?.status,
           latestAttempt:
             promptRuns[0]?.attempt ?? latestSuccessfulRun?.attempt ?? 1,
@@ -2159,6 +2602,7 @@ export const listPromptResponseAnalytics = query({
             latestSuccessfulRun?.responseSummary ??
             latestSuccessfulRun?.responseText ??
             undefined,
+          runCount,
           latestSourceCount:
             latestSuccessfulRun?.sourceCount ?? latestCitations.length,
           latestVisibility: latestSuccessfulRun?.visibilityScore,
@@ -2231,6 +2675,7 @@ export const getPromptAnalysis = query({
       const mentions = mentionsByRun.get(run._id) ?? [];
       return {
         id: run._id,
+        runGroupId: runGroupKey(run),
         status: run.status,
         startedAt: run.startedAt,
         finishedAt: run.finishedAt,
@@ -2437,6 +2882,8 @@ export const getPromptRun = query({
     return {
       run: {
         ...run,
+        runGroupId: runGroupKey(run),
+        runGroupQueuedAt: runQueuedAt(run),
         sourceCount: isSuccessfulRunStatus(run.status)
           ? run.sourceCount
           : undefined,

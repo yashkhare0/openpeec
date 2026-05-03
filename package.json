@@ -28,7 +28,7 @@
     "runner:capture-session": "node runner/capture-session.mjs",
     "runner:open-session": "node runner/open-session-window.mjs",
     "runner:install-browsers": "playwright install chromium",
-    "runner:install-camoufox": "${CAMOUFOX_PYTHON:-python3} -m pip install -U 'camoufox[geoip]' && ${CAMOUFOX_PYTHON:-python3} -m camoufox fetch",
+    "runner:install-camoufox": "node runner/install-camoufox.mjs",
     "runner:install-nodriver": "node runner/install-nodriver.mjs",
     "runner:nodriver:fixture": "node runner/run-monitor.mjs --config runner/example.nodriver-fixture.json --output runner/last-run.nodriver.json && node runner/assert-nodriver-fixture-result.mjs runner/last-run.nodriver.json",
     "runner:nodriver:fixture:docker": "node runner/run-monitor.mjs --config runner/example.nodriver-fixture.docker.json --output runner/last-run.nodriver.json && node runner/assert-nodriver-fixture-result.mjs runner/last-run.nodriver.json",

@@ -38,15 +38,13 @@ vi.mock("@/components/ui/dialog", () => ({
 const promptRow = {
   id: "prompt_1" as Id<"prompts">,
   excerpt: "Best AI visibility tools",
-  providerCount: 1,
-  providerNames: ["OpenAI"],
-  latestProviderName: "OpenAI",
   latestCitationQuality: 81,
   latestRunAt: Date.now(),
   latestRunId: "run_1" as Id<"promptRuns">,
   latestStatus: "success",
   latestResponseSummary: "OpenPeec is cited in the result.",
   latestSourceCount: 3,
+  runCount: 2,
   responseCount: 3,
   sourceDiversity: 4,
   topSources: ["docs.openpeec.ai"],
@@ -84,7 +82,9 @@ describe("PromptsPage", () => {
       })
     );
     await user.click(
-      screen.getByRole("menuitem", { name: /^run with camoufox$/i })
+      screen.getByRole("menuitem", {
+        name: /^run all providers with camoufox$/i,
+      })
     );
 
     await waitFor(() => {
@@ -95,6 +95,34 @@ describe("PromptsPage", () => {
       });
     });
     expect(toast.success).toHaveBeenCalledWith("Camoufox run queued.");
+  });
+
+  it("renders prompts as atomic data-table rows without provider or latest-run details", () => {
+    render(
+      <PromptsPage
+        rows={[promptRow]}
+        selectedPromptId={null}
+        onSelectPrompt={vi.fn()}
+        onCreatePrompt={vi.fn().mockResolvedValue("prompt_2")}
+        onUpdatePrompt={vi.fn().mockResolvedValue("prompt_1")}
+        onDeletePrompt={vi.fn().mockResolvedValue("prompt_1")}
+        onTriggerSelectedNow={vi.fn().mockResolvedValue({ queuedCount: 1 })}
+      />
+    );
+
+    expect(screen.getByRole("columnheader", { name: "Runs" })).toBeTruthy();
+    expect(screen.getByText("Best AI visibility tools")).toBeTruthy();
+    expect(screen.getByRole("cell", { name: "2" })).toBeTruthy();
+    expect(screen.getByText("Active")).toBeTruthy();
+
+    expect(
+      screen.queryByRole("columnheader", { name: "Providers" })
+    ).toBeNull();
+    expect(screen.queryByText("OpenAI")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Prompts" })).toBeNull();
+    expect(screen.queryByText("Latest")).toBeNull();
+    expect(screen.queryByText("OpenPeec is cited in the result.")).toBeNull();
+    expect(screen.queryByText("Success")).toBeNull();
   });
 
   it("creates a prompt with only text", async () => {
