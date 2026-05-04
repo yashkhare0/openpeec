@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Id } from "../../../convex/_generated/dataModel";
 
+import { TooltipProvider } from "@/components/ui/tooltip";
+
 import { PromptsPage } from "./PromptsPage";
 
 const toast = vi.hoisted(() => ({
@@ -35,18 +37,20 @@ vi.mock("@/components/ui/dialog", () => ({
   DialogTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
+function renderWithTooltipProvider(children: ReactNode) {
+  return render(<TooltipProvider>{children}</TooltipProvider>);
+}
+
 const promptRow = {
   id: "prompt_1" as Id<"prompts">,
   excerpt: "Best AI visibility tools",
-  providerCount: 1,
-  providerNames: ["OpenAI"],
-  latestProviderName: "OpenAI",
   latestCitationQuality: 81,
   latestRunAt: Date.now(),
   latestRunId: "run_1" as Id<"promptRuns">,
   latestStatus: "success",
   latestResponseSummary: "OpenPeec is cited in the result.",
   latestSourceCount: 3,
+  runCount: 2,
   responseCount: 3,
   sourceDiversity: 4,
   topSources: ["docs.openpeec.ai"],
@@ -64,13 +68,14 @@ describe("PromptsPage", () => {
 
   it("queues a Camoufox prompt run from the overflow actions menu", async () => {
     const user = userEvent.setup();
+    const onSelectPrompt = vi.fn();
     const onTriggerSelectedNow = vi.fn().mockResolvedValue({ queuedCount: 1 });
 
-    render(
+    renderWithTooltipProvider(
       <PromptsPage
         rows={[promptRow]}
         selectedPromptId={null}
-        onSelectPrompt={vi.fn()}
+        onSelectPrompt={onSelectPrompt}
         onCreatePrompt={vi.fn().mockResolvedValue("prompt_2")}
         onUpdatePrompt={vi.fn().mockResolvedValue("prompt_1")}
         onDeletePrompt={vi.fn().mockResolvedValue("prompt_1")}
@@ -84,7 +89,9 @@ describe("PromptsPage", () => {
       })
     );
     await user.click(
-      screen.getByRole("menuitem", { name: /^run with camoufox$/i })
+      screen.getByRole("menuitem", {
+        name: /^run all providers with camoufox$/i,
+      })
     );
 
     await waitFor(() => {
@@ -95,13 +102,75 @@ describe("PromptsPage", () => {
       });
     });
     expect(toast.success).toHaveBeenCalledWith("Camoufox run queued.");
+    expect(onSelectPrompt).not.toHaveBeenCalled();
+  });
+
+  it("opens prompt detail from full row click and keyboard activation", async () => {
+    const user = userEvent.setup();
+    const onSelectPrompt = vi.fn();
+
+    renderWithTooltipProvider(
+      <PromptsPage
+        rows={[promptRow]}
+        selectedPromptId={null}
+        onSelectPrompt={onSelectPrompt}
+        onCreatePrompt={vi.fn().mockResolvedValue("prompt_2")}
+        onUpdatePrompt={vi.fn().mockResolvedValue("prompt_1")}
+        onDeletePrompt={vi.fn().mockResolvedValue("prompt_1")}
+        onTriggerSelectedNow={vi.fn().mockResolvedValue({ queuedCount: 1 })}
+      />
+    );
+
+    const row = screen.getByRole("row", {
+      name: /open prompt details for best ai visibility tools/i,
+    });
+
+    await user.click(row);
+    expect(onSelectPrompt).toHaveBeenLastCalledWith("prompt_1");
+
+    onSelectPrompt.mockClear();
+    row.focus();
+    await user.keyboard("{Enter}");
+    expect(onSelectPrompt).toHaveBeenLastCalledWith("prompt_1");
+
+    onSelectPrompt.mockClear();
+    await user.keyboard(" ");
+    expect(onSelectPrompt).toHaveBeenLastCalledWith("prompt_1");
+  });
+
+  it("renders prompts as atomic data-table rows without provider or latest-run details", () => {
+    renderWithTooltipProvider(
+      <PromptsPage
+        rows={[promptRow]}
+        selectedPromptId={null}
+        onSelectPrompt={vi.fn()}
+        onCreatePrompt={vi.fn().mockResolvedValue("prompt_2")}
+        onUpdatePrompt={vi.fn().mockResolvedValue("prompt_1")}
+        onDeletePrompt={vi.fn().mockResolvedValue("prompt_1")}
+        onTriggerSelectedNow={vi.fn().mockResolvedValue({ queuedCount: 1 })}
+      />
+    );
+
+    expect(screen.getByRole("columnheader", { name: /runs/i })).toBeTruthy();
+    expect(screen.getByText("Best AI visibility tools")).toBeTruthy();
+    expect(screen.getByRole("cell", { name: "2" })).toBeTruthy();
+    expect(screen.getByText("Active")).toBeTruthy();
+
+    expect(
+      screen.queryByRole("columnheader", { name: "Providers" })
+    ).toBeNull();
+    expect(screen.queryByText("OpenAI")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Prompts" })).toBeNull();
+    expect(screen.queryByText("Latest")).toBeNull();
+    expect(screen.queryByText("OpenPeec is cited in the result.")).toBeNull();
+    expect(screen.queryByText("Success")).toBeNull();
   });
 
   it("creates a prompt with only text", async () => {
     const user = userEvent.setup();
     const onCreatePrompt = vi.fn().mockResolvedValue("prompt_2");
 
-    render(
+    renderWithTooltipProvider(
       <PromptsPage
         rows={[]}
         selectedPromptId={null}
@@ -116,7 +185,7 @@ describe("PromptsPage", () => {
 
     await user.type(
       screen.getByPlaceholderText(
-        /ask about your category, product, or brand visibility/i
+        /ask about your brand, product, or category/i
       ),
       "How visible is OpenPeec in AI search?"
     );

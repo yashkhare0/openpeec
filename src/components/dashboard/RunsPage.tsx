@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { Id } from "../../../convex/_generated/dataModel";
 
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -19,16 +19,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import { InlineEmpty } from "./components/EmptyState";
+import {
+  clickableTableRowClassName,
+  InfoTooltip,
+} from "./components/InfoTooltip";
 import { DashboardTableCardSkeleton } from "./components/LoadingState";
 
-type RunRow = {
-  _id: Id<"promptRuns">;
-  promptId: Id<"prompts">;
-  promptExcerpt: string;
+type BrowserEngine = "playwright" | "camoufox" | "nodriver";
+
+type ProviderRun = {
+  runId: Id<"promptRuns">;
   providerSlug: string;
   providerName: string;
-  providerUrl?: string;
   channelName?: string;
   sessionMode?: "guest" | "stored";
   browserEngine?: BrowserEngine;
@@ -38,45 +42,60 @@ type RunRow = {
   finishedAt?: number;
   latencyMs?: number;
   responseSummary?: string;
-  citationQualityScore?: number;
   sourceCount?: number;
   citationCount: number;
   warnings?: string[];
-  runLabel?: string;
 };
 
-type BrowserEngine = "playwright" | "camoufox" | "nodriver";
+type RunGroupRow = {
+  id: string;
+  promptId: Id<"prompts">;
+  promptExcerpt: string;
+  runLabel?: string;
+  status: string;
+  queuedAt: number;
+  startedAt: number;
+  finishedAt?: number;
+  sourceCount: number;
+  citationCount: number;
+  providers: ProviderRun[];
+};
 
 export function RunsPage({
   loading = false,
-  runs,
-  selectedRunId,
-  onOpenRun,
+  groups,
+  selectedRunGroupId,
+  onOpenRunGroup,
   onOpenPrompt,
 }: {
   loading?: boolean;
-  runs: RunRow[];
-  selectedRunId: Id<"promptRuns"> | null;
-  onOpenRun: (runId: Id<"promptRuns">) => void;
+  groups: RunGroupRow[];
+  selectedRunGroupId: string | null;
+  onOpenRunGroup: (runGroupId: string) => void;
   onOpenPrompt: (promptId: Id<"prompts">) => void;
 }) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
 
-  const filteredRuns = useMemo(() => {
+  const filteredGroups = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return runs.filter((run) => {
-      if (status !== "all" && run.status !== status) {
+    return groups.filter((group) => {
+      if (status !== "all" && group.status !== status) {
         return false;
       }
       if (!needle) {
         return true;
       }
-      return `${run.promptExcerpt} ${run.providerName} ${formatBrowserEngine(resolveBrowserEngine(run))} ${run.runLabel ?? ""} ${run.responseSummary ?? ""} ${(run.warnings ?? []).join(" ")}`
+      return `${group.promptExcerpt} ${group.runLabel ?? ""} ${group.status} ${group.providers
+        .map(
+          (run) =>
+            `${run.providerName} ${run.providerSlug} ${run.channelName ?? ""} ${formatBrowserEngine(resolveBrowserEngine(run))} ${formatSessionMode(run.sessionMode)} ${run.runner ?? ""} ${run.status} ${formatDuration(getRuntimeMs(run))} ${run.responseSummary ?? ""} ${(run.warnings ?? []).join(" ")}`
+        )
+        .join(" ")}`
         .toLowerCase()
         .includes(needle);
     });
-  }, [runs, search, status]);
+  }, [groups, search, status]);
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -85,114 +104,113 @@ export function RunsPage({
           <DashboardTableCardSkeleton titleWidth="w-16" rows={6} columns={6} />
         ) : (
           <Card>
-            <CardHeader>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <CardTitle>Runs</CardTitle>
-                <div className="flex flex-wrap gap-2">
-                  <Input
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search runs..."
-                    className="h-8 w-[240px]"
-                  />
-                  <Select value={status} onValueChange={setStatus}>
-                    <SelectTrigger className="h-8 w-[140px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All statuses</SelectItem>
-                      <SelectItem value="queued">Queued</SelectItem>
-                      <SelectItem value="running">Running</SelectItem>
-                      <SelectItem value="blocked">Blocked</SelectItem>
-                      <SelectItem value="success">Success</SelectItem>
-                      <SelectItem value="failed">Failed</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap justify-end gap-2">
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search runs..."
+                  className="h-8 w-[240px]"
+                />
+                <Select value={status} onValueChange={setStatus}>
+                  <SelectTrigger className="h-8 w-[140px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    <SelectItem value="queued">Queued</SelectItem>
+                    <SelectItem value="running">Running</SelectItem>
+                    <SelectItem value="blocked">Blocked</SelectItem>
+                    <SelectItem value="success">Success</SelectItem>
+                    <SelectItem value="failed">Failed</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            </CardHeader>
-            <CardContent>
-              {filteredRuns.length === 0 ? (
+              {filteredGroups.length === 0 ? (
                 <InlineEmpty text="No runs match the current filters." />
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Started</TableHead>
+                      <TableHead>Queued</TableHead>
                       <TableHead>Prompt</TableHead>
-                      <TableHead>Engine</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>Providers</TableHead>
                       <TableHead className="text-right">Runtime</TableHead>
-                      <TableHead className="text-right">Sources</TableHead>
-                      <TableHead className="text-right">Citation</TableHead>
+                      <TableHead className="text-right">
+                        Sources / citations
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredRuns.map((run) => (
-                      <TableRow
-                        key={String(run._id)}
-                        className={
-                          selectedRunId === run._id ? "bg-muted/30" : ""
-                        }
-                        tabIndex={0}
-                        onClick={() => onOpenRun(run._id)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            onOpenRun(run._id);
-                          }
-                        }}
-                      >
-                        <TableCell>
-                          <div className="space-y-1">
-                            <p className="font-medium">
-                              {formatFreshness(run.startedAt)}
-                            </p>
-                            <p className="text-muted-foreground text-xs">
-                              {formatTimestamp(run.startedAt)}
-                            </p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <button
-                            type="button"
-                            className="hover:text-foreground text-left transition-colors"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onOpenPrompt(run.promptId);
-                            }}
+                    {filteredGroups.map((group) => {
+                      const visibleRunLabel = getVisibleRunLabel(group);
+
+                      return (
+                        <TableRow
+                          key={group.id}
+                          aria-label={`Open run group for ${group.promptExcerpt}`}
+                          className={cn(
+                            clickableTableRowClassName,
+                            selectedRunGroupId === group.id && "bg-muted/30"
+                          )}
+                          tabIndex={0}
+                          onClick={() => onOpenRunGroup(group.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              onOpenRunGroup(group.id);
+                            }
+                          }}
+                        >
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <span className="font-medium">
+                                {formatFreshness(group.queuedAt)}
+                              </span>
+                              <RunDetailsTooltip group={group} />
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <button
+                              type="button"
+                              className="hover:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 rounded-sm text-left transition-colors outline-none focus-visible:ring-3"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onOpenPrompt(group.promptId);
+                              }}
+                            >
+                              <p className="font-medium">
+                                {group.promptExcerpt}
+                              </p>
+                              {visibleRunLabel ? (
+                                <p className="text-muted-foreground mt-1 text-xs">
+                                  {visibleRunLabel}
+                                </p>
+                              ) : null}
+                            </button>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex max-w-[360px] flex-wrap items-center gap-1.5">
+                              {group.providers.map((run) => (
+                                <ProviderSummary
+                                  key={String(run.runId)}
+                                  run={run}
+                                />
+                              ))}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatGroupRuntime(group)}
+                          </TableCell>
+                          <TableCell
+                            className="text-right tabular-nums"
+                            aria-label={`${group.sourceCount} sources, ${group.citationCount} citations`}
                           >
-                            <p className="font-medium">{run.promptExcerpt}</p>
-                            <p className="text-muted-foreground mt-1 text-xs">
-                              {run.providerName}
-                              {run.channelName ? ` · ${run.channelName}` : ""}
-                              {run.sessionMode
-                                ? ` · ${formatSessionMode(run.sessionMode)}`
-                                : ""}
-                            </p>
-                          </button>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {formatBrowserEngine(resolveBrowserEngine(run))}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <span className={statusClassName(run.status)}>
-                            {titleCase(run.status)}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatRuntime(run)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {run.sourceCount ?? run.citationCount}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatScore(run.citationQualityScore)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                            {group.sourceCount} / {group.citationCount}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               )}
@@ -204,8 +222,82 @@ export function RunsPage({
   );
 }
 
+function RunDetailsTooltip({ group }: { group: RunGroupRow }) {
+  const providerDetails = group.providers.map((run) => ({
+    key: String(run.runId),
+    text: [
+      `${run.providerName}: ${titleCase(run.status)}`,
+      `engine ${formatBrowserEngine(resolveBrowserEngine(run))}`,
+      `session ${formatSessionMode(run.sessionMode)}`,
+      `runtime ${formatDuration(getRuntimeMs(run))}`,
+      run.runner ? `runner ${run.runner}` : undefined,
+    ]
+      .filter(Boolean)
+      .join(", "),
+  }));
+
+  return (
+    <RowControl>
+      <InfoTooltip label="Run details">
+        <div className="flex flex-col gap-1 text-left">
+          <span>Queued: {formatExactTimestamp(group.queuedAt)}</span>
+          <span>Started: {formatExactTimestamp(group.startedAt)}</span>
+          {typeof group.finishedAt === "number" ? (
+            <span>Finished: {formatExactTimestamp(group.finishedAt)}</span>
+          ) : null}
+          {providerDetails.map((detail) => (
+            <span key={detail.key}>{detail.text}</span>
+          ))}
+        </div>
+      </InfoTooltip>
+    </RowControl>
+  );
+}
+
+function ProviderSummary({ run }: { run: ProviderRun }) {
+  return (
+    <Badge variant={providerStatusBadgeVariant(run.status)}>
+      {run.providerName} {titleCase(run.status)}
+    </Badge>
+  );
+}
+
+function RowControl({ children }: { children: ReactNode }) {
+  return (
+    <span
+      className="inline-flex"
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      {children}
+    </span>
+  );
+}
+
+function getVisibleRunLabel(
+  group: Pick<RunGroupRow, "promptExcerpt" | "runLabel">
+) {
+  const runLabel = group.runLabel?.trim();
+  if (!runLabel) {
+    return undefined;
+  }
+  if (normalizeDisplayText(runLabel) === "manual run") {
+    return undefined;
+  }
+  if (
+    normalizeDisplayText(runLabel) === normalizeDisplayText(group.promptExcerpt)
+  ) {
+    return undefined;
+  }
+  return runLabel;
+}
+
+function normalizeDisplayText(value: string) {
+  return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 function getRuntimeMs(
-  run: Pick<RunRow, "latencyMs" | "startedAt" | "finishedAt">
+  run: Pick<ProviderRun, "latencyMs" | "startedAt" | "finishedAt">
 ) {
   if (typeof run.latencyMs === "number") {
     return run.latencyMs;
@@ -216,10 +308,19 @@ function getRuntimeMs(
   return undefined;
 }
 
-function formatRuntime(
-  run: Pick<RunRow, "latencyMs" | "startedAt" | "finishedAt">
-) {
-  return formatDuration(getRuntimeMs(run));
+function formatGroupRuntime(group: RunGroupRow) {
+  const providerRuntime = Math.max(
+    ...group.providers
+      .map((run) => getRuntimeMs(run))
+      .filter((value): value is number => typeof value === "number")
+  );
+  if (Number.isFinite(providerRuntime)) {
+    return formatDuration(providerRuntime);
+  }
+  if (typeof group.finishedAt === "number") {
+    return formatDuration(Math.max(0, group.finishedAt - group.startedAt));
+  }
+  return "-";
 }
 
 function formatDuration(value: number | undefined) {
@@ -238,15 +339,8 @@ function formatDuration(value: number | undefined) {
   return `${minutes}m ${remainder}s`;
 }
 
-function formatScore(value: number | undefined) {
-  if (value === undefined) {
-    return "-";
-  }
-  return `${Math.round(value)}`;
-}
-
 function resolveBrowserEngine(
-  run: Pick<RunRow, "browserEngine" | "runner">
+  run: Pick<ProviderRun, "browserEngine" | "runner">
 ): BrowserEngine | undefined {
   if (run.browserEngine) {
     return run.browserEngine;
@@ -276,23 +370,26 @@ function formatBrowserEngine(engine: BrowserEngine | undefined) {
   return "Unknown";
 }
 
-function statusClassName(status: string) {
+function formatSessionMode(mode: ProviderRun["sessionMode"]) {
+  if (mode === "stored") {
+    return "Stored session";
+  }
+  if (mode === "guest") {
+    return "Guest session";
+  }
+  return "Unknown session";
+}
+
+function providerStatusBadgeVariant(
+  status: string
+): "secondary" | "destructive" | "outline" {
   if (status === "success") {
-    return "text-sm font-medium text-emerald-700 dark:text-emerald-300";
+    return "secondary";
   }
   if (status === "failed") {
-    return "text-sm font-medium text-rose-700 dark:text-rose-300";
+    return "destructive";
   }
-  if (status === "blocked") {
-    return "text-sm font-medium text-amber-700 dark:text-amber-300";
-  }
-  if (status === "running") {
-    return "text-sm font-medium text-blue-700 dark:text-blue-300";
-  }
-  if (status === "queued") {
-    return "text-sm font-medium text-amber-700 dark:text-amber-300";
-  }
-  return "text-sm font-medium";
+  return "outline";
 }
 
 function titleCase(value: string) {
@@ -300,10 +397,6 @@ function titleCase(value: string) {
     .split("_")
     .map((item) => item.charAt(0).toUpperCase() + item.slice(1).toLowerCase())
     .join(" ");
-}
-
-function formatSessionMode(value: "guest" | "stored") {
-  return value === "stored" ? "Local profile" : "Ephemeral";
 }
 
 function formatFreshness(timestamp: number) {
@@ -318,11 +411,14 @@ function formatFreshness(timestamp: number) {
   return `${Math.round(hours / 24)}d ago`;
 }
 
-function formatTimestamp(timestamp: number) {
+function formatExactTimestamp(timestamp: number) {
   return new Date(timestamp).toLocaleString("en-US", {
+    year: "numeric",
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    second: "2-digit",
+    timeZoneName: "short",
   });
 }

@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { Plus } from "lucide-react";
+import { ArrowUpRight, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -19,6 +19,7 @@ import { PromptsPage } from "./PromptsPage";
 import { ProvidersPage } from "./ProvidersPage";
 import { ResponseDetailPage } from "./ResponseDetailPage";
 import { ResponsesPage } from "./ResponsesPage";
+import { RunGroupDetailPage } from "./RunGroupDetailPage";
 import { RunsPage } from "./RunsPage";
 import { SourcesPage } from "./SourcesPage";
 
@@ -53,6 +54,7 @@ function parseDashboardUrlState(): {
   promptSearch: string;
   selectedPromptId: Id<"prompts"> | null;
   selectedRunId: Id<"promptRuns"> | null;
+  selectedRunGroupId: string | null;
   runDetailContext: RunDetailContext;
 } {
   const params = new URLSearchParams(window.location.search);
@@ -69,6 +71,7 @@ function parseDashboardUrlState(): {
       (params.get("prompt")?.trim() as Id<"prompts"> | null) ?? null,
     selectedRunId:
       (params.get("run")?.trim() as Id<"promptRuns"> | null) ?? null,
+    selectedRunGroupId: params.get("group")?.trim() || null,
     runDetailContext: (contextValue === "prompts" ||
     contextValue === "runs" ||
     contextValue === "responses"
@@ -84,13 +87,14 @@ function writeDashboardUrlState(state: {
   promptSearch: string;
   selectedPromptId: Id<"prompts"> | null;
   selectedRunId: Id<"promptRuns"> | null;
+  selectedRunGroupId: string | null;
   runDetailContext: RunDetailContext;
 }) {
   const params = new URLSearchParams();
   if (state.page !== "overview") {
     params.set("page", state.page);
   }
-  if (state.rangeDays !== 7) {
+  if (state.page !== "prompts" && state.rangeDays !== 7) {
     params.set("range", String(state.rangeDays));
   }
   if (state.page !== "prompts" && state.providerFilter !== "all") {
@@ -104,6 +108,9 @@ function writeDashboardUrlState(state: {
   }
   if (state.selectedRunId) {
     params.set("run", String(state.selectedRunId));
+  }
+  if (state.selectedRunGroupId) {
+    params.set("group", state.selectedRunGroupId);
   }
   if (state.runDetailContext) {
     params.set("context", state.runDetailContext);
@@ -132,6 +139,13 @@ export function MonitoringDashboard() {
   const [selectedRunId, setSelectedRunId] = useState<Id<"promptRuns"> | null>(
     initialUrlState.selectedRunId
   );
+  const [selectedRunGroupId, setSelectedRunGroupId] = useState<string | null>(
+    initialUrlState.selectedRunGroupId
+  );
+  const [sourcePromptFilter, setSourcePromptFilter] = useState<{
+    promptId: Id<"prompts">;
+    promptExcerpt: string;
+  } | null>(null);
   const [runDetailContext, setRunDetailContext] = useState<RunDetailContext>(
     initialUrlState.runDetailContext
   );
@@ -156,6 +170,10 @@ export function MonitoringDashboard() {
   const isSourcesPage = page === "sources";
   const showingRunDetailForRuns =
     page === "runs" && runDetailContext === "runs" && selectedRunId !== null;
+  const showingRunGroupDetailForRuns =
+    page === "runs" &&
+    runDetailContext === "runs" &&
+    selectedRunGroupId !== null;
   const showingRunDetailForResponses =
     page === "responses" &&
     runDetailContext === "responses" &&
@@ -163,12 +181,11 @@ export function MonitoringDashboard() {
   const showingRunDetail =
     (isPromptsPage && promptView === "response") ||
     showingRunDetailForRuns ||
+    showingRunGroupDetailForRuns ||
     showingRunDetailForResponses;
   const shouldLoadPromptAnalytics = isPromptsPage && promptView === "list";
   const shouldLoadRunsList =
-    isOverviewPage ||
-    (isRunsPage && !showingRunDetailForRuns) ||
-    (isResponsesPage && !showingRunDetailForResponses);
+    isOverviewPage || (isResponsesPage && !showingRunDetailForResponses);
   const provider =
     providerFilter === "all" || isPromptsPage ? undefined : providerFilter;
 
@@ -201,7 +218,7 @@ export function MonitoringDashboard() {
   const providers = useQuery(api.analytics.listProviders, {});
   const promptAnalytics = useQuery(
     api.analytics.listPromptResponseAnalytics,
-    shouldLoadPromptAnalytics ? { provider, rangeDays } : "skip"
+    shouldLoadPromptAnalytics ? {} : "skip"
   );
   const queueStatus = useQuery(api.analytics.getQueueStatus, {});
   const runs = useQuery(
@@ -209,6 +226,15 @@ export function MonitoringDashboard() {
     shouldLoadRunsList
       ? {
           limit: isOverviewPage ? 4 : 200,
+          provider,
+        }
+      : "skip"
+  );
+  const runGroups = useQuery(
+    api.analytics.listRunGroups,
+    isRunsPage && !showingRunDetailForRuns && !showingRunGroupDetailForRuns
+      ? {
+          limit: 200,
           provider,
         }
       : "skip"
@@ -237,17 +263,24 @@ export function MonitoringDashboard() {
     api.analytics.getPromptRun,
     selectedRunId ? { id: selectedRunId } : "skip"
   );
+  const runGroupDetail = useQuery(
+    api.analytics.getRunGroup,
+    selectedRunGroupId ? { runGroupId: selectedRunGroupId } : "skip"
+  );
 
   const overviewLoading =
     isOverviewPage &&
     (overview === undefined || sources === undefined || runs === undefined);
   const promptsPageLoading =
-    isPromptsPage &&
-    promptView === "list" &&
-    (providers === undefined || promptAnalytics === undefined);
+    isPromptsPage && promptView === "list" && promptAnalytics === undefined;
   const providersPageLoading = isProvidersPage && providers === undefined;
-  const runsPageLoading = isRunsPage && runs === undefined;
-  const responsesPageLoading = isResponsesPage && runs === undefined;
+  const runsPageLoading =
+    isRunsPage &&
+    !showingRunDetailForRuns &&
+    !showingRunGroupDetailForRuns &&
+    runGroups === undefined;
+  const responsesPageLoading =
+    isResponsesPage && !showingRunDetailForResponses && runs === undefined;
   const sourcesPageLoading =
     isSourcesPage && (sources === undefined || entities === undefined);
   const promptDetailLoading =
@@ -255,6 +288,8 @@ export function MonitoringDashboard() {
     selectedPromptId !== null &&
     promptAnalysis === undefined;
   const runDetailLoading = selectedRunId !== null && runDetail === undefined;
+  const runGroupDetailLoading =
+    selectedRunGroupId !== null && runGroupDetail === undefined;
   const pageLoading =
     overviewLoading ||
     promptsPageLoading ||
@@ -263,7 +298,8 @@ export function MonitoringDashboard() {
     responsesPageLoading ||
     sourcesPageLoading ||
     promptDetailLoading ||
-    runDetailLoading;
+    runDetailLoading ||
+    runGroupDetailLoading;
   const hasData = !!overview && overview.kpis.totalRuns > 0;
 
   const promptRows = useMemo(
@@ -271,7 +307,7 @@ export function MonitoringDashboard() {
       (promptAnalytics ?? []).filter((row) =>
         !search
           ? true
-          : `${row.excerpt} ${(row.providerNames ?? []).join(" ")} ${row.latestProviderName ?? ""} ${row.latestResponseSummary ?? ""} ${(row.topEntities ?? []).join(" ")} ${(row.topSources ?? []).join(" ")}`
+          : `${row.excerpt} ${row.latestResponseSummary ?? ""} ${(row.topEntities ?? []).join(" ")} ${(row.topSources ?? []).join(" ")}`
               .toLowerCase()
               .includes(search)
       ),
@@ -309,7 +345,9 @@ export function MonitoringDashboard() {
       setPromptSearch(next.promptSearch);
       setSelectedPromptId(next.selectedPromptId);
       setSelectedRunId(next.selectedRunId);
+      setSelectedRunGroupId(next.selectedRunGroupId);
       setRunDetailContext(next.runDetailContext);
+      setSourcePromptFilter(null);
     };
 
     window.addEventListener("popstate", handlePopState);
@@ -326,6 +364,7 @@ export function MonitoringDashboard() {
       promptSearch,
       selectedPromptId,
       selectedRunId,
+      selectedRunGroupId,
       runDetailContext,
     });
   }, [
@@ -336,6 +375,7 @@ export function MonitoringDashboard() {
     runDetailContext,
     selectedPromptId,
     selectedRunId,
+    selectedRunGroupId,
   ]);
 
   useEffect(() => {
@@ -347,6 +387,7 @@ export function MonitoringDashboard() {
       setSelectedPromptId(null);
       if (runDetailContext === "prompts") {
         setSelectedRunId(null);
+        setSelectedRunGroupId(null);
         setRunDetailContext(null);
       }
       return;
@@ -362,6 +403,7 @@ export function MonitoringDashboard() {
     setSelectedPromptId(null);
     if (runDetailContext === "prompts") {
       setSelectedRunId(null);
+      setSelectedRunGroupId(null);
       setRunDetailContext(null);
     }
   }, [promptRows, promptView, runDetailContext, selectedPromptId]);
@@ -468,7 +510,9 @@ export function MonitoringDashboard() {
     setPromptCreateOpen(false);
     setSelectedPromptId(null);
     setSelectedRunId(null);
+    setSelectedRunGroupId(null);
     setRunDetailContext(null);
+    setSourcePromptFilter(null);
   };
 
   const openPrompt = (promptId: Id<"prompts"> | null) => {
@@ -476,12 +520,32 @@ export function MonitoringDashboard() {
     setPromptCreateOpen(false);
     setSelectedPromptId(promptId);
     setSelectedRunId(null);
+    setSelectedRunGroupId(null);
     setRunDetailContext(null);
+    setSourcePromptFilter(null);
   };
 
   const openRunFromPromptDetail = (runId: Id<"promptRuns"> | null) => {
     setSelectedRunId(runId);
+    setSelectedRunGroupId(null);
     setRunDetailContext(runId ? "prompts" : null);
+  };
+
+  const openRunGroupFromPromptDetail = (runGroupId: string | null) => {
+    setPage("runs");
+    setSelectedPromptId(null);
+    setSelectedRunId(null);
+    setSelectedRunGroupId(runGroupId);
+    setRunDetailContext(runGroupId ? "runs" : null);
+    setSourcePromptFilter(null);
+  };
+
+  const openRunGroup = (runGroupId: string | null) => {
+    setPage("runs");
+    setSelectedRunId(null);
+    setSelectedRunGroupId(runGroupId);
+    setRunDetailContext(runGroupId ? "runs" : null);
+    setSourcePromptFilter(null);
   };
 
   const openGlobalRunDetail = (
@@ -490,7 +554,22 @@ export function MonitoringDashboard() {
   ) => {
     setPage(nextPage);
     setSelectedRunId(runId);
+    setSelectedRunGroupId(null);
     setRunDetailContext(runId ? nextPage : null);
+    setSourcePromptFilter(null);
+  };
+
+  const openSourcesForPrompt = (
+    promptId: Id<"prompts">,
+    promptExcerpt: string
+  ) => {
+    setPage("sources");
+    setPromptCreateOpen(false);
+    setSelectedPromptId(null);
+    setSelectedRunId(null);
+    setSelectedRunGroupId(null);
+    setRunDetailContext(null);
+    setSourcePromptFilter({ promptId, promptExcerpt });
   };
 
   const handleRetryRun = async (runId: Id<"promptRuns">) => {
@@ -533,9 +612,21 @@ export function MonitoringDashboard() {
       return items;
     }
 
+    if (showingRunGroupDetailForRuns) {
+      return [
+        { label: "Runs", onClick: () => openRunGroup(null) },
+        {
+          label:
+            runGroupDetail?.prompt?.excerpt ??
+            runGroupDetail?.group.promptExcerpt ??
+            "Run group",
+        },
+      ];
+    }
+
     if (showingRunDetailForRuns) {
       return [
-        { label: "Runs", onClick: () => openGlobalRunDetail("runs", null) },
+        { label: "Runs", onClick: () => openRunGroup(null) },
         { label: runDetail?.run.promptExcerpt ?? "Run" },
       ];
     }
@@ -570,7 +661,9 @@ export function MonitoringDashboard() {
             providerFilter={providerFilter}
             onProviderFilter={setProviderFilter}
             providerOptions={providerOptions}
-            showRangeFilter={!isProvidersPage && !showingRunDetail}
+            showRangeFilter={
+              !isPromptsPage && !isProvidersPage && !showingRunDetail
+            }
             showProviderFilter={
               !isPromptsPage && !isProvidersPage && !showingRunDetail
             }
@@ -596,6 +689,21 @@ export function MonitoringDashboard() {
                     New prompt
                   </span>
                 </Button>
+              ) : showingRunGroupDetailForRuns && runGroupDetail ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    openPrompt(
+                      runGroupDetail.prompt?._id ??
+                        runGroupDetail.group.promptId
+                    )
+                  }
+                >
+                  Open prompt
+                  <ArrowUpRight data-icon="inline-end" />
+                </Button>
               ) : undefined
             }
             breadcrumbs={breadcrumbs}
@@ -617,6 +725,12 @@ export function MonitoringDashboard() {
                 overview={overview}
                 sources={sources?.items ?? []}
                 recentRuns={recentRuns}
+                onOpenRun={(runId) =>
+                  openGlobalRunDetail("runs", runId as Id<"promptRuns">)
+                }
+                onOpenPrompt={(promptId) =>
+                  openPrompt(promptId as Id<"prompts">)
+                }
               />
             ) : null}
 
@@ -643,6 +757,7 @@ export function MonitoringDashboard() {
                     onBack={() => openPrompt(null)}
                     selectedRunId={selectedRunId}
                     onOpenRun={openRunFromPromptDetail}
+                    onOpenRunGroup={openRunGroupFromPromptDetail}
                   />
                 ) : null}
                 {promptView === "response" ? (
@@ -657,7 +772,14 @@ export function MonitoringDashboard() {
             ) : null}
 
             {page === "runs" ? (
-              showingRunDetailForRuns ? (
+              showingRunGroupDetailForRuns ? (
+                <RunGroupDetailPage
+                  loading={runGroupDetailLoading}
+                  runGroupDetail={runGroupDetail}
+                  onOpenRun={(runId) => openGlobalRunDetail("runs", runId)}
+                  onOpenSourcesForPrompt={openSourcesForPrompt}
+                />
+              ) : showingRunDetailForRuns ? (
                 <ResponseDetailPage
                   loading={runDetailLoading}
                   runDetail={runDetail}
@@ -672,9 +794,9 @@ export function MonitoringDashboard() {
               ) : (
                 <RunsPage
                   loading={runsPageLoading}
-                  runs={runs ?? []}
-                  selectedRunId={selectedRunId}
-                  onOpenRun={(runId) => openGlobalRunDetail("runs", runId)}
+                  groups={runGroups ?? []}
+                  selectedRunGroupId={selectedRunGroupId}
+                  onOpenRunGroup={openRunGroup}
                   onOpenPrompt={openPrompt}
                 />
               )
@@ -726,6 +848,9 @@ export function MonitoringDashboard() {
                 onCreateEntity={createTrackedEntity}
                 onUpdateEntity={updateTrackedEntity}
                 onDeleteEntity={deleteTrackedEntity}
+                onOpenRun={(runId) => openGlobalRunDetail("responses", runId)}
+                promptFilter={sourcePromptFilter}
+                onPromptFilterClear={() => setSourcePromptFilter(null)}
               />
             ) : null}
           </div>

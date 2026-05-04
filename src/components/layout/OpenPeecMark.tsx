@@ -48,11 +48,32 @@ export function OpenPeecMark({
         d="M16 32C19.971 24.887 25.304 21.25 32 21.25C38.696 21.25 44.029 24.887 48 32C44.029 39.113 38.696 42.75 32 42.75C25.304 42.75 19.971 39.113 16 32Z"
         fill="currentColor"
       />
-      <circle cx="32" cy="32" r="9" fill="var(--background)" />
-      <circle cx="32" cy="32" r="5" fill="#2563EB" />
-      <rect x="42.5" y="18" width="4" height="7" rx="1.5" fill="#93C5FD" />
-      <rect x="48.5" y="15" width="4" height="10" rx="1.5" fill="#60A5FA" />
-      <rect x="54.5" y="11" width="4" height="14" rx="1.5" fill="#2563EB" />
+      <circle cx="32" cy="32" r="9" fill="var(--sidebar)" />
+      <circle cx="32" cy="32" r="5" fill="var(--primary)" />
+      <rect
+        x="42.5"
+        y="18"
+        width="4"
+        height="7"
+        rx="1.5"
+        fill="var(--chart-1)"
+      />
+      <rect
+        x="48.5"
+        y="15"
+        width="4"
+        height="10"
+        rx="1.5"
+        fill="var(--chart-2)"
+      />
+      <rect
+        x="54.5"
+        y="11"
+        width="4"
+        height="14"
+        rx="1.5"
+        fill="var(--primary)"
+      />
     </svg>
   );
 }

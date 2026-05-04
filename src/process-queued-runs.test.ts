@@ -461,4 +461,221 @@ describe("buildRunConfig", () => {
     expect(config.browser.nodriver.executablePath).toBe("/usr/bin/chromium");
     expect(config.navigation.domainHops).toEqual([]);
   });
+
+  it("lets queued Google AI Mode runs use provider defaults instead of OpenAI selectors", async () => {
+    const { buildRunConfig } =
+      await import("../runner/process-queued-runs.mjs");
+
+    const config = buildRunConfig(
+      {
+        provider: "openai",
+        browser: {
+          engine: "camoufox",
+          storageStatePath: "runner/camoufox.storage-state.json",
+        },
+        navigation: {
+          url: "https://chatgpt.com/",
+          submitStrategy: "type",
+        },
+        prompt: {
+          inputSelector: "#prompt-textarea",
+        },
+        extraction: {
+          responseContainerSelector: "[data-message-author-role='assistant']",
+        },
+        assertions: {
+          urlIncludes: "chatgpt.com",
+        },
+      },
+      {
+        prompt: {
+          id: "prompt_123",
+          excerpt: "MCP UI",
+          promptText: "how do i build mcp ui",
+          providerSlug: "google-ai-mode",
+          providerUrl: "https://www.google.com/search?udm=50",
+          sessionMode: "guest",
+          promptQueryParam: "q",
+          submitStrategy: "deeplink",
+        },
+        runLabel: "Google AI Mode run",
+      }
+    );
+
+    expect(config.provider).toBe("google-ai-mode");
+    expect(config.sessionMode).toBe("guest");
+    expect(config.navigation.submitStrategy).toBe("deeplink");
+    expect(config.navigation.promptQueryParam).toBe("q");
+    expect(config.prompt.inputSelector).toBeUndefined();
+    expect(config.extraction).toBeUndefined();
+    expect(config.assertions).toBeUndefined();
+  });
+});
+
+describe("resolveWorkerConfig", () => {
+  it("treats maxConcurrent as group concurrency for Camoufox", async () => {
+    const { resolveWorkerConfig } =
+      await import("../runner/process-queued-runs.mjs");
+
+    const config = resolveWorkerConfig(
+      {
+        browser: {
+          engine: "camoufox",
+        },
+        worker: {
+          maxConcurrent: 3,
+        },
+      },
+      {}
+    );
+
+    expect(config.maxConcurrent).toBe(3);
+    expect(config.runnerName).toBe("local-camoufox-worker");
+  });
+});
+
+describe("processClaimedRunGroup", () => {
+  beforeEach(async () => {
+    const { runMonitor } = await import("../runner/run-monitor.mjs");
+    vi.mocked(runMonitor).mockReset();
+  });
+
+  it("starts every provider child before completing the group", async () => {
+    const { processClaimedRunGroup } =
+      await import("../runner/process-queued-runs.mjs");
+    const { runMonitor } = await import("../runner/run-monitor.mjs");
+    const startedProviders: string[] = [];
+    let releaseOpenAi!: (value: unknown) => void;
+    let releaseGoogle!: (value: unknown) => void;
+    const openAiResult = new Promise((resolve) => {
+      releaseOpenAi = resolve;
+    });
+    const googleResult = new Promise((resolve) => {
+      releaseGoogle = resolve;
+    });
+
+    vi.mocked(runMonitor).mockImplementation(
+      async (config: { provider: string }) => {
+        startedProviders.push(config.provider);
+        return (
+          config.provider === "google-ai-mode"
+            ? await googleResult
+            : await openAiResult
+        ) as Awaited<ReturnType<typeof runMonitor>>;
+      }
+    );
+
+    const completeCalls: unknown[] = [];
+    const client = {
+      mutation: vi.fn(async (_name, args) => {
+        completeCalls.push(args);
+        return {};
+      }),
+    };
+    const workerConfig = {
+      runnerName: "local-camoufox-worker",
+      browserEngine: "camoufox" as const,
+      maxConcurrent: 1,
+      maxAttempts: 1,
+    };
+    const claimedRunBase = {
+      runGroupId: "run_group_1",
+      queuedAt: 1,
+      startedAt: 2,
+      runLabel: "Grouped run",
+      attempt: 1,
+    };
+    const groupPromise = processClaimedRunGroup(
+      client,
+      {
+        provider: "openai",
+        browser: {
+          engine: "camoufox",
+          storageStatePath: "runner/camoufox.storage-state.json",
+        },
+        navigation: {
+          url: "https://chatgpt.com/",
+        },
+      },
+      {
+        runGroupId: "run_group_1",
+        runs: [
+          {
+            ...claimedRunBase,
+            runId: "run_openai",
+            prompt: {
+              id: "prompt_1",
+              excerpt: "MCP UI",
+              promptText: "how do i build mcp ui",
+              providerSlug: "openai",
+              providerName: "OpenAI",
+              providerUrl: "https://chatgpt.com/",
+              sessionMode: "stored",
+            },
+          },
+          {
+            ...claimedRunBase,
+            runId: "run_google",
+            prompt: {
+              id: "prompt_1",
+              excerpt: "MCP UI",
+              promptText: "how do i build mcp ui",
+              providerSlug: "google-ai-mode",
+              providerName: "Google AI Mode",
+              providerUrl: "https://www.google.com/search?udm=50",
+              sessionMode: "guest",
+              promptQueryParam: "q",
+              submitStrategy: "deeplink",
+            },
+          },
+        ],
+      },
+      {
+        headed: false,
+      },
+      workerConfig
+    );
+
+    await Promise.resolve();
+    expect(startedProviders).toEqual(["openai", "google-ai-mode"]);
+    expect(completeCalls).toHaveLength(0);
+
+    releaseOpenAi({
+      status: "success",
+      finishedAt: 10,
+      latencyMs: 8,
+      responseText: "OpenAI response",
+      responseSummary: "OpenAI response",
+      sourceCount: 0,
+      citations: [],
+      warnings: [],
+    });
+    releaseGoogle({
+      status: "success",
+      finishedAt: 11,
+      latencyMs: 9,
+      responseText: "Google response",
+      responseSummary: "Google response",
+      sourceCount: 0,
+      citations: [],
+      warnings: [],
+    });
+
+    await expect(groupPromise).resolves.toBe(true);
+    expect(completeCalls).toHaveLength(2);
+    expect(completeCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          runId: "run_openai",
+          browserEngine: "camoufox",
+          sessionMode: "stored",
+        }),
+        expect.objectContaining({
+          runId: "run_google",
+          browserEngine: "camoufox",
+          sessionMode: "guest",
+        }),
+      ])
+    );
+  });
 });

@@ -8,6 +8,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { InlineEmpty } from "./EmptyState";
+import { InfoTooltip } from "./InfoTooltip";
 import { DashboardCardSkeleton } from "./LoadingState";
 
 type TrendPoint = {
@@ -18,12 +19,12 @@ type TrendPoint = {
 
 const chartConfig = {
   citation: {
-    label: "Citation Quality",
-    color: "oklch(0.705 0.213 47.604)",
+    label: "Citation quality",
+    color: "var(--chart-2)",
   },
   coverage: {
     label: "Coverage",
-    color: "oklch(0.627 0.194 149.214)",
+    color: "var(--chart-3)",
   },
 } satisfies ChartConfig;
 
@@ -72,7 +73,13 @@ export function TrendChart({
     <Card className="@container/chart">
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <CardTitle>Trend</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle>Trend</CardTitle>
+            <InfoTooltip label="About trend metrics">
+              Citation quality is average source score. Coverage is daily run
+              volume against the range total.
+            </InfoTooltip>
+          </div>
           <div className="text-muted-foreground flex flex-wrap items-center gap-3 text-xs">
             {allSeries.map((key) => (
               <span key={key} className="inline-flex items-center gap-2">

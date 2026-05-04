@@ -27,6 +27,7 @@ import {
   NODRIVER_FIXTURE_CITATIONS,
   NODRIVER_FIXTURE_RESPONSE_TEXT,
 } from "../runner/nodriver-fixture-contract.mjs";
+import { extractGoogleAiModeResponse } from "../runner/providers/google-ai-mode.mjs";
 import {
   detectAntiBotBlock,
   detectAntiBotNetworkBlock,
@@ -561,6 +562,23 @@ describe("normalizeRunnerConfig", () => {
     expect(config.navigation.submitStrategy).toBe("deeplink");
     expect(config.navigation.promptQueryParam).toBe("q");
   });
+
+  it("defaults Google AI Mode runs to q deeplinks and main-page extraction", () => {
+    const config = normalizeRunnerConfig({
+      provider: "google-ai-mode",
+      prompt: {
+        text: "how do i build mcp ui",
+      },
+    });
+
+    expect(config.sessionMode).toBe("guest");
+    expect(config.navigation.url).toBe("https://www.google.com/search?udm=50");
+    expect(config.navigation.submitStrategy).toBe("deeplink");
+    expect(config.navigation.promptQueryParam).toBe("q");
+    expect(config.prompt.inputSelector).toBe("");
+    expect(config.extraction.responseContainerSelector).toBe("main");
+    expect(config.assertions.urlIncludes).toBe("google.com/search");
+  });
 });
 
 describe("browser engine helpers", () => {
@@ -612,6 +630,53 @@ describe("normalizeExtractedPayload", () => {
       "https://example.com/openpeec-guide"
     );
     expect(extracted.sourceArtifacts[0].rawTitle).toBe("OpenPeec guide");
+  });
+});
+
+describe("extractGoogleAiModeResponse", () => {
+  it("extracts the AI Mode answer and source links from the rendered page", async () => {
+    const html = `
+      <main>
+        <h1>Search Results</h1>
+        <h2>how do i build mcp ui</h2>
+        <p>Build an MCP UI by returning an iframe-backed app resource.</p>
+        <p>Use a resource template and connect it to a tool result.</p>
+        <a href="https://modelcontextprotocol.io/docs/develop/build-server?utm_source=google">Model Context Protocol</a>
+        <button>Copy text</button>
+        <p>AI can make mistakes, so double-check responses</p>
+      </main>
+    `;
+    const dom = new JSDOM(html, {
+      url: "https://www.google.com/search?udm=50&q=how+do+i+build+mcp+ui",
+    });
+    const page = {
+      evaluate: async (fn: (args: unknown) => unknown, args: unknown) => {
+        const previousDocument = globalThis.document;
+        const previousWindow = globalThis.window;
+        globalThis.document = dom.window.document;
+        globalThis.window = dom.window as typeof globalThis.window;
+        try {
+          return fn(args);
+        } finally {
+          globalThis.document = previousDocument;
+          globalThis.window = previousWindow;
+        }
+      },
+    };
+
+    const raw = await extractGoogleAiModeResponse(page, {
+      prompt: { text: "how do i build mcp ui" },
+      extraction: { maxCitations: 10 },
+    });
+    const extracted = normalizeExtractedPayload(raw);
+
+    expect(extracted.responseText).toContain("Build an MCP UI");
+    expect(extracted.responseText).not.toContain("Copy text");
+    expect(extracted.citations).toHaveLength(1);
+    expect(extracted.citations[0].domain).toBe("modelcontextprotocol.io");
+    expect(extracted.citations[0].url).toBe(
+      "https://modelcontextprotocol.io/docs/develop/build-server"
+    );
   });
 });
 
@@ -718,7 +783,7 @@ describe("loadRunnerSessionMaterial", () => {
 });
 
 describe("runMonitor", () => {
-  it("blocks non-OpenAI providers without opening a browser", async () => {
+  it("blocks non-runnable providers without opening a browser", async () => {
     const result = await runMonitor({
       provider: "claude",
       navigation: {
@@ -727,6 +792,6 @@ describe("runMonitor", () => {
     });
 
     expect(result.status).toBe("blocked");
-    expect(result.summary).toContain("OpenAI is the only active v0 provider");
+    expect(result.summary).toContain("Provider runner is not implemented");
   });
 });

@@ -156,6 +156,8 @@ export default defineSchema({
     .index("active", ["active"]),
 
   promptRuns: defineTable({
+    runGroupId: v.optional(v.string()),
+    runGroupQueuedAt: v.optional(v.float64()),
     promptId: v.id("prompts"),
     providerId: v.id("providers"),
     providerSlug: v.string(),
@@ -207,6 +209,8 @@ export default defineSchema({
   })
     .index("startedAt", ["startedAt"])
     .index("status_startedAt", ["status", "startedAt"])
+    .index("runGroupId", ["runGroupId"])
+    .index("runGroupId_startedAt", ["runGroupId", "startedAt"])
     .index("promptId_startedAt", ["promptId", "startedAt"])
     .index("providerSlug_startedAt", ["providerSlug", "startedAt"])
     .index("ingestId", ["ingestId"]),

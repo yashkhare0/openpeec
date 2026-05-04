@@ -27,7 +27,7 @@ function buildSteps(onNavigate: (page: PageKey) => void): DriveStep[] {
       popover: {
         title: "Filter Your Data",
         description:
-          "Narrow your analytics by time range (7, 30, or 90 days) and by provider. Changes apply across all dashboard views.",
+          "Narrow analytics by time range and provider on views that support those filters.",
         side: "bottom",
         align: "start",
       },
