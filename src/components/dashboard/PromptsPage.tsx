@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, type KeyboardEvent } from "react";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { MoreHorizontal, Play } from "lucide-react";
+import { Tooltip as TooltipPrimitive } from "radix-ui";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent } from "@/components/ui/tooltip";
 import {
   Table,
   TableBody,
@@ -31,7 +33,12 @@ import {
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import { InlineEmpty } from "./components/EmptyState";
+import {
+  clickableTableRowClassName,
+  InfoTooltip,
+} from "./components/InfoTooltip";
 import { DashboardTableCardSkeleton } from "./components/LoadingState";
 
 type PromptRow = {
@@ -73,26 +80,32 @@ function PromptActions({
 }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={`Actions for ${row.excerpt}`}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <MoreHorizontal className="size-4" />
-        </Button>
-      </DropdownMenuTrigger>
+      <Tooltip>
+        <DropdownMenuTrigger asChild>
+          <TooltipPrimitive.Trigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Actions for ${row.excerpt}`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <MoreHorizontal />
+            </Button>
+          </TooltipPrimitive.Trigger>
+        </DropdownMenuTrigger>
+        <TooltipContent>Actions</TooltipContent>
+      </Tooltip>
       <DropdownMenuContent
         align="end"
         onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
       >
         {browserEngineOptions.map((option) => (
           <DropdownMenuItem
             key={option.value}
             onClick={() => void onRun(row.id, row.excerpt, option.value)}
           >
-            <Play className="size-4" />
+            <Play />
             Run all providers with {option.label}
           </DropdownMenuItem>
         ))}
@@ -108,6 +121,37 @@ function PromptActions({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function handleRowKeyDown(
+  event: KeyboardEvent<HTMLTableRowElement>,
+  promptId: Id<"prompts">,
+  onSelectPrompt: (value: Id<"prompts"> | null) => void
+) {
+  if (event.target !== event.currentTarget) return;
+  if (event.key !== "Enter" && event.key !== " ") return;
+
+  event.preventDefault();
+  onSelectPrompt(promptId);
+}
+
+function MetricHead({
+  label,
+  tooltip,
+  className,
+}: {
+  label: string;
+  tooltip: string;
+  className: string;
+}) {
+  return (
+    <TableHead className={className}>
+      <div className="flex items-center justify-end gap-1">
+        {label}
+        <InfoTooltip label={`${label} metric`}>{tooltip}</InfoTooltip>
+      </div>
+    </TableHead>
   );
 }
 
@@ -136,9 +180,21 @@ function PromptTable({
         <TableHeader>
           <TableRow>
             <TableHead>Prompt</TableHead>
-            <TableHead className="w-[110px] text-right">Runs</TableHead>
-            <TableHead className="w-[120px] text-right">Sources</TableHead>
-            <TableHead className="w-[120px] text-right">Entities</TableHead>
+            <MetricHead
+              label="Runs"
+              tooltip="Total runs."
+              className="w-[110px] text-right"
+            />
+            <MetricHead
+              label="Sources"
+              tooltip="Unique citation sources."
+              className="w-[120px] text-right"
+            />
+            <MetricHead
+              label="Entities"
+              tooltip="Tracked entities found."
+              className="w-[120px] text-right"
+            />
             <TableHead className="w-[92px]">State</TableHead>
             <TableHead className="w-10" />
           </TableRow>
@@ -147,16 +203,22 @@ function PromptTable({
           {rows.map((row) => (
             <TableRow
               key={String(row.id)}
-              className={selectedPromptId === row.id ? "bg-muted/30" : ""}
+              tabIndex={0}
+              aria-label={`Open prompt details for ${row.excerpt}`}
+              aria-selected={selectedPromptId === row.id}
+              className={cn(
+                clickableTableRowClassName,
+                selectedPromptId === row.id && "bg-muted/30"
+              )}
+              onClick={() => onSelectPrompt(row.id)}
+              onKeyDown={(event) =>
+                handleRowKeyDown(event, row.id, onSelectPrompt)
+              }
             >
               <TableCell className="whitespace-normal">
-                <button
-                  type="button"
-                  className="hover:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 line-clamp-2 w-full rounded-md text-left font-medium break-words transition-colors outline-none focus-visible:ring-3"
-                  onClick={() => onSelectPrompt(row.id)}
-                >
+                <div className="line-clamp-2 font-medium break-words">
                   {row.excerpt}
-                </button>
+                </div>
               </TableCell>
               <TableCell className="text-right tabular-nums">
                 {row.runCount}
@@ -302,7 +364,7 @@ export function PromptsPage({
           <Card className="min-w-0">
             <CardContent className="min-w-0">
               {rows.length === 0 ? (
-                <InlineEmpty text="No prompts yet. Add one to start capturing real responses and source evidence." />
+                <InlineEmpty text="No prompts yet. Add one to start tracking visibility." />
               ) : (
                 <PromptTable
                   rows={rows}
@@ -323,20 +385,18 @@ export function PromptsPage({
           <DialogHeader>
             <DialogTitle>New prompt</DialogTitle>
             <DialogDescription>
-              Add prompt text. It will run across every enabled provider.
+              Runs on every enabled provider.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="prompt-text">Prompt text</Label>
-              <Textarea
-                id="prompt-text"
-                value={newPromptText}
-                onChange={(event) => setNewPromptText(event.target.value)}
-                placeholder="Ask about your category, product, or brand visibility..."
-                rows={8}
-              />
-            </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="prompt-text">Prompt text</Label>
+            <Textarea
+              id="prompt-text"
+              value={newPromptText}
+              onChange={(event) => setNewPromptText(event.target.value)}
+              placeholder="Ask about your brand, product, or category..."
+              rows={8}
+            />
           </div>
           <DialogFooter>
             <Button onClick={() => void createPrompt()}>Create prompt</Button>

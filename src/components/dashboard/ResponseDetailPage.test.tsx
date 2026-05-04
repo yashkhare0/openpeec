@@ -1,8 +1,10 @@
+import type { ReactElement } from "react";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Id } from "../../../convex/_generated/dataModel";
 
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { ResponseDetailPage } from "./ResponseDetailPage";
 
 const blockedRunDetail = {
@@ -42,9 +44,62 @@ const blockedRunDetail = {
   citations: [],
 };
 
+const successfulRunDetail = {
+  run: {
+    _id: "run_2" as Id<"promptRuns">,
+    promptId: "prompt_1" as Id<"prompts">,
+    status: "success",
+    startedAt: Date.now() - 120_000,
+    finishedAt: Date.now() - 90_000,
+    latencyMs: 30_000,
+    providerSlug: "chatgpt",
+    providerName: "ChatGPT",
+    providerUrl: "https://chatgpt.com",
+    channelName: "ChatGPT web",
+    sessionMode: "stored" as const,
+    promptExcerpt: "Best AI visibility monitoring workflow?",
+    responseText: "Use a repeatable prompt set and compare cited sources.",
+    sourceCount: 1,
+    citationQualityScore: 88,
+    deeplinkUsed: "https://chatgpt.com/?q=visibility",
+    evidencePath:
+      "/app/runner/artifacts/Best_AI_visibility_monitoring_workflow/response.png",
+    output: JSON.stringify({
+      finalUrl: "https://chatgpt.com/c/example",
+      artifacts: {
+        responseScreenshot:
+          "/app/runner/artifacts/Best_AI_visibility_monitoring_workflow/response.png",
+        screenshot:
+          "/app/runner/artifacts/Best_AI_visibility_monitoring_workflow/page.png",
+      },
+    }),
+  },
+  prompt: {
+    excerpt: "Best AI visibility monitoring workflow?",
+    promptText: "Best AI visibility monitoring workflow?",
+  },
+  mentions: [],
+  citations: [
+    {
+      domain: "docs.example.com",
+      url: "https://docs.example.com/ai-visibility",
+      title: "Docs Example",
+      snippet: "A practical guide to tracking AI visibility.",
+      type: "docs",
+      position: 1,
+      qualityScore: 88,
+      isOwned: true,
+      trackedEntity: {
+        name: "OpenPeec",
+        slug: "openpeec",
+      },
+    },
+  ],
+};
+
 describe("ResponseDetailPage", () => {
   it("keeps blocked provider runs focused on status, summary, and evidence", () => {
-    render(
+    renderResponseDetail(
       <ResponseDetailPage
         runDetail={blockedRunDetail}
         onOpenPrompt={vi.fn()}
@@ -70,4 +125,24 @@ describe("ResponseDetailPage", () => {
       )
     ).toBeNull();
   });
+
+  it("renders citation rows as full external source links", () => {
+    renderResponseDetail(
+      <ResponseDetailPage runDetail={successfulRunDetail} />
+    );
+
+    const citationLink = screen.getByLabelText(
+      "Open source Docs Example from docs.example.com"
+    );
+
+    expect(citationLink.tagName).toBe("A");
+    expect(citationLink.getAttribute("href")).toBe(
+      "https://docs.example.com/ai-visibility"
+    );
+    expect(screen.getByText("Response screenshot")).toBeTruthy();
+  });
 });
+
+function renderResponseDetail(component: ReactElement) {
+  return render(<TooltipProvider>{component}</TooltipProvider>);
+}

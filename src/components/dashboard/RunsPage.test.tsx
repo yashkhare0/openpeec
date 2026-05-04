@@ -1,8 +1,11 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Id } from "../../../convex/_generated/dataModel";
 
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { RunsPage } from "./RunsPage";
 
 const baseGroup = {
@@ -35,29 +38,50 @@ const baseGroup = {
   ],
 };
 
-describe("RunsPage", () => {
-  it("shows provider engine chips on grouped runs", () => {
-    render(
+function renderRunsPage(props: Partial<ComponentProps<typeof RunsPage>> = {}) {
+  return render(
+    <TooltipProvider>
       <RunsPage
         groups={[baseGroup]}
         selectedRunGroupId={null}
         onOpenRunGroup={vi.fn()}
         onOpenPrompt={vi.fn()}
+        {...props}
       />
-    );
+    </TooltipProvider>
+  );
+}
 
-    expect(screen.getByText("OpenAI · Camoufox")).toBeTruthy();
+describe("RunsPage", () => {
+  it("shows compact provider status summaries on grouped runs", () => {
+    renderRunsPage({
+      groups: [
+        {
+          ...baseGroup,
+          providers: [
+            baseGroup.providers[0],
+            {
+              ...baseGroup.providers[0],
+              runId: "run_2" as Id<"promptRuns">,
+              providerSlug: "google-ai-mode",
+              providerName: "Google AI Mode",
+              channelName: "Google AI Mode",
+              status: "failed",
+              latencyMs: 2400,
+              citationCount: 1,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(screen.getByText("OpenAI Success")).toBeTruthy();
+    expect(screen.getByText("Google AI Mode Failed")).toBeTruthy();
+    expect(screen.queryByText("OpenAI · Camoufox")).toBeNull();
   });
 
   it("keeps prompt details under the Prompt column and providers under Providers", () => {
-    render(
-      <RunsPage
-        groups={[baseGroup]}
-        selectedRunGroupId={null}
-        onOpenRunGroup={vi.fn()}
-        onOpenPrompt={vi.fn()}
-      />
-    );
+    renderRunsPage();
 
     const dataRow = screen
       .getAllByRole("row")
@@ -66,31 +90,81 @@ describe("RunsPage", () => {
 
     const cells = within(dataRow!).getAllByRole("cell");
     expect(cells[1]?.textContent).toContain("Best AI visibility tools");
+    expect(cells[1]?.textContent).not.toContain("Manual run");
     expect(cells[2]?.textContent).toContain("OpenAI");
-    expect(cells[2]?.textContent).toContain("Camoufox");
+    expect(cells[2]?.textContent).toContain("Success");
+    expect(cells[2]?.textContent).not.toContain("Camoufox");
   });
 
-  it("derives older provider engine chips from the runner name", () => {
-    render(
-      <RunsPage
-        groups={[
-          {
-            ...baseGroup,
-            providers: [
-              {
-                ...baseGroup.providers[0],
-                browserEngine: undefined,
-                runner: "local-nodriver-worker",
-              },
-            ],
-          },
-        ]}
-        selectedRunGroupId={null}
-        onOpenRunGroup={vi.fn()}
-        onOpenPrompt={vi.fn()}
-      />
-    );
+  it("derives older provider engines from the runner name in details", async () => {
+    const user = userEvent.setup();
 
-    expect(screen.getByText("OpenAI · Nodriver")).toBeTruthy();
+    renderRunsPage({
+      groups: [
+        {
+          ...baseGroup,
+          providers: [
+            {
+              ...baseGroup.providers[0],
+              browserEngine: undefined,
+              runner: "local-nodriver-worker",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(screen.getByText("OpenAI Success")).toBeTruthy();
+    await user.hover(screen.getByLabelText("Run details"));
+    expect(await screen.findAllByText(/engine Nodriver/)).not.toHaveLength(0);
+  });
+
+  it("opens grouped run rows by click and keyboard without hijacking nested controls", async () => {
+    const user = userEvent.setup();
+    const onOpenRunGroup = vi.fn();
+    const onOpenPrompt = vi.fn();
+
+    renderRunsPage({ onOpenRunGroup, onOpenPrompt });
+
+    const dataRow = screen.getByRole("row", {
+      name: "Open run group for Best AI visibility tools",
+    });
+
+    await user.click(dataRow);
+    expect(onOpenRunGroup).toHaveBeenCalledWith("run_group_1");
+
+    await user.click(
+      within(dataRow).getByRole("button", {
+        name: /best ai visibility tools/i,
+      })
+    );
+    expect(onOpenPrompt).toHaveBeenCalledWith("prompt_1");
+    expect(onOpenRunGroup).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByLabelText("Run details"));
+    expect(onOpenRunGroup).toHaveBeenCalledTimes(1);
+
+    dataRow.focus();
+    await user.keyboard("{Enter}");
+    await user.keyboard(" ");
+    expect(onOpenRunGroup).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not repeat a run label that matches the prompt text", () => {
+    renderRunsPage({
+      groups: [
+        {
+          ...baseGroup,
+          runLabel: "Best AI visibility tools",
+        },
+      ],
+    });
+
+    const dataRow = screen.getByRole("row", {
+      name: "Open run group for Best AI visibility tools",
+    });
+    const promptCell = within(dataRow).getAllByRole("cell")[1];
+
+    expect(promptCell?.textContent).toBe("Best AI visibility tools");
   });
 });

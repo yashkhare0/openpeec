@@ -45,7 +45,7 @@ const pageItems: PageItem[] = [
 ];
 
 const navButtonClassName =
-  "h-9 rounded-lg border border-transparent px-3 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground data-[active=true]:border-sidebar-border/80 data-[active=true]:bg-sidebar-accent/85 data-[active=true]:text-sidebar-foreground data-[active=true]:shadow-none group-data-[collapsible=icon]:size-9! group-data-[collapsible=icon]:p-2!";
+  "h-9 rounded-lg border border-transparent px-3 text-sidebar-foreground/74 transition-colors hover:border-sidebar-border/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:border-sidebar-primary/30 data-[active=true]:bg-sidebar-primary/12 data-[active=true]:text-sidebar-primary data-[active=true]:shadow-none group-data-[collapsible=icon]:size-9! group-data-[collapsible=icon]:p-2!";
 
 function SidebarCollapseButton() {
   const { state, toggleSidebar, isMobile } = useSidebar();
@@ -64,7 +64,7 @@ function SidebarCollapseButton() {
       size="icon-sm"
       aria-label={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
       title={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
-      className="text-sidebar-foreground/60 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground group-data-[collapsible=icon]:size-9 group-data-[collapsible=icon]:rounded-lg"
+      className="text-sidebar-foreground/62 hover:bg-sidebar-accent hover:text-sidebar-primary group-data-[collapsible=icon]:size-9 group-data-[collapsible=icon]:rounded-lg"
       onClick={toggleSidebar}
     >
       <Icon />
@@ -89,10 +89,10 @@ export function AppSidebar({
               <SidebarMenuButton
                 size="lg"
                 tooltip="Overview"
-                className="hover:bg-sidebar-accent/45 h-10 rounded-xl px-2.5"
+                className="hover:bg-sidebar-accent h-10 rounded-xl px-2.5"
                 onClick={() => startTransition(() => onPage("overview"))}
               >
-                <div className="bg-sidebar-primary/8 text-sidebar-foreground border-sidebar-border/70 flex size-8 shrink-0 items-center justify-center rounded-lg border">
+                <div className="bg-sidebar-primary/10 text-sidebar-primary border-sidebar-primary/25 flex size-8 shrink-0 items-center justify-center rounded-lg border">
                   <OpenPeecMark className="size-5" />
                 </div>
               </SidebarMenuButton>

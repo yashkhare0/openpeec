@@ -1,5 +1,6 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { InfoTooltip } from "./InfoTooltip";
 import { DashboardMetricCardsSkeleton } from "./LoadingState";
 
 type Tone = "positive" | "negative" | "neutral";
@@ -20,9 +21,14 @@ export function KpiCards({
       {kpis.map((kpi) => (
         <Card key={kpi.label} className="shadow-none">
           <CardContent className="p-4">
-            <p className="text-muted-foreground text-[11px] font-medium tracking-[0.18em] uppercase">
-              {kpi.label}
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-muted-foreground text-[11px] font-medium tracking-[0.18em] uppercase">
+                {kpi.label}
+              </p>
+              <InfoTooltip label={`About ${kpi.label}`}>
+                {kpiDefinition(kpi.label)}
+              </InfoTooltip>
+            </div>
             <div className="mt-3 space-y-1">
               <p className="text-2xl font-semibold tabular-nums">{kpi.value}</p>
               <p
@@ -42,4 +48,19 @@ export function KpiCards({
       ))}
     </div>
   );
+}
+
+function kpiDefinition(label: string) {
+  switch (label) {
+    case "Captured runs":
+      return "Terminal runs in this range.";
+    case "Citation quality":
+      return "Average citation quality for successful responses.";
+    case "Source coverage":
+      return "Unique cited domains and total citations.";
+    case "Run health":
+      return "Successful runs divided by total runs.";
+    default:
+      return "Metric for the selected range.";
+  }
 }

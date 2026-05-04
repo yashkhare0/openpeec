@@ -1,17 +1,18 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  ArrowUpRightIcon,
-  RefreshCcwIcon,
-  XCircleIcon,
-} from "lucide-react";
+import { useEffect, useRef } from "react";
+import { ArrowUpRightIcon, RefreshCcwIcon, XCircleIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Id } from "../../../convex/_generated/dataModel";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+import { clickableTableRowClassName } from "./components/InfoTooltip";
 import { InlineEmpty } from "./components/EmptyState";
 import {
   DashboardCardSkeleton,
@@ -98,27 +99,18 @@ function artifactUrlFromPath(
   return `/runner-artifacts/${encoded}`;
 }
 
-const typeTone: Record<string, string> = {
-  ugc: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300",
-  editorial: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
-  corporate:
-    "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-300",
-  docs: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300",
-  social: "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-300",
-  other: "bg-muted text-muted-foreground",
-};
-
 function statusTone(status: string): string {
-  if (status === "success") {
+  const normalized = status.toLowerCase();
+  if (normalized === "success") {
     return "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
   }
-  if (status === "blocked") {
+  if (normalized === "blocked") {
     return "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300";
   }
-  if (status === "failed") {
+  if (normalized === "failed") {
     return "border-rose-500/20 bg-rose-500/10 text-rose-700 dark:text-rose-300";
   }
-  if (status === "running") {
+  if (normalized === "running") {
     return "border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300";
   }
   return "";
@@ -136,7 +128,6 @@ function formatSessionMode(value: "guest" | "stored" | undefined): string {
 
 type EvidenceImage = {
   label: string;
-  description: string;
   url: string;
 };
 
@@ -152,17 +143,14 @@ function buildEvidenceImages({
   const candidates = [
     {
       label: "Response screenshot",
-      description: "Captured answer area after the run completed.",
       filePath: responseScreenshotPath,
     },
     {
       label: "Page screenshot",
-      description: "Final page state from the runner checkpoint.",
       filePath: pageScreenshotPath,
     },
     {
       label: "Evidence screenshot",
-      description: "Primary image saved with this run.",
       filePath: evidencePath,
     },
   ];
@@ -178,7 +166,6 @@ function buildEvidenceImages({
     return [
       {
         label: candidate.label,
-        description: candidate.description,
         url,
       },
     ];
@@ -356,7 +343,7 @@ export function ResponseDetailPage({
               <span className="text-muted-foreground text-sm">
                 {runDetail.run.providerName}
                 {runDetail.run.channelName
-                  ? ` · ${runDetail.run.channelName}`
+                  ? ` - ${runDetail.run.channelName}`
                   : ""}
               </span>
             </div>
@@ -365,13 +352,8 @@ export function ResponseDetailPage({
                 {displayTitle}
               </h1>
               <p className="text-muted-foreground mt-2 text-sm">
-                {formatFreshness(runDetail.run.startedAt)} · Runtime{" "}
-                {formatDuration(
-                  runDetail.run.startedAt,
-                  runDetail.run.finishedAt,
-                  runDetail.run.latencyMs
-                )}{" "}
-                · {formatSessionMode(runDetail.run.sessionMode)}
+                {formatFreshness(runDetail.run.startedAt)} -{" "}
+                {formatSessionMode(runDetail.run.sessionMode)}
               </p>
             </div>
           </div>
@@ -420,8 +402,12 @@ export function ResponseDetailPage({
             value={formatScore(runDetail.run.citationQualityScore)}
           />
           <Metric
-            label="Provider URL"
-            value={domainFromUrl(runDetail.run.providerUrl) || "-"}
+            label="Runtime"
+            value={formatDuration(
+              runDetail.run.startedAt,
+              runDetail.run.finishedAt,
+              runDetail.run.latencyMs
+            )}
           />
         </dl>
 
@@ -440,66 +426,68 @@ export function ResponseDetailPage({
         ) : null}
 
         {runDetail.citations.length > 0 ? (
-          <section className="space-y-3">
-            <div>
-              <h2 className="text-base font-semibold">Sources</h2>
-              <p className="text-muted-foreground mt-1 text-sm">
-                Links cited inside the captured answer.
-              </p>
-            </div>
+          <section className="flex flex-col gap-3">
+            <h2 className="text-base font-semibold">Sources</h2>
             <div className="divide-border divide-y rounded-lg border">
               {runDetail.citations.map((citation, index) => (
-                <div
-                  key={`${citation.url}-${index}`}
-                  className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between"
-                >
-                  <div className="min-w-0 space-y-2">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <Badge variant="outline">#{citation.position}</Badge>
-                      <p className="truncate text-sm font-medium">
-                        {citation.title || citation.domain}
-                      </p>
-                    </div>
-                    <p className="text-muted-foreground truncate text-xs">
-                      {domainFromUrl(citation.url) || citation.domain}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      <Badge
-                        variant="secondary"
-                        className={typeTone[citation.type.toLowerCase()] ?? ""}
-                      >
-                        {titleCase(citation.type)}
-                      </Badge>
-                      {citation.qualityScore !== undefined ? (
-                        <Badge variant="outline">
-                          Quality {formatScore(citation.qualityScore)}
-                        </Badge>
-                      ) : null}
-                      {citation.isOwned ? (
-                        <Badge variant="outline">Owned</Badge>
-                      ) : null}
-                      {citation.trackedEntity ? (
-                        <Badge variant="outline">
-                          {citation.trackedEntity.name}
-                        </Badge>
-                      ) : null}
-                    </div>
-                    {citation.snippet ? (
-                      <p className="text-muted-foreground text-sm leading-6">
-                        {citation.snippet}
-                      </p>
-                    ) : null}
-                  </div>
-                  <a
-                    href={citation.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-muted-foreground hover:text-foreground inline-flex shrink-0 items-center gap-1 text-xs font-medium transition-colors"
-                  >
-                    Open
-                    <ArrowUpRightIcon className="size-3.5" />
-                  </a>
-                </div>
+                <Tooltip key={`${citation.url}-${index}`}>
+                  <TooltipTrigger asChild>
+                    <a
+                      href={citation.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`Open source ${citation.title || citation.domain} from ${
+                        domainFromUrl(citation.url) || citation.domain
+                      }`}
+                      className={cn(
+                        "flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between",
+                        clickableTableRowClassName
+                      )}
+                    >
+                      <span className="flex min-w-0 flex-col gap-2">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <Badge variant="outline">#{citation.position}</Badge>
+                          <span className="truncate text-sm font-medium">
+                            {citation.title || citation.domain}
+                          </span>
+                        </span>
+                        <span className="text-muted-foreground block truncate text-xs">
+                          {domainFromUrl(citation.url) || citation.domain}
+                        </span>
+                        <span className="flex flex-wrap gap-1.5">
+                          <Badge variant="secondary">
+                            {titleCase(citation.type)}
+                          </Badge>
+                          {citation.qualityScore !== undefined ? (
+                            <Badge variant="outline">
+                              Quality {formatScore(citation.qualityScore)}
+                            </Badge>
+                          ) : null}
+                          {citation.isOwned ? (
+                            <Badge variant="outline">Owned</Badge>
+                          ) : null}
+                          {citation.trackedEntity ? (
+                            <Badge variant="outline">
+                              {citation.trackedEntity.name}
+                            </Badge>
+                          ) : null}
+                        </span>
+                        {citation.snippet ? (
+                          <span className="text-muted-foreground block text-sm leading-6">
+                            {citation.snippet}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="text-muted-foreground inline-flex shrink-0 items-center gap-1 text-xs font-medium">
+                        Open
+                        <ArrowUpRightIcon className="size-3.5" />
+                      </span>
+                    </a>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-sm">
+                    <CitationTooltipContent citation={citation} />
+                  </TooltipContent>
+                </Tooltip>
               ))}
             </div>
           </section>
@@ -508,13 +496,8 @@ export function ResponseDetailPage({
         ) : null}
 
         {runDetail.mentions?.length ? (
-          <section className="space-y-3">
-            <div>
-              <h2 className="text-base font-semibold">Entity Mentions</h2>
-              <p className="text-muted-foreground mt-1 text-sm">
-                Tracked entities found in this response.
-              </p>
-            </div>
+          <section className="flex flex-col gap-3">
+            <h2 className="text-base font-semibold">Entity Mentions</h2>
             <div className="divide-border divide-y rounded-lg border">
               {runDetail.mentions.map((mention) => (
                 <div
@@ -546,13 +529,8 @@ export function ResponseDetailPage({
           </section>
         ) : null}
 
-        <section className="space-y-3">
-          <div>
-            <h2 className="text-base font-semibold">Evidence</h2>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Final page state and saved runner artifacts.
-            </p>
-          </div>
+        <section className="flex flex-col gap-3">
+          <h2 className="text-base font-semibold">Evidence</h2>
 
           <RunImageDetail images={evidenceImages} />
 
@@ -560,51 +538,67 @@ export function ResponseDetailPage({
             <summary className="text-muted-foreground cursor-pointer font-medium">
               Technical artifacts
             </summary>
-            <div className="text-muted-foreground mt-3 space-y-2">
-              <ArtifactRow
+            <div className="text-muted-foreground mt-3 flex flex-col gap-2">
+              <DetailValueRow
+                label="Provider URL"
+                value={runDetail.run.providerUrl}
+              />
+              <DetailValueRow
+                label="Deep link"
+                value={runDetail.run.deeplinkUsed}
+              />
+              <DetailValueRow
+                label="Final URL"
+                value={outputPayload?.finalUrl}
+              />
+              <DetailValueRow
+                label="Session"
+                value={formatSessionMode(runDetail.run.sessionMode)}
+              />
+              <DetailValueRow
                 label="Evidence screenshot"
-                filePath={screenshotPath}
+                value={screenshotPath}
               />
               {responseScreenshotPath &&
               responseScreenshotPath !== screenshotPath ? (
-                <ArtifactRow
+                <DetailValueRow
                   label="Response screenshot"
-                  filePath={responseScreenshotPath}
+                  value={responseScreenshotPath}
                 />
               ) : null}
               {pageScreenshotPath && pageScreenshotPath !== screenshotPath ? (
-                <ArtifactRow
+                <DetailValueRow
                   label="Page screenshot"
-                  filePath={pageScreenshotPath}
+                  value={pageScreenshotPath}
                 />
               ) : null}
-              <ArtifactRow
+              <DetailValueRow
                 label="Video"
-                filePath={outputPayload?.artifacts?.video ?? undefined}
+                value={outputPayload?.artifacts?.video ?? undefined}
               />
-              <ArtifactRow
+              <DetailValueRow
                 label="Trace"
-                filePath={outputPayload?.artifacts?.trace}
+                value={outputPayload?.artifacts?.trace}
               />
-              <ArtifactRow
+              <DetailValueRow
                 label="Page HTML"
-                filePath={outputPayload?.artifacts?.pageHtml}
+                value={outputPayload?.artifacts?.pageHtml}
               />
-              <ArtifactRow
+              <DetailValueRow
                 label="Response HTML"
-                filePath={outputPayload?.artifacts?.responseHtml}
+                value={outputPayload?.artifacts?.responseHtml}
               />
-              <ArtifactRow
+              <DetailValueRow
                 label="Sources JSON"
-                filePath={outputPayload?.artifacts?.sources}
+                value={outputPayload?.artifacts?.sources}
               />
-              <ArtifactRow
+              <DetailValueRow
                 label="Network JSON"
-                filePath={outputPayload?.artifacts?.network}
+                value={outputPayload?.artifacts?.network}
               />
-              <ArtifactRow
+              <DetailValueRow
                 label="Console JSON"
-                filePath={outputPayload?.artifacts?.console}
+                value={outputPayload?.artifacts?.console}
               />
             </div>
           </details>
@@ -614,7 +608,7 @@ export function ResponseDetailPage({
               <summary className="text-muted-foreground cursor-pointer font-medium">
                 Runner notes
               </summary>
-              <div className="text-muted-foreground mt-2 space-y-2">
+              <div className="text-muted-foreground mt-2 flex flex-col gap-2">
                 {runDetail.run.warnings.map((warning, index) => (
                   <p key={`${warning}-${index}`}>{warning}</p>
                 ))}
@@ -646,6 +640,66 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   );
 }
 
+function CitationTooltipContent({
+  citation,
+}: {
+  citation: {
+    domain: string;
+    url: string;
+    title?: string;
+    snippet?: string;
+    type: string;
+    position: number;
+    qualityScore?: number;
+    isOwned?: boolean;
+    trackedEntity?: {
+      name: string;
+      slug: string;
+    } | null;
+  };
+}) {
+  return (
+    <div className="flex flex-col gap-1 text-xs">
+      <TooltipLine label="URL" value={citation.url} />
+      <TooltipLine label="Position" value={`#${citation.position}`} />
+      <TooltipLine label="Type" value={titleCase(citation.type)} />
+      {citation.qualityScore !== undefined ? (
+        <TooltipLine
+          label="Quality"
+          value={formatScore(citation.qualityScore)}
+        />
+      ) : null}
+      {citation.isOwned ? (
+        <TooltipLine label="Ownership" value="Owned" />
+      ) : null}
+      <TooltipLine
+        label="Tracked entity"
+        value={citation.trackedEntity?.name}
+      />
+      <TooltipLine label="Snippet" value={citation.snippet} />
+    </div>
+  );
+}
+
+function TooltipLine({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | undefined;
+}) {
+  if (!value) {
+    return null;
+  }
+
+  return (
+    <p className="break-all">
+      <span className="opacity-70">{label}: </span>
+      {value}
+    </p>
+  );
+}
+
 function MarkdownContent({ content }: { content: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -665,105 +719,74 @@ function MarkdownContent({ content }: { content: string }) {
 }
 
 function RunImageDetail({ images }: { images: EvidenceImage[] }) {
-  const [activeIndex, setActiveIndex] = useState(0);
-  const safeIndex = Math.min(activeIndex, Math.max(images.length - 1, 0));
-  const image = images[safeIndex];
-
-  if (!image) {
+  if (!images.length) {
     return <InlineEmpty text="Screenshot preview unavailable for this run." />;
   }
 
-  const hasPrevious = safeIndex > 0;
-  const hasNext = safeIndex < images.length - 1;
-  const hasMultipleImages = images.length > 1;
-
   return (
-    <div className="overflow-hidden rounded-xl border">
-      <div className="flex items-start justify-between gap-3 p-3">
-        <div className="min-w-0">
-          <p className="text-sm font-medium">{image.label}</p>
-          <p className="text-muted-foreground mt-1 text-xs">
-            {image.description}
-          </p>
-        </div>
-        {hasMultipleImages ? (
-          <Badge variant="outline" className="shrink-0">
-            {safeIndex + 1}/{images.length}
-          </Badge>
-        ) : null}
-      </div>
-
-      <a
-        href={image.url}
-        target="_blank"
-        rel="noreferrer"
-        className="bg-muted/20 block border-y"
-      >
-        <img
-          src={image.url}
-          alt={image.label}
-          className="max-h-[420px] w-full object-contain"
-          loading="lazy"
-        />
-      </a>
-
-      {hasMultipleImages ? (
-        <div className="flex items-center justify-between gap-2 p-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={!hasPrevious}
-            onClick={() => setActiveIndex((index) => Math.max(index - 1, 0))}
-          >
-            <ArrowLeftIcon data-icon="inline-start" />
-            Back
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={!hasNext}
-            onClick={() =>
-              setActiveIndex((index) => Math.min(index + 1, images.length - 1))
-            }
-          >
-            Next
-            <ArrowRightIcon data-icon="inline-end" />
-          </Button>
-        </div>
-      ) : null}
+    <div className="grid gap-3 sm:grid-cols-2">
+      {images.map((image) => (
+        <a
+          key={image.url}
+          href={image.url}
+          target="_blank"
+          rel="noreferrer"
+          className={cn(
+            "overflow-hidden rounded-lg border text-sm",
+            clickableTableRowClassName
+          )}
+        >
+          <span className="flex items-start justify-between gap-3 p-3">
+            <span className="min-w-0">
+              <span className="block font-medium">{image.label}</span>
+            </span>
+            <ArrowUpRightIcon className="text-muted-foreground mt-0.5 size-3.5 shrink-0" />
+          </span>
+          <span className="bg-muted/20 block border-t p-2">
+            <img
+              src={image.url}
+              alt={image.label}
+              className="h-36 w-full object-contain"
+              loading="lazy"
+            />
+          </span>
+        </a>
+      ))}
     </div>
   );
 }
 
-function ArtifactRow({
+function DetailValueRow({
   label,
-  filePath,
+  value,
 }: {
   label: string;
-  filePath: string | undefined;
+  value: string | undefined;
 }) {
-  if (!filePath) {
+  if (!value) {
     return null;
   }
 
-  const servedUrl = artifactUrlFromPath(filePath);
+  const href = artifactUrlFromPath(value) ?? (isWebUrl(value) ? value : null);
   return (
     <p className="break-all">
       {label}:{" "}
-      {servedUrl ? (
+      {href ? (
         <a
-          href={servedUrl}
+          href={href}
           target="_blank"
           rel="noreferrer"
           className="text-foreground underline underline-offset-2"
         >
-          Open artifact
+          Open
         </a>
       ) : (
-        filePath
+        value
       )}
     </p>
   );
+}
+
+function isWebUrl(value: string) {
+  return value.startsWith("http://") || value.startsWith("https://");
 }

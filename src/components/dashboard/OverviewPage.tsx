@@ -7,8 +7,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import { KpiCards } from "./components/KpiCards";
 import { EmptyState, InlineEmpty } from "./components/EmptyState";
+import {
+  clickableTableRowClassName,
+  InfoTooltip,
+} from "./components/InfoTooltip";
 import {
   DashboardCardSkeleton,
   DashboardTableCardSkeleton,
@@ -47,6 +57,8 @@ export function OverviewPage({
   overview,
   sources,
   recentRuns,
+  onOpenRun,
+  onOpenPrompt,
 }: {
   loading: boolean;
   hasData: boolean;
@@ -75,6 +87,8 @@ export function OverviewPage({
     avgQualityScore: number | undefined;
   }>;
   recentRuns: OverviewRun[];
+  onOpenRun?: (runId: string) => void;
+  onOpenPrompt?: (promptId: string) => void;
 }) {
   if (!loading && !hasData) {
     return (
@@ -144,77 +158,104 @@ export function OverviewPage({
               <CardHeader>
                 <CardTitle>What changed</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <p className="text-muted-foreground mb-3 text-[11px] font-medium tracking-[0.18em] uppercase">
-                    Top domains
-                  </p>
+              <CardContent className="space-y-5">
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <p className="text-muted-foreground text-[11px] font-medium tracking-[0.18em] uppercase">
+                      Top domains
+                    </p>
+                    <InfoTooltip label="About top domains">
+                      Percent of selected-range citations from each domain.
+                    </InfoTooltip>
+                  </div>
                   {sources.length === 0 ? (
                     <InlineEmpty text="No source data yet." />
                   ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Domain</TableHead>
-                          <TableHead className="text-right">Used</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {sources.slice(0, 4).map((source) => (
-                          <TableRow key={source.domain}>
-                            <TableCell>
-                              <div className="space-y-1">
-                                <p className="font-medium">{source.domain}</p>
-                                <p className="text-muted-foreground text-xs">
-                                  {source.type}
-                                </p>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {formatPercent(source.usedShare)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                    <div className="space-y-1">
+                      {sources.slice(0, 4).map((source) => (
+                        <div
+                          key={source.domain}
+                          className="flex items-start justify-between gap-3 py-1.5"
+                        >
+                          <div className="min-w-0 space-y-1">
+                            <p className="truncate font-medium">
+                              {source.domain}
+                            </p>
+                            <p className="text-muted-foreground text-xs">
+                              {source.type}
+                            </p>
+                          </div>
+                          <p className="shrink-0 text-sm font-medium tabular-nums">
+                            {formatPercent(source.usedShare)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
                   )}
-                </div>
+                </section>
 
-                <div>
-                  <p className="text-muted-foreground mb-3 text-[11px] font-medium tracking-[0.18em] uppercase">
-                    Prompt variance
-                  </p>
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <p className="text-muted-foreground text-[11px] font-medium tracking-[0.18em] uppercase">
+                      Prompt variance
+                    </p>
+                    <InfoTooltip label="About prompt variance">
+                      Response drift across successful runs for each prompt.
+                    </InfoTooltip>
+                  </div>
                   {(overview?.promptComparison?.length ?? 0) === 0 ? (
                     <InlineEmpty text="No prompt comparison data yet." />
                   ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Prompt</TableHead>
-                          <TableHead className="text-right">Drift</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {overview?.promptComparison.slice(0, 4).map((row) => (
-                          <TableRow key={row.promptId}>
-                            <TableCell>
-                              <div className="space-y-1">
-                                <p className="font-medium">{row.excerpt}</p>
+                    <div className="space-y-1">
+                      {overview?.promptComparison.slice(0, 4).map((row) => {
+                        const openPrompt = onOpenPrompt
+                          ? () => onOpenPrompt(row.promptId)
+                          : undefined;
+
+                        return (
+                          <div
+                            key={row.promptId}
+                            className={cn(
+                              "-mx-2 rounded-md px-2 py-2",
+                              openPrompt && clickableTableRowClassName
+                            )}
+                            role={openPrompt ? "button" : undefined}
+                            tabIndex={openPrompt ? 0 : undefined}
+                            aria-label={
+                              openPrompt
+                                ? `Open prompt detail for ${row.excerpt}`
+                                : undefined
+                            }
+                            onClick={openPrompt}
+                            onKeyDown={
+                              openPrompt
+                                ? (event) =>
+                                    handleActivationKey(event, openPrompt)
+                                : undefined
+                            }
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0 space-y-1">
+                                <p className="line-clamp-2 font-medium">
+                                  {row.excerpt}
+                                </p>
                                 <p className="text-muted-foreground text-xs">
                                   {row.providerName} | {row.responseCount}{" "}
                                   responses
                                 </p>
                               </div>
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {formatPercent(row.responseDrift)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                              <div className="shrink-0 text-right">
+                                <p className="text-sm font-medium tabular-nums">
+                                  {formatPercent(row.responseDrift)}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
-                </div>
+                </section>
               </CardContent>
             </Card>
           )}
@@ -247,34 +288,56 @@ export function OverviewPage({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {recentRuns.slice(0, 4).map((run) => (
-                      <TableRow key={run.id}>
-                        <TableCell>
-                          <div className="space-y-1">
-                            <p className="font-medium">
-                              {formatFreshness(run.startedAt)}
-                            </p>
-                            <p className="text-muted-foreground text-xs">
-                              {formatTimestamp(run.startedAt)}
-                            </p>
-                          </div>
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {run.promptExcerpt}
-                        </TableCell>
-                        <TableCell>
-                          <span className={statusClassName(run.status)}>
-                            {titleCase(run.status)}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatRuntime(run)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {run.sourceCount ?? run.citationCount}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {recentRuns.slice(0, 4).map((run) => {
+                      const openRun = onOpenRun
+                        ? () => onOpenRun(run.id)
+                        : undefined;
+
+                      return (
+                        <TableRow
+                          key={run.id}
+                          className={cn(openRun && clickableTableRowClassName)}
+                          role={openRun ? "button" : undefined}
+                          tabIndex={openRun ? 0 : undefined}
+                          aria-label={
+                            openRun
+                              ? `Open run for ${run.promptExcerpt}, started ${formatFreshness(
+                                  run.startedAt
+                                )}, ${formatTimestamp(run.startedAt)}`
+                              : undefined
+                          }
+                          onClick={openRun}
+                          onKeyDown={
+                            openRun
+                              ? (event) => handleActivationKey(event, openRun)
+                              : undefined
+                          }
+                        >
+                          <TableCell>
+                            <div className="space-y-1">
+                              <TimestampTooltip timestamp={run.startedAt} />
+                              <p className="text-muted-foreground text-xs">
+                                {run.providerName}
+                              </p>
+                            </div>
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {run.promptExcerpt}
+                          </TableCell>
+                          <TableCell>
+                            <span className={statusClassName(run.status)}>
+                              {titleCase(run.status)}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatRuntime(run)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {run.sourceCount ?? run.citationCount}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               )}
@@ -284,6 +347,32 @@ export function OverviewPage({
       </div>
     </div>
   );
+}
+
+function TimestampTooltip({ timestamp }: { timestamp: number }) {
+  const freshness = formatFreshness(timestamp);
+  const exactTimestamp = formatTimestamp(timestamp);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className="inline-flex font-medium decoration-dotted underline-offset-4 hover:underline"
+          aria-label={`${freshness}, ${exactTimestamp}`}
+        >
+          {freshness}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{exactTimestamp}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function handleActivationKey(event: React.KeyboardEvent, action: () => void) {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    action();
+  }
 }
 
 function getRuntimeMs(
