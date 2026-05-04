@@ -70,19 +70,18 @@ profile and still runs through `pnpm docker:nodriver:fixture`.
 Camoufox setup:
 
 ```sh
-pnpm runner:install-camoufox
+pnpm runner:install-camoufox      # auto-runs as part of `pnpm dev`
 pnpm runner:capture-session -- --engine camoufox
 pnpm runner:stealth-smoke
 ```
 
-If the system `python3` cannot install Camoufox cleanly, point the scripts at a
-newer interpreter:
+`runner:install-camoufox` (also wired as a `predev` hook) is idempotent: it uses [uv](https://docs.astral.sh/uv/) to create a project-local venv at `runner/.venv-camoufox` pinned to Python 3.12, installs `camoufox[geoip]` + `playwright==1.58.0` with prebuilt wheels, fetches the Firefox build, and drops a `{ "type": "commonjs" }` marker next to camoufox's `launchServer.js` (needed because our root `package.json` is `"type": "module"`). The runner auto-detects this venv via [resolveCamoufoxPython](engines/camoufox.mjs:52); no env vars required.
 
-```sh
-CAMOUFOX_PYTHON=/path/to/python3 pnpm runner:install-camoufox
-```
+`uv` is the only system prerequisite — install once with `brew install uv` or `curl -LsSf https://astral.sh/uv/install.sh | sh`. If you need to pin a different Python version, set `OPENPEEC_CAMOUFOX_PYTHON_VERSION=3.13` before running. To override the venv entirely, set `CAMOUFOX_PYTHON=/path/to/python3`. Force a clean reinstall with `node runner/install-camoufox.mjs --force`.
 
 `pnpm runner:stealth-smoke` records a local fingerprint probe under `runner/artifacts/`. Add `-- --detectors` to also visit public detector pages, or `-- --engine all` to compare regular Playwright and Camoufox in the same run.
+
+Captcha solving (Camoufox): `humanize` (already wired) adds human-like cursor motion that often suffices for low-friction Cloudflare/Turnstile interstitials. For the reCAPTCHA v2 "I'm not a robot" checkbox, the [Buster](https://github.com/dessant/buster) addon is loaded automatically — `pnpm dev` runs `pnpm runner:install-buster` as a `predev` hook (downloads the AMO-signed `.xpi` and unpacks it to `runner/addons/buster/`; idempotent based on the extracted `manifest.json`), and `runner/example.monitor.json` references it under `browser.camoufox.addons`. Camoufox requires the *extracted* directory, not the raw `.xpi`. Re-fetch with `node runner/install-buster.mjs --force`. Buster only handles reCAPTCHA v2; it does not solve hCaptcha, Turnstile, or reCAPTCHA v3. If a path under `addons` is missing the runner logs a warning and continues without it.
 
 Nodriver fixture setup:
 

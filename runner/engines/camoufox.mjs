@@ -33,6 +33,29 @@ function sleep(ms) {
   });
 }
 
+function resolveAddonPaths(addons) {
+  if (!Array.isArray(addons)) {
+    return addons;
+  }
+  const resolved = [];
+  for (const entry of addons) {
+    if (typeof entry !== "string" || entry.length === 0) {
+      continue;
+    }
+    const absolute = path.isAbsolute(entry)
+      ? entry
+      : path.resolve(process.cwd(), entry);
+    if (!fs.existsSync(absolute)) {
+      console.warn(
+        `[camoufox] addon not found at ${absolute}; skipping. Run \`pnpm runner:install-buster\` to fetch it.`
+      );
+      continue;
+    }
+    resolved.push(absolute);
+  }
+  return resolved;
+}
+
 function normalizeCamoufoxOptions(rawOptions = {}) {
   const options = {};
   for (const [key, value] of Object.entries(rawOptions)) {
@@ -44,12 +67,18 @@ function normalizeCamoufoxOptions(rawOptions = {}) {
     ) {
       continue;
     }
-    options[CAMOUFOX_OPTION_ALIASES[key] ?? key] = value;
+    const normalizedKey = CAMOUFOX_OPTION_ALIASES[key] ?? key;
+    options[normalizedKey] =
+      normalizedKey === "addons" ? resolveAddonPaths(value) : value;
   }
   return options;
 }
 
 export function resolveCamoufoxPython(browserOptions = {}) {
+  const projectVenvPython = path.resolve(
+    process.cwd(),
+    "runner/.venv-camoufox/bin/python"
+  );
   const bundledCodexPython = process.env.HOME
     ? path.join(
         process.env.HOME,
@@ -59,6 +88,7 @@ export function resolveCamoufoxPython(browserOptions = {}) {
   return (
     browserOptions.camoufox?.python ??
     process.env.CAMOUFOX_PYTHON ??
+    (fs.existsSync(projectVenvPython) ? projectVenvPython : null) ??
     process.env.PYTHON ??
     (bundledCodexPython && fs.existsSync(bundledCodexPython)
       ? bundledCodexPython

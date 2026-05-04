@@ -21,7 +21,9 @@ test-results/
 runner/artifacts/
 runner/camoufox.storage-state.json
 runner/.venv-nodriver/
+runner/.venv-camoufox/
 runner/profiles/
+runner/addons/
 runner/last-run*.json
 __pycache__/
 .gstack/

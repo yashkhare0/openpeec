@@ -11,7 +11,8 @@
     "headless": false,
     "camoufox": {
       "humanize": 0.8,
-      "geoip": false
+      "geoip": false,
+      "addons": ["runner/addons/buster"]
     }
   },
   "navigation": {

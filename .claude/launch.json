@@ -1,0 +1,24 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev:frontend"],
+      "port": 5999,
+      "autoPort": false
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev:backend"],
+      "port": 3210
+    },
+    {
+      "name": "runner",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev:runner"],
+      "port": null
+    }
+  ]
+}

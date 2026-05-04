@@ -268,6 +268,16 @@ function resolveSubmitStrategy(rawConfig) {
   return "type";
 }
 
+function resolveNavigationStrategy(rawConfig) {
+  const explicit =
+    rawConfig.navigation?.navigationStrategy ??
+    rawConfig.deepLink?.navigationStrategy;
+  if (explicit === "organic") {
+    return "organic";
+  }
+  return "deeplink";
+}
+
 function ensureWebDeepLink(url) {
   if (!/^https?:\/\//i.test(url)) {
     throw new Error(
@@ -694,6 +704,8 @@ export function normalizeRunnerConfig(rawConfig) {
           ? (mergedNav.promptQueryParam ?? (provider === "openai" ? "q" : null))
           : null,
       submitStrategy,
+      navigationStrategy: resolveNavigationStrategy(rawConfig),
+      organic: mergedNav.organic ?? null,
       waitUntil: mergedNav.waitUntil ?? "domcontentloaded",
       timeoutMs: mergedNav.timeoutMs ?? 30000,
     },
@@ -909,6 +921,210 @@ async function dismissCookieBanner(page) {
   }
 
   return false;
+}
+
+/**
+ * If the page is on Google's /sorry/index reCAPTCHA interstitial, click the
+ * "I'm not a robot" checkbox to trigger the Buster Camoufox addon (which
+ * solves audio reCAPTCHA v2 challenges automatically), then wait for the
+ * page to navigate back to a real search/result URL. Returns
+ * { handled, solved, reason } so the caller can continue or fail clearly.
+ *
+ * The Buster addon is loaded via runner/addons/buster (see
+ * browser.camoufox.addons in the monitor config). It listens for clicks on
+ * the reCAPTCHA checkbox and then handles the audio challenge transparently.
+ *
+ * @param {import("playwright").Page} page
+ * @param {{ timeoutMs?: number }} [options]
+ */
+async function solveGoogleSorryCaptcha(page, options = {}) {
+  const url = page.url();
+  if (!/\/sorry\//i.test(url)) {
+    return { handled: false, solved: false, reason: "not on /sorry/" };
+  }
+
+  const totalTimeoutMs = clamp(
+    Math.floor(options.timeoutMs ?? 90_000),
+    10_000,
+    300_000
+  );
+  const startedAt = Date.now();
+
+  // Find the reCAPTCHA iframe ("I'm not a robot" anchor frame).
+  const anchorFrame = page
+    .frames()
+    .find((frame) => /\/recaptcha\/api2\/anchor/i.test(frame.url()));
+  if (!anchorFrame) {
+    return {
+      handled: true,
+      solved: false,
+      reason: "no reCAPTCHA anchor iframe found on /sorry page",
+    };
+  }
+
+  try {
+    const checkbox = anchorFrame
+      .locator("#recaptcha-anchor, .recaptcha-checkbox")
+      .first();
+    await checkbox.waitFor({ state: "visible", timeout: 10_000 });
+    await checkbox.click({ timeout: 10_000 });
+  } catch (error) {
+    return {
+      handled: true,
+      solved: false,
+      reason: `failed to click reCAPTCHA checkbox: ${
+        error instanceof Error ? error.message.split("\n")[0] : "unknown"
+      }`,
+    };
+  }
+
+  // Buster needs time to fetch the audio challenge and submit the answer.
+  // Wait for the page to navigate AWAY from /sorry/ as the success signal.
+  while (Date.now() - startedAt < totalTimeoutMs) {
+    await page.waitForTimeout(1_500);
+    const current = page.url();
+    if (!/\/sorry\//i.test(current)) {
+      return { handled: true, solved: true, reason: null, finalUrl: current };
+    }
+    // If the anchor checkbox already shows "checked", Google may auto-redirect
+    // a moment later. Keep polling URL.
+  }
+
+  return {
+    handled: true,
+    solved: false,
+    reason: `Buster did not resolve reCAPTCHA within ${totalTimeoutMs}ms`,
+  };
+}
+
+/**
+ * Drive an organic search-engine flow: navigate to the base URL, type the
+ * prompt into the search box with realistic per-keystroke delay, press Enter
+ * to load the SERP, then optionally click an "AI tab" (e.g. Google AI Mode)
+ * to land on the response surface. Replaces the deeplink + composer-typing
+ * path for providers whose anti-bot defenses trip on direct query-string
+ * navigation. The caller is responsible for waiting on the response container
+ * via the existing extraction selectors.
+ *
+ * @param {import("playwright").Page} page
+ * @param {ReturnType<typeof normalizeRunnerConfig>} config
+ * @returns {Promise<{aiTabClicked: boolean, finalUrl: string, captchaSolved: boolean}>}
+ */
+async function runOrganicNavigation(page, config) {
+  const organic = config.navigation.organic ?? {};
+  const searchInputSelector =
+    organic.searchInputSelector ?? "textarea[name='q'], input[name='q']";
+  const aiTabSelector = organic.aiTabSelector ?? null;
+  const typeDelayMs = clamp(Math.floor(organic.typeDelayMs ?? 90), 0, 500);
+  const postTypeSettleMs = clamp(
+    Math.floor(organic.postTypeSettleMs ?? 400),
+    0,
+    5000
+  );
+  const postClickSettleMs = clamp(
+    Math.floor(organic.postClickSettleMs ?? 2000),
+    0,
+    20000
+  );
+  const captchaTimeoutMs = clamp(
+    Math.floor(organic.captchaTimeoutMs ?? 90_000),
+    10_000,
+    300_000
+  );
+  const baseUrl = config.navigation.url;
+  const promptText = config.prompt.text;
+  if (!baseUrl) {
+    throw new Error("navigation.url is required for organic navigation.");
+  }
+  if (!promptText) {
+    throw new Error("prompt.text is required for organic navigation.");
+  }
+
+  await page.goto(baseUrl, {
+    waitUntil: config.navigation.waitUntil,
+    timeout: config.navigation.timeoutMs,
+  });
+  await dismissCookieBanner(page);
+
+  // If the very first navigation already lands on /sorry/, try to solve.
+  let captchaSolved = false;
+  if (/\/sorry\//i.test(page.url())) {
+    console.log(
+      `[openpeec-runner] organic: hit Google /sorry/ on first nav; handing to Buster…`
+    );
+    const result = await solveGoogleSorryCaptcha(page, {
+      timeoutMs: captchaTimeoutMs,
+    });
+    if (!result.solved) {
+      throw new Error(
+        `Google /sorry/ CAPTCHA not solved before search: ${result.reason}`
+      );
+    }
+    captchaSolved = true;
+    await dismissCookieBanner(page);
+  }
+
+  const input = page.locator(searchInputSelector).first();
+  await input.waitFor({ state: "visible", timeout: config.navigation.timeoutMs });
+  await input.click({ timeout: config.navigation.timeoutMs });
+  await input.type(promptText, { delay: typeDelayMs });
+  await page.waitForTimeout(postTypeSettleMs);
+  await page.keyboard.press("Enter");
+  await page.waitForLoadState("domcontentloaded", {
+    timeout: config.navigation.timeoutMs,
+  });
+
+  // After search submit, Google may redirect to /sorry/index for CAPTCHA.
+  if (/\/sorry\//i.test(page.url())) {
+    console.log(
+      `[openpeec-runner] organic: hit Google /sorry/ after search; handing to Buster…`
+    );
+    const result = await solveGoogleSorryCaptcha(page, {
+      timeoutMs: captchaTimeoutMs,
+    });
+    if (!result.solved) {
+      throw new Error(
+        `Google /sorry/ CAPTCHA not solved after search: ${result.reason}`
+      );
+    }
+    captchaSolved = true;
+    // After Buster solves, Google bounces back to the SERP. Give it a beat
+    // to settle before looking for the AI tab.
+    await page
+      .waitForLoadState("domcontentloaded", {
+        timeout: config.navigation.timeoutMs,
+      })
+      .catch(() => {});
+    await page.waitForTimeout(1_500);
+  }
+
+  let aiTabClicked = false;
+  if (aiTabSelector) {
+    const tab = page.locator(aiTabSelector).first();
+    try {
+      await tab.waitFor({
+        state: "visible",
+        timeout: config.navigation.timeoutMs,
+      });
+      await tab.click({ timeout: config.navigation.timeoutMs });
+      aiTabClicked = true;
+      await page.waitForLoadState("domcontentloaded", {
+        timeout: config.navigation.timeoutMs,
+      });
+    } catch (error) {
+      throw new Error(
+        `Organic AI tab click failed for "${aiTabSelector}": ${
+          error instanceof Error ? error.message.split("\n")[0] : "unknown error"
+        }`
+      );
+    }
+  }
+
+  if (postClickSettleMs > 0) {
+    await page.waitForTimeout(postClickSettleMs);
+  }
+
+  return { aiTabClicked, finalUrl: page.url(), captchaSolved };
 }
 
 const CHATGPT_LOGGED_OUT_UPSELL_SELECTORS = [
@@ -1749,7 +1965,9 @@ async function runNodriverMonitor(normalizedConfig, options, initialWarnings) {
 export async function runMonitor(config, options = {}) {
   const normalizedConfig = normalizeRunnerConfig(config);
   const warnings = [];
-  if (normalizedConfig.provider !== "openai") {
+  const isOrganicProvider =
+    normalizedConfig.navigation.navigationStrategy === "organic";
+  if (normalizedConfig.provider !== "openai" && !isOrganicProvider) {
     const finishedAt = Date.now();
     const reason = `Provider runner is not implemented for ${normalizedConfig.provider}; OpenAI is the only active v0 provider.`;
     const result = {
@@ -1992,37 +2210,82 @@ export async function runMonitor(config, options = {}) {
 
     const timeoutMs = normalizedConfig.navigation.timeoutMs;
     const waitUntil = normalizedConfig.navigation.waitUntil;
-    console.log(`[openpeec-runner] navigating to provider: ${deepLinkUrl}`);
-    await page.goto(deepLinkUrl, { waitUntil, timeout: timeoutMs });
-
-    if (normalizedConfig.assertions.waitForSelector) {
-      await page.waitForSelector(normalizedConfig.assertions.waitForSelector, {
-        timeout: timeoutMs,
-      });
-    }
-
-    const readiness = await waitForChatGptComposer(
-      page,
-      normalizedConfig,
-      networkEvents
-    );
-    if (!readiness.ok) {
-      fallbackUsed = true;
-      status = readiness.status ?? "failed";
-      summary = readiness.reason;
-      responseText = "";
-      responseSummary = summary;
-      warnings.push(
-        status === "blocked"
-          ? "Access blocker detected on chatgpt.com before prompt submission; metrics are not treated as a valid monitoring run."
-          : "ChatGPT did not reach a usable prompt composer before prompt submission."
-      );
-    }
+    const isOrganic =
+      normalizedConfig.navigation.navigationStrategy === "organic";
 
     let promptSubmitted = false;
 
-    if (status !== "success") {
-      promptSubmitted = false;
+    if (isOrganic) {
+      console.log(
+        `[openpeec-runner] organic navigation: ${normalizedConfig.navigation.url}`
+      );
+      try {
+        const organicResult = await runOrganicNavigation(
+          page,
+          normalizedConfig
+        );
+        promptSubmitted = true;
+        if (organicResult.captchaSolved) {
+          warnings.push(
+            "Solved Google /sorry/ reCAPTCHA via Buster before continuing."
+          );
+        }
+        if (organicResult.aiTabClicked) {
+          warnings.push(
+            `Organic navigation reached AI tab at ${organicResult.finalUrl}.`
+          );
+        }
+      } catch (error) {
+        fallbackUsed = true;
+        status = "failed";
+        summary =
+          error instanceof Error ? error.message : "Organic navigation failed.";
+        responseSummary = summary;
+        warnings.push(summary);
+      }
+
+      if (
+        status === "success" &&
+        normalizedConfig.assertions.waitForSelector
+      ) {
+        await page
+          .waitForSelector(normalizedConfig.assertions.waitForSelector, {
+            timeout: timeoutMs,
+          })
+          .catch(() => {});
+      }
+    } else {
+      console.log(`[openpeec-runner] navigating to provider: ${deepLinkUrl}`);
+      await page.goto(deepLinkUrl, { waitUntil, timeout: timeoutMs });
+
+      if (normalizedConfig.assertions.waitForSelector) {
+        await page.waitForSelector(
+          normalizedConfig.assertions.waitForSelector,
+          { timeout: timeoutMs }
+        );
+      }
+
+      const readiness = await waitForChatGptComposer(
+        page,
+        normalizedConfig,
+        networkEvents
+      );
+      if (!readiness.ok) {
+        fallbackUsed = true;
+        status = readiness.status ?? "failed";
+        summary = readiness.reason;
+        responseText = "";
+        responseSummary = summary;
+        warnings.push(
+          status === "blocked"
+            ? "Access blocker detected on chatgpt.com before prompt submission; metrics are not treated as a valid monitoring run."
+            : "ChatGPT did not reach a usable prompt composer before prompt submission."
+        );
+      }
+    }
+
+    if (status !== "success" || isOrganic) {
+      // Organic flow already submitted via SERP type+enter; skip composer typing.
     } else if (!normalizedConfig.prompt.text) {
       warnings.push("No prompt text configured; running extraction-only mode.");
     } else {
