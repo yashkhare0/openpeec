@@ -102,28 +102,12 @@ vi.mock("@/components/ui/tooltip", () => ({
 
 vi.mock("@/components/layout/SiteHeader", () => ({
   SiteHeader: (props: {
-    providerFilter: string;
-    providerOptions: Array<{ label: string; value: string }>;
-    onProviderFilter: (value: string) => void;
-    showRangeFilter?: boolean;
-    showProviderFilter?: boolean;
     searchValue?: string;
     onSearchValue?: (value: string) => void;
   }) => {
     siteHeaderMock(props);
     return (
       <div>
-        {props.showProviderFilter === false ? null : (
-          <>
-            <div>{props.providerFilter}</div>
-            <div>
-              {props.providerOptions.map((option) => option.label).join(",")}
-            </div>
-            <button onClick={() => props.onProviderFilter("claude")}>
-              Set Claude
-            </button>
-          </>
-        )}
         {props.onSearchValue ? (
           <button onClick={() => props.onSearchValue?.("openpeec")}>
             Set Search
@@ -323,13 +307,7 @@ describe("MonitoringDashboard", () => {
 
     expect(siteHeaderMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        showRangeFilter: false,
-        showProviderFilter: false,
-        providerFilter: "openai",
-        providerOptions: expect.arrayContaining([
-          expect.objectContaining({ label: "All providers", value: "all" }),
-          expect.objectContaining({ label: "OpenAI", value: "openai" }),
-        ]),
+        searchValue: "",
       })
     );
     const promptAnalyticsCall = useQueryMock.mock.calls.find(
@@ -345,19 +323,21 @@ describe("MonitoringDashboard", () => {
     });
   });
 
-  it("writes the provider filter into URL state instead of model", async () => {
-    const user = userEvent.setup();
+  it("strips removed global filter params from URL state", async () => {
     const { MonitoringDashboard } = await import("./MonitoringDashboard");
 
-    window.history.replaceState({}, "", "/?page=runs&provider=openai");
+    window.history.replaceState({}, "", "/?page=runs&provider=openai&range=30");
     render(<MonitoringDashboard />);
 
-    await user.click(screen.getByRole("button", { name: /set claude/i }));
-
     await waitFor(() => {
-      expect(window.location.search).toContain("provider=claude");
+      expect(window.location.search).not.toContain("provider=");
     });
-    expect(window.location.search).not.toContain("model=");
+    expect(window.location.search).not.toContain("range=");
+
+    const runGroupsCall = useQueryMock.mock.calls.find(
+      ([name]) => name === "listRunGroups"
+    );
+    expect(runGroupsCall?.[1]).toEqual({ limit: 200 });
   });
 
   it("routes prompt search through the header", async () => {

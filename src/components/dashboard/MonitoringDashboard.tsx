@@ -42,6 +42,7 @@ const DASHBOARD_PAGES: PageKey[] = [
   "responses",
   "sources",
 ];
+const DEFAULT_RANGE_DAYS = 7;
 
 function isPageKey(value: string | null): value is PageKey {
   return value !== null && DASHBOARD_PAGES.includes(value as PageKey);
@@ -49,8 +50,6 @@ function isPageKey(value: string | null): value is PageKey {
 
 function parseDashboardUrlState(): {
   page: PageKey;
-  rangeDays: number;
-  providerFilter: string;
   promptSearch: string;
   selectedPromptId: Id<"prompts"> | null;
   selectedRunId: Id<"promptRuns"> | null;
@@ -58,14 +57,11 @@ function parseDashboardUrlState(): {
   runDetailContext: RunDetailContext;
 } {
   const params = new URLSearchParams(window.location.search);
-  const rangeValue = Number(params.get("range"));
   const pageValue = params.get("page");
   const contextValue = params.get("context");
 
   return {
     page: isPageKey(pageValue) ? pageValue : "overview",
-    rangeDays: Number.isFinite(rangeValue) && rangeValue > 0 ? rangeValue : 7,
-    providerFilter: params.get("provider")?.trim() || "all",
     promptSearch: params.get("search")?.trim() || "",
     selectedPromptId:
       (params.get("prompt")?.trim() as Id<"prompts"> | null) ?? null,
@@ -82,8 +78,6 @@ function parseDashboardUrlState(): {
 
 function writeDashboardUrlState(state: {
   page: PageKey;
-  rangeDays: number;
-  providerFilter: string;
   promptSearch: string;
   selectedPromptId: Id<"prompts"> | null;
   selectedRunId: Id<"promptRuns"> | null;
@@ -93,12 +87,6 @@ function writeDashboardUrlState(state: {
   const params = new URLSearchParams();
   if (state.page !== "overview") {
     params.set("page", state.page);
-  }
-  if (state.page !== "prompts" && state.rangeDays !== 7) {
-    params.set("range", String(state.rangeDays));
-  }
-  if (state.page !== "prompts" && state.providerFilter !== "all") {
-    params.set("provider", state.providerFilter);
   }
   if (state.promptSearch) {
     params.set("search", state.promptSearch);
@@ -126,10 +114,6 @@ function writeDashboardUrlState(state: {
 export function MonitoringDashboard() {
   const initialUrlState = useMemo(() => parseDashboardUrlState(), []);
   const [page, setPage] = useState<PageKey>(initialUrlState.page);
-  const [rangeDays, setRangeDays] = useState(initialUrlState.rangeDays);
-  const [providerFilter, setProviderFilter] = useState(
-    initialUrlState.providerFilter
-  );
   const [promptSearch, setPromptSearch] = useState(
     initialUrlState.promptSearch
   );
@@ -178,16 +162,9 @@ export function MonitoringDashboard() {
     page === "responses" &&
     runDetailContext === "responses" &&
     selectedRunId !== null;
-  const showingRunDetail =
-    (isPromptsPage && promptView === "response") ||
-    showingRunDetailForRuns ||
-    showingRunGroupDetailForRuns ||
-    showingRunDetailForResponses;
   const shouldLoadPromptAnalytics = isPromptsPage && promptView === "list";
   const shouldLoadRunsList =
     isOverviewPage || (isResponsesPage && !showingRunDetailForResponses);
-  const provider =
-    providerFilter === "all" || isPromptsPage ? undefined : providerFilter;
 
   const ensureProvidersSeeded = useMutation(
     api.analytics.ensureProvidersSeeded
@@ -213,7 +190,7 @@ export function MonitoringDashboard() {
 
   const overview = useQuery(
     api.analytics.getOverview,
-    isOverviewPage ? { rangeDays, provider } : "skip"
+    isOverviewPage ? { rangeDays: DEFAULT_RANGE_DAYS } : "skip"
   );
   const providers = useQuery(api.analytics.listProviders, {});
   const promptAnalytics = useQuery(
@@ -226,7 +203,6 @@ export function MonitoringDashboard() {
     shouldLoadRunsList
       ? {
           limit: isOverviewPage ? 4 : 200,
-          provider,
         }
       : "skip"
   );
@@ -235,7 +211,6 @@ export function MonitoringDashboard() {
     isRunsPage && !showingRunDetailForRuns && !showingRunGroupDetailForRuns
       ? {
           limit: 200,
-          provider,
         }
       : "skip"
   );
@@ -243,8 +218,7 @@ export function MonitoringDashboard() {
     api.analytics.listSources,
     isOverviewPage || isSourcesPage
       ? {
-          rangeDays,
-          provider,
+          rangeDays: DEFAULT_RANGE_DAYS,
           limit: isOverviewPage ? 8 : 80,
         }
       : "skip"
@@ -252,7 +226,7 @@ export function MonitoringDashboard() {
   const promptAnalysis = useQuery(
     api.analytics.getPromptAnalysis,
     promptView === "prompt" && selectedPromptId
-      ? { promptId: selectedPromptId, provider, rangeDays }
+      ? { promptId: selectedPromptId, rangeDays: DEFAULT_RANGE_DAYS }
       : "skip"
   );
   const entities = useQuery(
@@ -314,34 +288,10 @@ export function MonitoringDashboard() {
     [promptAnalytics, search]
   );
 
-  const providerOptions = useMemo(
-    () => [
-      { label: "All providers", value: "all" },
-      ...((providers ?? [])
-        .filter((item) => item.active)
-        .map((item) => ({
-          label: item.name,
-          value: item.slug,
-        })) ?? []),
-    ],
-    [providers]
-  );
-
-  useEffect(() => {
-    const validProviders = new Set(
-      providerOptions.map((option) => option.value)
-    );
-    if (!validProviders.has(providerFilter)) {
-      setProviderFilter("all");
-    }
-  }, [providerFilter, providerOptions]);
-
   useEffect(() => {
     const handlePopState = () => {
       const next = parseDashboardUrlState();
       setPage(next.page);
-      setRangeDays(next.rangeDays);
-      setProviderFilter(next.providerFilter);
       setPromptSearch(next.promptSearch);
       setSelectedPromptId(next.selectedPromptId);
       setSelectedRunId(next.selectedRunId);
@@ -359,8 +309,6 @@ export function MonitoringDashboard() {
   useEffect(() => {
     writeDashboardUrlState({
       page,
-      rangeDays,
-      providerFilter,
       promptSearch,
       selectedPromptId,
       selectedRunId,
@@ -370,8 +318,6 @@ export function MonitoringDashboard() {
   }, [
     page,
     promptSearch,
-    providerFilter,
-    rangeDays,
     runDetailContext,
     selectedPromptId,
     selectedRunId,
@@ -656,17 +602,6 @@ export function MonitoringDashboard() {
         <AppSidebar page={page} onPage={navigatePage} />
         <SidebarInset className="min-w-0">
           <SiteHeader
-            rangeDays={rangeDays}
-            onRangeDays={setRangeDays}
-            providerFilter={providerFilter}
-            onProviderFilter={setProviderFilter}
-            providerOptions={providerOptions}
-            showRangeFilter={
-              !isPromptsPage && !isProvidersPage && !showingRunDetail
-            }
-            showProviderFilter={
-              !isPromptsPage && !isProvidersPage && !showingRunDetail
-            }
             searchValue={
               isPromptsPage && promptView === "list" ? promptSearch : undefined
             }
