@@ -1,0 +1,53 @@
+{
+  "runLabel": "chatgpt-sources-sheet-smoke",
+  "provider": "openai",
+  "platform": "web",
+  "sessionMode": "stored",
+  "browser": {
+    "engine": "camoufox",
+    "storageStatePath": "runner/camoufox.storage-state.json",
+    "headless": false,
+    "camoufox": {
+      "humanize": 0.8,
+      "geoip": false,
+      "addons": ["runner/addons/buster"]
+    }
+  },
+  "navigation": {
+    "url": "https://chatgpt.com/",
+    "submitStrategy": "type",
+    "waitUntil": "domcontentloaded",
+    "timeoutMs": 30000,
+    "hopWaitUntil": "load",
+    "domainHops": []
+  },
+  "prompt": {
+    "text": "what are the most recent updates on OpenAI's latest model release? Cite your sources.",
+    "inputSelector": "div#prompt-textarea[contenteditable='true'], #prompt-textarea[contenteditable='true'], [contenteditable='true']:visible, textarea:visible",
+    "submitSelector": "button[data-testid='send-button'], button[aria-label*='Send']",
+    "submitKey": "Enter",
+    "clearExisting": true
+  },
+  "extraction": {
+    "responseContainerSelector": "[data-message-author-role='assistant']:not([data-message-id*='request-placeholder']):last-of-type",
+    "responseTextSelector": "[data-message-author-role='assistant']:not([data-message-id*='request-placeholder']):last-of-type",
+    "citationLinkSelector": "a[href]",
+    "maxCitations": 30
+  },
+  "assertions": {
+    "urlIncludes": "chatgpt.com"
+  },
+  "timing": {
+    "healthCheckTimeoutMs": 15000,
+    "promptReadyTimeoutMs": 15000,
+    "responseStartTimeoutMs": 45000,
+    "responseTimeoutMs": 300000,
+    "settleDelayMs": 2500,
+    "warmupGotoTimeoutMs": 30000,
+    "postHopSettleMinMs": 2500,
+    "hopNetworkIdleMaxMs": 0
+  },
+  "ingest": {
+    "target": "none"
+  }
+}
