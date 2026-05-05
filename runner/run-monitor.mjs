@@ -1020,13 +1020,26 @@ export function normalizeExtractedPayload(payload) {
   };
 }
 
-export async function extractResponseAndCitations(page, config) {
+export async function extractResponseAndCitations(
+  page,
+  config,
+  options = {}
+) {
+  const auxiliaryContainerSelectors = Array.isArray(
+    options.auxiliaryContainerSelectors
+  )
+    ? options.auxiliaryContainerSelectors.filter(
+        (s) => typeof s === "string" && s.length > 0
+      )
+    : [];
+
   const payload = await page.evaluate(
     ({
       responseContainerSelector,
       responseTextSelector,
       citationLinkSelector,
       maxCitations,
+      auxiliaryContainerSelectors,
     }) => {
       const fallbackContainer = document.querySelector("main") ?? document.body;
       const explicitResponseContainer = document.querySelector(
@@ -1045,11 +1058,45 @@ export async function extractResponseAndCitations(page, config) {
         responseTextNode?.textContent ??
         ""
       ).trim();
-      const rawLinks = responseContainerFound
+
+      const primaryLinks = responseContainerFound
         ? Array.from(
             responseContainer.querySelectorAll(citationLinkSelector)
-          ).slice(0, maxCitations)
+          )
         : [];
+
+      // Auxiliary containers are looked up at body scope (e.g. portal-rendered
+      // sheets opened by a provider hook). Each container contributes its own
+      // citation links; the loop dedupes by anchor identity to avoid double-
+      // counting nested matches.
+      const seenAnchors = new Set();
+      const allLinks = [];
+      for (const anchor of primaryLinks) {
+        if (seenAnchors.has(anchor)) continue;
+        seenAnchors.add(anchor);
+        allLinks.push(anchor);
+      }
+      for (const sel of auxiliaryContainerSelectors ?? []) {
+        let containers;
+        try {
+          containers = Array.from(document.querySelectorAll(sel));
+        } catch {
+          continue;
+        }
+        for (const container of containers) {
+          if (!container) continue;
+          const auxAnchors = Array.from(
+            container.querySelectorAll(citationLinkSelector)
+          );
+          for (const anchor of auxAnchors) {
+            if (seenAnchors.has(anchor)) continue;
+            seenAnchors.add(anchor);
+            allLinks.push(anchor);
+          }
+        }
+      }
+
+      const rawLinks = allLinks.slice(0, maxCitations);
 
       const citations = rawLinks.map((anchor, index) => {
         const href = anchor.getAttribute("href") ?? "";
@@ -1092,6 +1139,7 @@ export async function extractResponseAndCitations(page, config) {
       responseTextSelector: config.extraction.responseTextSelector,
       citationLinkSelector: config.extraction.citationLinkSelector,
       maxCitations: config.extraction.maxCitations,
+      auxiliaryContainerSelectors,
     }
   );
 
@@ -1697,7 +1745,27 @@ export async function runMonitor(config, options = {}) {
       );
       return normalizeExtractedPayload(rawPayload);
     }
-    return await extractResponseAndCitations(targetPage, targetConfig);
+    let auxiliaryContainerSelectors = [];
+    if (typeof providerAdapter.prepareForExtraction === "function") {
+      try {
+        const prep = await providerAdapter.prepareForExtraction(
+          targetPage,
+          targetConfig
+        );
+        if (prep && Array.isArray(prep.auxiliaryContainerSelectors)) {
+          auxiliaryContainerSelectors = prep.auxiliaryContainerSelectors;
+        }
+      } catch (error) {
+        warnings.push(
+          `prepareForExtraction failed for ${providerAdapter.slug}: ${
+            error instanceof Error ? error.message.split("\n")[0] : "unknown"
+          }`
+        );
+      }
+    }
+    return await extractResponseAndCitations(targetPage, targetConfig, {
+      auxiliaryContainerSelectors,
+    });
   };
 
   try {

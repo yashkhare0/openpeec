@@ -697,6 +697,69 @@ export async function runOpenAiPromptFlow({
   };
 }
 
+/**
+ * If ChatGPT performed a web search, the assistant message is followed by a
+ * `<button aria-label="Sources">` that opens a side sheet listing every source
+ * the model consulted. Inline `webpage-citation-pill` anchors only cover the
+ * sources cited in-text — the sheet is the complete list. Click the button to
+ * mount the sheet so the generic citation extractor can scrape it via
+ * auxiliary container selectors.
+ *
+ * Best-effort: if the button isn't present (no web search happened) we just
+ * return without auxiliary selectors. Errors during the click are non-fatal —
+ * the inline-pill extraction still runs unchanged.
+ *
+ * @param {import("playwright").Page} page
+ * @param {{ extraction: { responseContainerSelector?: string } }} config
+ * @returns {Promise<{ auxiliaryContainerSelectors: string[] }>}
+ */
+export async function prepareOpenAiSourcesSheet(page, config) {
+  void config;
+  const auxiliaryContainerSelectors = [];
+
+  // The "Sources" button is rendered as a sibling of the assistant message
+  // (footnote section), NOT inside the message container — so we look it up
+  // at page level and pick the LAST visible match, which corresponds to the
+  // most recent turn.
+  const button = page
+    .locator('button[aria-label="Sources"]:visible')
+    .last();
+
+  let count = 0;
+  try {
+    count = await button.count();
+  } catch {
+    return { auxiliaryContainerSelectors };
+  }
+  if (count === 0) {
+    return { auxiliaryContainerSelectors };
+  }
+
+  try {
+    await button.scrollIntoViewIfNeeded({ timeout: 2_000 }).catch(() => {});
+    await button.click({ timeout: 5_000 });
+    // ChatGPT animates the sheet in; give it a beat to mount + paint links.
+    await page.waitForTimeout(1_500);
+  } catch {
+    // Click failed; fall back to inline-only extraction.
+    return { auxiliaryContainerSelectors };
+  }
+
+  // The sheet is rendered in a Radix portal at body level, with role="dialog"
+  // (or aside) and contains anchors with target="_blank" pointing to the
+  // source URLs. Provide multiple selectors so any one of them landing inside
+  // the open sheet is enough to capture the links — the extractor dedupes by
+  // URL so overlap is harmless.
+  auxiliaryContainerSelectors.push(
+    '[role="dialog"][data-state="open"]',
+    'aside[role="complementary"]',
+    'div[data-state="open"][role="dialog"]',
+    "[data-radix-portal] section",
+    '[role="region"][aria-label*="ources" i]'
+  );
+  return { auxiliaryContainerSelectors };
+}
+
 export const openaiProvider = {
   slug: OPENAI_PROVIDER,
   label: "OpenAI",
@@ -727,6 +790,7 @@ export const openaiProvider = {
     },
   },
   runPromptFlow: runOpenAiPromptFlow,
+  prepareForExtraction: prepareOpenAiSourcesSheet,
   getAccessBlockerReason,
   detectAccessBlocker,
   isGenerationErrorResponse: isOpenAiGenerationErrorResponse,

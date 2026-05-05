@@ -1,0 +1,49 @@
+{
+  "runLabel": "le-chat-sources-smoke",
+  "provider": "mistral",
+  "platform": "web",
+  "sessionMode": "guest",
+  "browser": {
+    "engine": "camoufox",
+    "headless": false,
+    "camoufox": {
+      "humanize": 0.8,
+      "geoip": false,
+      "addons": ["runner/addons/buster"]
+    }
+  },
+  "navigation": {
+    "url": "https://chat.mistral.ai/chat",
+    "submitStrategy": "type",
+    "waitUntil": "domcontentloaded",
+    "timeoutMs": 30000,
+    "domainHops": []
+  },
+  "prompt": {
+    "text": "what are the most recent updates on Mistral AI's latest model release?",
+    "inputSelector": "div[contenteditable=\"true\"]",
+    "submitSelector": "button[aria-label*=\"send\" i], button[type=\"submit\"]",
+    "submitKey": "Enter",
+    "clearExisting": true
+  },
+  "extraction": {
+    "responseContainerSelector": "[data-message-author-role=\"assistant\"]:last-of-type",
+    "responseTextSelector": "[data-message-part-type=\"answer\"]:last-of-type",
+    "citationLinkSelector": "a[href]",
+    "maxCitations": 30
+  },
+  "assertions": {
+    "urlIncludes": "chat.mistral.ai"
+  },
+  "timing": {
+    "promptReadyTimeoutMs": 15000,
+    "responseStartTimeoutMs": 45000,
+    "responseTimeoutMs": 180000,
+    "responseStableMs": 4000,
+    "settleDelayMs": 2000,
+    "warmupGotoTimeoutMs": 30000
+  },
+  "ingest": {
+    "target": "none"
+  }
+}
