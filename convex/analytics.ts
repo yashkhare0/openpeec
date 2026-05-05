@@ -110,16 +110,16 @@ const DEFAULT_PROVIDER_DEFINITIONS = [
   },
   {
     slug: "mistral",
-    name: "Mistral",
-    url: "https://chat.mistral.ai/",
+    name: "Mistral Le Chat",
+    url: "https://chat.mistral.ai/chat",
     channelSlug: "mistral-web",
-    channelName: "Mistral web",
+    channelName: "Mistral Le Chat web",
     transport: "browser",
     sessionMode: "guest",
     sessionProfileDir: undefined,
     promptQueryParam: undefined,
     submitStrategy: "type",
-    active: false,
+    active: true,
   },
 ] as const;
 

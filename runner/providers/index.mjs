@@ -2,9 +2,10 @@ import {
   GOOGLE_AI_MODE_PROVIDER,
   googleAiModeProvider,
 } from "./google-ai-mode.mjs";
+import { MISTRAL_PROVIDER, mistralProvider } from "./mistral.mjs";
 import { OPENAI_PROVIDER, openaiProvider } from "./openai.mjs";
 
-export { GOOGLE_AI_MODE_PROVIDER, OPENAI_PROVIDER };
+export { GOOGLE_AI_MODE_PROVIDER, MISTRAL_PROVIDER, OPENAI_PROVIDER };
 export {
   classifyChatGptPageState,
   detectAccessBlocker,
@@ -17,6 +18,7 @@ export {
 const PROVIDERS = new Map([
   [openaiProvider.slug, openaiProvider],
   [googleAiModeProvider.slug, googleAiModeProvider],
+  [mistralProvider.slug, mistralProvider],
 ]);
 
 export const RUNNABLE_PROVIDER_SLUGS = [...PROVIDERS.keys()];
