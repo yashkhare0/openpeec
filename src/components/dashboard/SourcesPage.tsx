@@ -1,5 +1,5 @@
 import type { Id } from "../../../convex/_generated/dataModel";
-import { ListChecks, MoreHorizontal } from "lucide-react";
+import { MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +27,6 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
-  SheetTrigger,
 } from "@/components/ui/sheet";
 import {
   Table,
@@ -84,6 +83,17 @@ export type TrackedEntity = {
 type SourcesPageProps = {
   loading?: boolean;
   sources: SourceItem[];
+  onOpenSource?: (domain: string) => void;
+  promptFilter?: {
+    promptId: Id<"prompts">;
+    promptExcerpt: string;
+  } | null;
+  onPromptFilterClear?: () => void;
+};
+
+type TrackedEntitiesSheetProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   entities: TrackedEntity[];
   newEntityName: string;
   onNewEntityName: (value: string) => void;
@@ -104,12 +114,6 @@ type SourcesPageProps = {
   onDeleteEntity: (args: {
     id: Id<"trackedEntities">;
   }) => Promise<Id<"trackedEntities">>;
-  onOpenSource?: (domain: string) => void;
-  promptFilter?: {
-    promptId: Id<"prompts">;
-    promptExcerpt: string;
-  } | null;
-  onPromptFilterClear?: () => void;
 };
 
 const trackedKindOptions: TrackedKind[] = [

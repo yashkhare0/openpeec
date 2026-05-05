@@ -407,15 +407,12 @@ function ProviderResponseTabs({
           onValueChange={(value) => onSelectRun(value as Id<"promptRuns">)}
           className="flex flex-col gap-4"
         >
-          <TabsList
-            variant="line"
-            className="w-full justify-start overflow-x-auto"
-          >
+          <TabsList className="max-w-full overflow-x-auto">
             {runs.map((run) => (
               <TabsTrigger
                 key={String(run._id)}
                 value={String(run._id)}
-                className="max-w-[220px] justify-start"
+                className="max-w-[220px] min-w-28"
               >
                 <span className="truncate">{run.providerName}</span>
               </TabsTrigger>

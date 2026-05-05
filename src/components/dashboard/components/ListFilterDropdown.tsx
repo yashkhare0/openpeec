@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { ChevronDown, Filter } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -25,12 +26,21 @@ export type ListFilterGroup<T extends string = string> = {
   onValuesChange: (values: T[]) => void;
 };
 
+export type ListFilterAction = {
+  label: string;
+  icon?: ReactNode;
+  meta?: string;
+  onSelect: () => void;
+};
+
 export function ListFilterDropdown({
   label,
   groups,
+  actions = [],
 }: {
   label: string;
   groups: Array<ListFilterGroup>;
+  actions?: ListFilterAction[];
 }) {
   const selectedCount = groups.reduce(
     (total, group) => total + group.values.length,
@@ -95,6 +105,27 @@ export function ListFilterDropdown({
             <DropdownMenuItem onSelect={clearAll}>
               Clear filters
             </DropdownMenuItem>
+          </>
+        ) : null}
+        {actions.length ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              {actions.map((action) => (
+                <DropdownMenuItem
+                  key={action.label}
+                  onSelect={action.onSelect}
+                >
+                  {action.icon}
+                  <span>{action.label}</span>
+                  {action.meta ? (
+                    <span className="text-muted-foreground ml-auto tabular-nums">
+                      {action.meta}
+                    </span>
+                  ) : null}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
           </>
         ) : null}
       </DropdownMenuContent>
