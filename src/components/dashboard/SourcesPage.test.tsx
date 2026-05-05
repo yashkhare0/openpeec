@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -37,20 +37,7 @@ function renderSourcesPage(
 ) {
   return render(
     <TooltipProvider>
-      <SourcesPage
-        sources={[source]}
-        entities={[]}
-        newEntityName=""
-        onNewEntityName={vi.fn()}
-        newEntityKind="brand"
-        onNewEntityKind={vi.fn()}
-        newEntityDomain=""
-        onNewEntityDomain={vi.fn()}
-        onCreateEntity={vi.fn().mockResolvedValue("entity_1")}
-        onUpdateEntity={vi.fn().mockResolvedValue("entity_1")}
-        onDeleteEntity={vi.fn().mockResolvedValue("entity_1")}
-        {...props}
-      />
+      <SourcesPage sources={[source]} {...props} />
     </TooltipProvider>
   );
 }
@@ -67,5 +54,33 @@ describe("SourcesPage", () => {
     );
 
     expect(onOpenSource).toHaveBeenCalledWith("github.com");
+  });
+
+  it("splits latest response metadata into source columns", () => {
+    renderSourcesPage();
+
+    const headers = screen
+      .getAllByRole("columnheader")
+      .map((header) => header.textContent);
+    expect(headers).toContain("Most used by");
+    expect(headers).toContain("Latest response");
+    expect(headers).toContain("Last seen");
+    expect(headers).toContain("Rank");
+
+    const row = screen.getByRole("row", {
+      name: /github\.com docs 13% 2 82 openai how should teams build mcp apps\? 1m ago #1/i,
+    });
+    const cells = within(row).getAllByRole("cell");
+    expect(cells.map((cell) => cell.textContent)).toEqual([
+      "github.com",
+      "Docs",
+      "13%",
+      "2",
+      "82",
+      "OpenAI",
+      "How should teams build MCP apps?",
+      "1m ago",
+      "#1",
+    ]);
   });
 });

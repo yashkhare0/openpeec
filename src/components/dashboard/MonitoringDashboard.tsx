@@ -2,6 +2,7 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
   ArrowUpRight,
+  ListChecks,
   MoreHorizontal,
   Pencil,
   Play,
@@ -51,7 +52,7 @@ import { ResponsesPage, type ResponseStatusFilterValue } from "./ResponsesPage";
 import { RunGroupDetailPage } from "./RunGroupDetailPage";
 import { RunsPage, type RunStatusFilterValue } from "./RunsPage";
 import { SourceDetailPage } from "./SourceDetailPage";
-import { SourcesPage } from "./SourcesPage";
+import { SourcesPage, TrackedEntitiesSheet } from "./SourcesPage";
 
 type PageKey =
   | "overview"
@@ -426,6 +427,7 @@ export function MonitoringDashboard() {
   );
   const [promptCreateOpen, setPromptCreateOpen] = useState(false);
   const [promptEditOpen, setPromptEditOpen] = useState(false);
+  const [trackedEntitiesOpen, setTrackedEntitiesOpen] = useState(false);
   const [promptEditText, setPromptEditText] = useState("");
   const [selectedPromptId, setSelectedPromptId] =
     useState<Id<"prompts"> | null>(initialUrlState.selectedPromptId);
@@ -1330,6 +1332,14 @@ export function MonitoringDashboard() {
               onValuesChange: setSourceTypeFilters,
             },
           ]}
+          actions={[
+            {
+              label: "Manage tracked entities",
+              icon: <ListChecks />,
+              meta: String(entities?.length ?? 0),
+              onSelect: () => setTrackedEntitiesOpen(true),
+            },
+          ]}
         />
       );
     }
@@ -1392,6 +1402,23 @@ export function MonitoringDashboard() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+          ) : null}
+
+          {showingSourcesList ? (
+            <TrackedEntitiesSheet
+              open={trackedEntitiesOpen}
+              onOpenChange={setTrackedEntitiesOpen}
+              entities={entities ?? []}
+              newEntityName={newEntityName}
+              onNewEntityName={setNewEntityName}
+              newEntityKind={newEntityKind}
+              onNewEntityKind={setNewEntityKind}
+              newEntityDomain={newEntityDomain}
+              onNewEntityDomain={setNewEntityDomain}
+              onCreateEntity={createTrackedEntity}
+              onUpdateEntity={updateTrackedEntity}
+              onDeleteEntity={deleteTrackedEntity}
+            />
           ) : null}
 
           <div className="flex min-w-0 flex-1 flex-col">
@@ -1545,16 +1572,6 @@ export function MonitoringDashboard() {
                 <SourcesPage
                   loading={sourcesPageLoading}
                   sources={filteredSources}
-                  entities={entities ?? []}
-                  newEntityName={newEntityName}
-                  onNewEntityName={setNewEntityName}
-                  newEntityKind={newEntityKind}
-                  onNewEntityKind={setNewEntityKind}
-                  newEntityDomain={newEntityDomain}
-                  onNewEntityDomain={setNewEntityDomain}
-                  onCreateEntity={createTrackedEntity}
-                  onUpdateEntity={updateTrackedEntity}
-                  onDeleteEntity={deleteTrackedEntity}
                   onOpenSource={openSource}
                   promptFilter={sourcePromptFilter}
                   onPromptFilterClear={() => setSourcePromptFilter(null)}

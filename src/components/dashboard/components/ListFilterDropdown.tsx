@@ -112,10 +112,7 @@ export function ListFilterDropdown({
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               {actions.map((action) => (
-                <DropdownMenuItem
-                  key={action.label}
-                  onSelect={action.onSelect}
-                >
+                <DropdownMenuItem key={action.label} onSelect={action.onSelect}>
                   {action.icon}
                   <span>{action.label}</span>
                   {action.meta ? (

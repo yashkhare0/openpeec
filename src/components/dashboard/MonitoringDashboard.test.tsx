@@ -173,6 +173,7 @@ vi.mock("./SourcesPage", () => ({
       </div>
     );
   },
+  TrackedEntitiesSheet: () => null,
 }));
 
 vi.mock("./SourceDetailPage", () => ({

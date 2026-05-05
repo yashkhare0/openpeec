@@ -141,9 +141,9 @@ function errorMessage(error: unknown): string {
   return "Action failed.";
 }
 
-export function SourcesPage({
-  loading = false,
-  sources,
+export function TrackedEntitiesSheet({
+  open,
+  onOpenChange,
   entities,
   newEntityName,
   onNewEntityName,
@@ -154,18 +154,7 @@ export function SourcesPage({
   onCreateEntity,
   onUpdateEntity,
   onDeleteEntity,
-  onOpenSource,
-  promptFilter,
-  onPromptFilterClear,
-}: SourcesPageProps) {
-  const visibleSources = promptFilter
-    ? sources.filter((source) =>
-        source.latestResponses?.some(
-          (response) => response.promptId === promptFilter.promptId
-        )
-      )
-    : sources;
-
+}: TrackedEntitiesSheetProps) {
   const createEntity = async () => {
     if (!newEntityName.trim()) {
       toast.error("Entity name is required.");
@@ -222,6 +211,146 @@ export function SourcesPage({
   };
 
   return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle>Tracked Entities</SheetTitle>
+          <SheetDescription className="sr-only">
+            Add, update, pause, or delete tracked entities.
+          </SheetDescription>
+        </SheetHeader>
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pb-4">
+          <div className="grid gap-2 rounded-lg border p-3">
+            <Input
+              value={newEntityName}
+              onChange={(e) => onNewEntityName(e.target.value)}
+              aria-label="Entity name"
+              placeholder="Entity name"
+              className="h-8"
+            />
+            <Select
+              value={newEntityKind}
+              onValueChange={(v) => onNewEntityKind(v as TrackedKind)}
+            >
+              <SelectTrigger className="h-8" aria-label="Entity kind">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {trackedKindOptions.map((kind) => (
+                  <SelectItem key={kind} value={kind}>
+                    {titleCase(kind)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              value={newEntityDomain}
+              onChange={(e) => onNewEntityDomain(e.target.value)}
+              aria-label="Owned domains"
+              placeholder="Owned domains"
+              className="h-8"
+            />
+            <Button size="sm" onClick={() => void createEntity()}>
+              Add entity
+            </Button>
+          </div>
+
+          {entities.length === 0 ? (
+            <InlineEmpty text="No tracked entities yet." />
+          ) : (
+            <div className="flex flex-col gap-2">
+              {entities.map((entity) => {
+                const ownedDomains =
+                  (entity.ownedDomains ?? []).join(", ") || "No domains";
+
+                return (
+                  <div
+                    key={String(entity._id)}
+                    className="rounded-lg border p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">
+                          {entity.name}
+                        </p>
+                        <p className="text-muted-foreground line-clamp-2 text-xs">
+                          {titleCase(entity.kind)} | {ownedDomains}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Badge
+                          variant={entity.active ? "default" : "secondary"}
+                          className={cn(
+                            entity.active
+                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300"
+                              : ""
+                          )}
+                        >
+                          {entity.active ? "Active" : "Paused"}
+                        </Badge>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={`Open actions for ${entity.name}`}
+                            >
+                              <MoreHorizontal />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-36">
+                            <DropdownMenuGroup>
+                              <DropdownMenuItem
+                                onSelect={() =>
+                                  void renameEntity(entity._id, entity.name)
+                                }
+                              >
+                                Rename
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onSelect={() => void toggleEntityActive(entity)}
+                              >
+                                {entity.active ? "Pause" : "Resume"}
+                              </DropdownMenuItem>
+                            </DropdownMenuGroup>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onSelect={() => void deleteEntity(entity._id)}
+                            >
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+export function SourcesPage({
+  loading = false,
+  sources,
+  onOpenSource,
+  promptFilter,
+  onPromptFilterClear,
+}: SourcesPageProps) {
+  const visibleSources = promptFilter
+    ? sources.filter((source) =>
+        source.latestResponses?.some(
+          (response) => response.promptId === promptFilter.promptId
+        )
+      )
+    : sources;
+
+  return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
       <div className="px-4 lg:px-6">
         {loading ? (
@@ -229,183 +358,27 @@ export function SourcesPage({
         ) : (
           <Card>
             <CardContent className="flex flex-col gap-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                {promptFilter ? (
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <Badge variant="secondary" className="max-w-full">
-                      <span className="text-muted-foreground mr-1">Prompt</span>
-                      <span className="truncate">
-                        {promptFilter.promptExcerpt}
-                      </span>
-                    </Badge>
-                    {onPromptFilterClear ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={onPromptFilterClear}
-                      >
-                        Clear
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : (
-                  <div />
-                )}
-                <Sheet>
-                  <SheetTrigger asChild>
+              {promptFilter ? (
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <Badge variant="secondary" className="max-w-full">
+                    <span className="text-muted-foreground mr-1">Prompt</span>
+                    <span className="truncate">
+                      {promptFilter.promptExcerpt}
+                    </span>
+                  </Badge>
+                  {onPromptFilterClear ? (
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
-                      aria-label="Manage tracked entities"
+                      onClick={onPromptFilterClear}
                     >
-                      <ListChecks data-icon="inline-start" />
-                      Entities
-                      <span className="text-muted-foreground tabular-nums">
-                        {entities.length}
-                      </span>
+                      Clear
                     </Button>
-                  </SheetTrigger>
-                  <SheetContent className="w-full sm:max-w-md">
-                    <SheetHeader>
-                      <SheetTitle>Tracked Entities</SheetTitle>
-                      <SheetDescription className="sr-only">
-                        Add, update, pause, or delete tracked entities.
-                      </SheetDescription>
-                    </SheetHeader>
-                    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pb-4">
-                      <div className="grid gap-2 rounded-lg border p-3">
-                        <Input
-                          value={newEntityName}
-                          onChange={(e) => onNewEntityName(e.target.value)}
-                          aria-label="Entity name"
-                          placeholder="Entity name"
-                          className="h-8"
-                        />
-                        <Select
-                          value={newEntityKind}
-                          onValueChange={(v) =>
-                            onNewEntityKind(v as TrackedKind)
-                          }
-                        >
-                          <SelectTrigger
-                            className="h-8"
-                            aria-label="Entity kind"
-                          >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {trackedKindOptions.map((kind) => (
-                              <SelectItem key={kind} value={kind}>
-                                {titleCase(kind)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Input
-                          value={newEntityDomain}
-                          onChange={(e) => onNewEntityDomain(e.target.value)}
-                          aria-label="Owned domains"
-                          placeholder="Owned domains"
-                          className="h-8"
-                        />
-                        <Button size="sm" onClick={() => void createEntity()}>
-                          Add entity
-                        </Button>
-                      </div>
-
-                      {entities.length === 0 ? (
-                        <InlineEmpty text="No tracked entities yet." />
-                      ) : (
-                        <div className="flex flex-col gap-2">
-                          {entities.map((entity) => {
-                            const ownedDomains =
-                              (entity.ownedDomains ?? []).join(", ") ||
-                              "No domains";
-
-                            return (
-                              <div
-                                key={String(entity._id)}
-                                className="rounded-lg border p-3"
-                              >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <p className="truncate text-sm font-medium">
-                                      {entity.name}
-                                    </p>
-                                    <p className="text-muted-foreground line-clamp-2 text-xs">
-                                      {titleCase(entity.kind)} | {ownedDomains}
-                                    </p>
-                                  </div>
-                                  <div className="flex shrink-0 items-center gap-1">
-                                    <Badge
-                                      variant={
-                                        entity.active ? "default" : "secondary"
-                                      }
-                                      className={cn(
-                                        entity.active
-                                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300"
-                                          : ""
-                                      )}
-                                    >
-                                      {entity.active ? "Active" : "Paused"}
-                                    </Badge>
-                                    <DropdownMenu>
-                                      <DropdownMenuTrigger asChild>
-                                        <Button
-                                          variant="ghost"
-                                          size="icon-sm"
-                                          aria-label={`Open actions for ${entity.name}`}
-                                        >
-                                          <MoreHorizontal />
-                                        </Button>
-                                      </DropdownMenuTrigger>
-                                      <DropdownMenuContent
-                                        align="end"
-                                        className="w-36"
-                                      >
-                                        <DropdownMenuGroup>
-                                          <DropdownMenuItem
-                                            onSelect={() =>
-                                              void renameEntity(
-                                                entity._id,
-                                                entity.name
-                                              )
-                                            }
-                                          >
-                                            Rename
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem
-                                            onSelect={() =>
-                                              void toggleEntityActive(entity)
-                                            }
-                                          >
-                                            {entity.active ? "Pause" : "Resume"}
-                                          </DropdownMenuItem>
-                                        </DropdownMenuGroup>
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuItem
-                                          variant="destructive"
-                                          onSelect={() =>
-                                            void deleteEntity(entity._id)
-                                          }
-                                        >
-                                          Delete
-                                        </DropdownMenuItem>
-                                      </DropdownMenuContent>
-                                    </DropdownMenu>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </SheetContent>
-                </Sheet>
-              </div>
+                  ) : null}
+                </div>
+              ) : null}
               {visibleSources.length ? (
-                <Table>
+                <Table className="min-w-[1160px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Domain</TableHead>
@@ -437,12 +410,18 @@ export function SourcesPage({
                           </InfoTooltip>
                         </div>
                       </TableHead>
+                      <TableHead>Most used by</TableHead>
                       <TableHead>Latest response</TableHead>
+                      <TableHead>Last seen</TableHead>
+                      <TableHead className="text-right">Rank</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {visibleSources.map((source) => {
                       const latestResponse = source.latestResponses?.[0];
+                      const mostUsedBy = getMostUsedProvider(
+                        source.latestResponses
+                      );
                       const canOpenSource = onOpenSource !== undefined;
                       const openSource = () => {
                         if (!onOpenSource) return;
@@ -511,25 +490,29 @@ export function SourcesPage({
                               ? Math.round(source.avgQualityScore)
                               : "-"}
                           </TableCell>
+                          <TableCell className="text-muted-foreground text-sm">
+                            {mostUsedBy}
+                          </TableCell>
                           <TableCell className="min-w-[280px] whitespace-normal">
-                            <div className="flex flex-col gap-1">
-                              {latestResponse ? (
-                                <>
-                                  <p className="line-clamp-2 text-sm font-medium">
-                                    {latestResponse.promptExcerpt}
-                                  </p>
-                                  <div className="text-muted-foreground flex items-center gap-1 text-xs">
-                                    {formatFreshness(latestResponse.startedAt)}{" "}
-                                    | {latestResponse.providerName} | #
-                                    {latestResponse.position}
-                                  </div>
-                                </>
-                              ) : (
-                                <p className="text-muted-foreground text-sm">
-                                  No latest response
-                                </p>
-                              )}
-                            </div>
+                            {latestResponse ? (
+                              <p className="line-clamp-2 text-sm font-medium">
+                                {latestResponse.promptExcerpt}
+                              </p>
+                            ) : (
+                              <p className="text-muted-foreground text-sm">
+                                No latest response
+                              </p>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
+                            {latestResponse
+                              ? formatFreshness(latestResponse.startedAt)
+                              : "-"}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {latestResponse
+                              ? `#${latestResponse.position}`
+                              : "-"}
                           </TableCell>
                         </TableRow>
                       );
@@ -559,4 +542,22 @@ function formatFreshness(timestamp: number) {
   const hours = Math.round(minutes / 60);
   if (hours < 48) return `${hours}h ago`;
   return `${Math.round(hours / 24)}d ago`;
+}
+
+function getMostUsedProvider(
+  responses: SourceLatestResponse[] | undefined
+): string {
+  if (!responses?.length) return "-";
+
+  const counts = new Map<string, number>();
+  for (const response of responses) {
+    counts.set(
+      response.providerName,
+      (counts.get(response.providerName) ?? 0) + 1
+    );
+  }
+
+  return (
+    Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "-"
+  );
 }
