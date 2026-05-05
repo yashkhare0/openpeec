@@ -19,9 +19,8 @@ vi.mock("sonner", () => ({
 }));
 
 vi.mock("@/components/ui/dialog", () => ({
-  Dialog: ({ children, open }: { children: ReactNode; open: boolean }) => (
-    <div data-open={open}>{children}</div>
-  ),
+  Dialog: ({ children, open }: { children: ReactNode; open: boolean }) =>
+    open ? <div data-open={open}>{children}</div> : null,
   DialogContent: ({ children }: { children: ReactNode }) => (
     <div>{children}</div>
   ),
@@ -60,6 +59,19 @@ const promptRow = {
   active: true,
 };
 
+const providerRows = [
+  {
+    slug: "openai",
+    name: "OpenAI",
+    active: true,
+  },
+  {
+    slug: "google-ai-mode",
+    name: "Google AI Mode",
+    active: true,
+  },
+];
+
 describe("PromptsPage", () => {
   beforeEach(() => {
     toast.success.mockReset();
@@ -74,10 +86,10 @@ describe("PromptsPage", () => {
     renderWithTooltipProvider(
       <PromptsPage
         rows={[promptRow]}
+        providers={providerRows}
         selectedPromptId={null}
         onSelectPrompt={onSelectPrompt}
         onCreatePrompt={vi.fn().mockResolvedValue("prompt_2")}
-        onUpdatePrompt={vi.fn().mockResolvedValue("prompt_1")}
         onDeletePrompt={vi.fn().mockResolvedValue("prompt_1")}
         onTriggerSelectedNow={onTriggerSelectedNow}
       />
@@ -90,7 +102,7 @@ describe("PromptsPage", () => {
     );
     await user.click(
       screen.getByRole("menuitem", {
-        name: /^run all providers with camoufox$/i,
+        name: /^run$/i,
       })
     );
 
@@ -101,8 +113,52 @@ describe("PromptsPage", () => {
         browserEngine: "camoufox",
       });
     });
-    expect(toast.success).toHaveBeenCalledWith("Camoufox run queued.");
+    expect(toast.success).toHaveBeenCalledWith("Run queued.");
     expect(onSelectPrompt).not.toHaveBeenCalled();
+  });
+
+  it("queues advanced provider and engine selections in parallel", async () => {
+    const user = userEvent.setup();
+    const onTriggerSelectedNow = vi.fn().mockResolvedValue({ queuedCount: 1 });
+
+    renderWithTooltipProvider(
+      <PromptsPage
+        rows={[promptRow]}
+        providers={providerRows}
+        selectedPromptId={null}
+        onSelectPrompt={vi.fn()}
+        onCreatePrompt={vi.fn().mockResolvedValue("prompt_2")}
+        onDeletePrompt={vi.fn().mockResolvedValue("prompt_1")}
+        onTriggerSelectedNow={onTriggerSelectedNow}
+      />
+    );
+
+    await user.click(
+      screen.getByRole("button", {
+        name: /actions for best ai visibility tools/i,
+      })
+    );
+    await user.click(screen.getByRole("menuitem", { name: /^advanced$/i }));
+    await user.click(screen.getByRole("checkbox", { name: /google ai mode/i }));
+    await user.click(screen.getByRole("checkbox", { name: /^nodriver$/i }));
+    await user.click(screen.getByRole("button", { name: /^run$/i }));
+
+    await waitFor(() => {
+      expect(onTriggerSelectedNow).toHaveBeenCalledTimes(2);
+    });
+    expect(onTriggerSelectedNow).toHaveBeenNthCalledWith(1, {
+      promptIds: ["prompt_1"],
+      label: "Best AI visibility tools",
+      browserEngine: "camoufox",
+      providerSlugs: ["openai"],
+    });
+    expect(onTriggerSelectedNow).toHaveBeenNthCalledWith(2, {
+      promptIds: ["prompt_1"],
+      label: "Best AI visibility tools",
+      browserEngine: "nodriver",
+      providerSlugs: ["openai"],
+    });
+    expect(toast.success).toHaveBeenCalledWith("Queued 2 runs.");
   });
 
   it("opens prompt detail from full row click and keyboard activation", async () => {
@@ -112,10 +168,10 @@ describe("PromptsPage", () => {
     renderWithTooltipProvider(
       <PromptsPage
         rows={[promptRow]}
+        providers={providerRows}
         selectedPromptId={null}
         onSelectPrompt={onSelectPrompt}
         onCreatePrompt={vi.fn().mockResolvedValue("prompt_2")}
-        onUpdatePrompt={vi.fn().mockResolvedValue("prompt_1")}
         onDeletePrompt={vi.fn().mockResolvedValue("prompt_1")}
         onTriggerSelectedNow={vi.fn().mockResolvedValue({ queuedCount: 1 })}
       />
@@ -142,10 +198,10 @@ describe("PromptsPage", () => {
     renderWithTooltipProvider(
       <PromptsPage
         rows={[promptRow]}
+        providers={providerRows}
         selectedPromptId={null}
         onSelectPrompt={vi.fn()}
         onCreatePrompt={vi.fn().mockResolvedValue("prompt_2")}
-        onUpdatePrompt={vi.fn().mockResolvedValue("prompt_1")}
         onDeletePrompt={vi.fn().mockResolvedValue("prompt_1")}
         onTriggerSelectedNow={vi.fn().mockResolvedValue({ queuedCount: 1 })}
       />
@@ -173,11 +229,11 @@ describe("PromptsPage", () => {
     renderWithTooltipProvider(
       <PromptsPage
         rows={[]}
+        providers={providerRows}
         selectedPromptId={null}
         onSelectPrompt={vi.fn()}
         createOpen
         onCreatePrompt={onCreatePrompt}
-        onUpdatePrompt={vi.fn().mockResolvedValue("prompt_1")}
         onDeletePrompt={vi.fn().mockResolvedValue("prompt_1")}
         onTriggerSelectedNow={vi.fn().mockResolvedValue({ queuedCount: 1 })}
       />

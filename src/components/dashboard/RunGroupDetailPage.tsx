@@ -1,5 +1,9 @@
 import { useState, type KeyboardEvent } from "react";
-import { AlertTriangleIcon, ArrowUpRightIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  ArrowUpRightIcon,
+  ChevronDownIcon,
+} from "lucide-react";
 import { Cell, Pie, PieChart } from "recharts";
 import type { Id } from "../../../convex/_generated/dataModel";
 
@@ -414,9 +418,6 @@ function ProviderResponseTabs({
                 className="max-w-[220px] justify-start"
               >
                 <span className="truncate">{run.providerName}</span>
-                <Badge variant="outline" className={statusTone(run.status)}>
-                  {titleCase(run.status)}
-                </Badge>
               </TabsTrigger>
             ))}
           </TabsList>
@@ -443,18 +444,8 @@ function ProviderResponsePanel({
   run: ProviderRun;
   onOpenRun?: (runId: Id<"promptRuns">) => void;
 }) {
-  const sourceCount = run.sourceCount ?? run.citations.length;
-
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Badge variant="outline" className={statusTone(run.status)}>
-          {titleCase(run.status)}
-        </Badge>
-        <Badge variant="outline">{formatRuntime(run)}</Badge>
-        <Badge variant="outline">{sourceCount} sources</Badge>
-      </div>
-
       <ResponseTextPanel run={run} />
 
       {onOpenRun ? (
@@ -504,6 +495,7 @@ function ProviderResponsePanel({
 }
 
 function ResponseTextPanel({ run }: { run: ProviderRun }) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const content = run.responseText?.trim() || run.responseSummary?.trim();
 
   if (!content) {
@@ -548,17 +540,30 @@ function ResponseTextPanel({ run }: { run: ProviderRun }) {
     <section className="flex flex-col gap-2">
       <p className="text-sm font-medium">Answer</p>
       <div className="bg-muted/20 rounded-md border p-3">
-        <p className="line-clamp-8 text-sm leading-6 whitespace-pre-wrap">
+        <p
+          className={cn(
+            "text-sm leading-6 whitespace-pre-wrap",
+            !isExpanded && "line-clamp-8"
+          )}
+        >
           {content}
         </p>
-        <details className="mt-3 border-t pt-3">
-          <summary className="text-muted-foreground cursor-pointer text-xs font-medium">
-            Show full answer
-          </summary>
-          <div className="mt-3 max-h-[28rem] overflow-y-auto pr-2">
-            <p className="text-sm leading-6 whitespace-pre-wrap">{content}</p>
-          </div>
-        </details>
+        <div className="mt-3 border-t pt-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground h-7 px-0 hover:bg-transparent"
+            aria-expanded={isExpanded}
+            onClick={() => setIsExpanded((value) => !value)}
+          >
+            <ChevronDownIcon
+              data-icon="inline-start"
+              className={cn("transition-transform", isExpanded && "rotate-180")}
+            />
+            {isExpanded ? "Show less" : "Show full answer"}
+          </Button>
+        </div>
       </div>
     </section>
   );

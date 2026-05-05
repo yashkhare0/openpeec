@@ -300,7 +300,6 @@ async function ensureDefaultProviders(
         promptQueryParam:
           existing.promptQueryParam ?? definition.promptQueryParam,
         submitStrategy: existing.submitStrategy ?? definition.submitStrategy,
-        active: definition.active,
       });
       if (Object.keys(nextPatch).length > 0) {
         await ctx.db.patch(existing._id, nextPatch);
@@ -383,6 +382,23 @@ async function collectRunsSince(
     .query("promptRuns")
     .withIndex("startedAt", (q) => q.gte("startedAt", rangeStart))
     .collect();
+}
+
+async function deletePromptRunWithArtifacts(
+  ctx: MutationCtx,
+  runId: Id<"promptRuns">
+) {
+  const citations = await ctx.db
+    .query("citations")
+    .withIndex("promptRunId", (q) => q.eq("promptRunId", runId))
+    .collect();
+  const mentions = await ctx.db
+    .query("runEntityMentions")
+    .withIndex("promptRunId", (q) => q.eq("promptRunId", runId))
+    .collect();
+  await Promise.all(citations.map((citation) => ctx.db.delete(citation._id)));
+  await Promise.all(mentions.map((mention) => ctx.db.delete(mention._id)));
+  await ctx.db.delete(runId);
 }
 
 function summarizeRunMetrics(runs: PromptRunDoc[]) {
@@ -519,21 +535,39 @@ async function enqueuePromptRunDocs(
     attempt?: number;
     retryOfRunId?: Id<"promptRuns">;
     browserEngine?: "playwright" | "camoufox" | "nodriver";
+    providerSlugs?: string[];
   }
 ): Promise<number> {
   const queuedAt = Date.now();
-  const activeProviders = (await ensureDefaultProviders(ctx)).filter(
-    (provider) => provider.active
-  );
+  const selectedProviderSlugs = options?.providerSlugs
+    ? new Set(options.providerSlugs.map((slug) => slug.trim()).filter(Boolean))
+    : undefined;
+  if (selectedProviderSlugs && selectedProviderSlugs.size === 0) {
+    throw new Error("Select at least one provider");
+  }
+
+  const providers = await ensureDefaultProviders(ctx);
+  const activeProviders = providers.filter((provider) => provider.active);
   if (!activeProviders.length) {
     throw new Error("No enabled providers available");
+  }
+  const queuedProviders = selectedProviderSlugs
+    ? activeProviders.filter((provider) =>
+        selectedProviderSlugs.has(provider.slug)
+      )
+    : activeProviders;
+  if (
+    selectedProviderSlugs &&
+    queuedProviders.length !== selectedProviderSlugs.size
+  ) {
+    throw new Error("Selected providers must be enabled");
   }
 
   for (const prompt of prompts) {
     const promptExcerpt = promptExcerptFor(prompt);
     let runGroupId: string | undefined;
 
-    for (const provider of activeProviders) {
+    for (const provider of queuedProviders) {
       const runId = await ctx.db.insert("promptRuns", {
         runGroupId,
         runGroupQueuedAt: queuedAt,
@@ -555,7 +589,7 @@ async function enqueuePromptRunDocs(
       }
     }
   }
-  return prompts.length * activeProviders.length;
+  return prompts.length * queuedProviders.length;
 }
 
 async function assertPromptOwnership(
@@ -937,6 +971,7 @@ export const updateProvider = mutation({
   args: {
     id: v.id("providers"),
     active: v.optional(v.boolean()),
+    url: v.optional(v.string()),
     sessionMode: v.optional(v.union(v.literal("guest"), v.literal("stored"))),
     sessionProfileDir: v.optional(v.string()),
     sessionJson: v.optional(v.string()),
@@ -953,8 +988,12 @@ export const updateProvider = mutation({
       throw new Error("Provider runner is not implemented for this provider");
     }
 
+    const url =
+      args.url !== undefined ? args.url.trim() || undefined : undefined;
+
     const patch = compactPatch({
       active: args.active,
+      url,
       sessionMode: args.sessionMode,
       sessionProfileDir: args.sessionProfileDir?.trim(),
       sessionJson: args.sessionJson?.trim(),
@@ -1053,23 +1092,7 @@ export const deletePrompt = mutation({
       .withIndex("promptId_startedAt", (q) => q.eq("promptId", args.id))
       .collect();
     await Promise.all(
-      runs.map(async (run) => {
-        const citations = await ctx.db
-          .query("citations")
-          .withIndex("promptRunId", (q) => q.eq("promptRunId", run._id))
-          .collect();
-        const mentions = await ctx.db
-          .query("runEntityMentions")
-          .withIndex("promptRunId", (q) => q.eq("promptRunId", run._id))
-          .collect();
-        await Promise.all(
-          citations.map((citation) => ctx.db.delete(citation._id))
-        );
-        await Promise.all(
-          mentions.map((mention) => ctx.db.delete(mention._id))
-        );
-        await ctx.db.delete(run._id);
-      })
+      runs.map((run) => deletePromptRunWithArtifacts(ctx, run._id))
     );
 
     const promptJobs = await ctx.db.query("promptJobs").collect();
@@ -1214,11 +1237,13 @@ export const triggerSelectedPromptsNow = mutation({
     promptIds: v.array(v.id("prompts")),
     label: v.optional(v.string()),
     browserEngine: v.optional(vBrowserEngine),
+    providerSlugs: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const prompts = await assertPromptIdsOwned(ctx, args.promptIds);
     const queuedCount = await enqueuePromptRunDocs(ctx, prompts, args.label, {
       browserEngine: args.browserEngine,
+      providerSlugs: args.providerSlugs,
     });
     return { queuedCount };
   },
@@ -1294,6 +1319,24 @@ export const cancelPromptRun = mutation({
       warnings: uniqueStrings([...(run.warnings ?? []), summary]),
     });
     return { runId: args.runId, status: "failed" };
+  },
+});
+
+export const deletePromptRun = mutation({
+  args: {
+    runId: v.id("promptRuns"),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.runId);
+    if (run == null) {
+      throw new Error("Prompt run not found");
+    }
+    if (run.status !== "queued") {
+      throw new Error("Only queued runs can be deleted.");
+    }
+
+    await deletePromptRunWithArtifacts(ctx, args.runId);
+    return { runId: args.runId, deleted: true };
   },
 });
 
@@ -1537,7 +1580,7 @@ export const claimNextQueuedPromptRun = mutation({
     await ctx.db.patch(queuedRun._id, {
       status: "running",
       startedAt,
-      warnings: undefined,
+      warnings: [],
       runner: args.runner?.trim() || "local-playwright-worker",
       browserEngine: args.browserEngine ?? queuedRun.browserEngine,
     });
@@ -1660,7 +1703,7 @@ export const claimNextQueuedPromptRunGroup = mutation({
         ctx.db.patch(run._id, {
           status: "running",
           startedAt,
-          warnings: undefined,
+          warnings: [],
           runner,
           browserEngine: args.browserEngine ?? run.browserEngine,
         })
@@ -1820,36 +1863,39 @@ export const completePromptRun = mutation({
       existingCitations.map((citation) => ctx.db.delete(citation._id))
     );
 
-    await ctx.db.patch(args.runId, {
-      status: args.status,
-      finishedAt: args.finishedAt,
-      latencyMs: args.latencyMs,
-      responseText: args.responseText,
-      responseSummary: args.responseSummary,
-      visibilityScore: shouldPersistCitations
-        ? (args.visibilityScore ?? derivedVisibility)
-        : undefined,
-      citationQualityScore: shouldPersistCitations
-        ? (args.citationQualityScore ?? derivedCitationQuality)
-        : undefined,
-      averageCitationPosition: shouldPersistCitations
-        ? (args.averageCitationPosition ?? derivedAveragePosition)
-        : undefined,
-      runLabel: args.runLabel ?? run.runLabel,
-      sourceCount: shouldPersistCitations
-        ? (args.sourceCount ??
-          new Set(
-            citationInputs.map((citation) => normalizeDomain(citation.domain))
-          ).size)
-        : undefined,
-      deeplinkUsed: args.deeplinkUsed,
-      evidencePath: args.evidencePath,
-      output: args.output,
-      warnings: mergedWarnings.length ? mergedWarnings : undefined,
-      runner: args.runner ?? run.runner,
-      browserEngine: args.browserEngine ?? run.browserEngine,
-      sessionMode: args.sessionMode ?? run.sessionMode,
-    });
+    await ctx.db.patch(
+      args.runId,
+      compactPatch({
+        status: args.status,
+        finishedAt: args.finishedAt,
+        latencyMs: args.latencyMs,
+        responseText: args.responseText,
+        responseSummary: args.responseSummary,
+        visibilityScore: shouldPersistCitations
+          ? (args.visibilityScore ?? derivedVisibility)
+          : undefined,
+        citationQualityScore: shouldPersistCitations
+          ? (args.citationQualityScore ?? derivedCitationQuality)
+          : undefined,
+        averageCitationPosition: shouldPersistCitations
+          ? (args.averageCitationPosition ?? derivedAveragePosition)
+          : undefined,
+        runLabel: args.runLabel ?? run.runLabel,
+        sourceCount: shouldPersistCitations
+          ? (args.sourceCount ??
+            new Set(
+              citationInputs.map((citation) => normalizeDomain(citation.domain))
+            ).size)
+          : undefined,
+        deeplinkUsed: args.deeplinkUsed,
+        evidencePath: args.evidencePath,
+        output: args.output,
+        warnings: mergedWarnings.length ? mergedWarnings : undefined,
+        runner: args.runner ?? run.runner,
+        browserEngine: args.browserEngine ?? run.browserEngine,
+        sessionMode: args.sessionMode ?? run.sessionMode,
+      })
+    );
 
     if (shouldPersistCitations) {
       await insertCitationsForRun(ctx, args.runId, citationInputs);

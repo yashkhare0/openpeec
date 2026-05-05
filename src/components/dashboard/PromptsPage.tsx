@@ -1,12 +1,13 @@
 import { useState, type KeyboardEvent } from "react";
 import type { Id } from "../../../convex/_generated/dataModel";
-import { MoreHorizontal, Play } from "lucide-react";
+import { MoreHorizontal, Play, SlidersHorizontal } from "lucide-react";
 import { Tooltip as TooltipPrimitive } from "radix-ui";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -18,6 +19,7 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -51,76 +53,245 @@ type PromptRow = {
 };
 
 type BrowserEngine = "camoufox" | "nodriver" | "playwright";
+type ProviderOption = {
+  slug: string;
+  name: string;
+  active: boolean;
+};
 
 const browserEngineOptions: Array<{ value: BrowserEngine; label: string }> = [
   { value: "camoufox", label: "Camoufox" },
   { value: "nodriver", label: "Nodriver" },
   { value: "playwright", label: "Playwright" },
 ];
+const defaultBrowserEngine: BrowserEngine = "camoufox";
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return "Action failed.";
 }
 
+function toggleSelection<T extends string>(
+  values: T[],
+  value: T,
+  checked: boolean
+) {
+  if (checked) {
+    return values.includes(value) ? values : [...values, value];
+  }
+  return values.filter((item) => item !== value);
+}
+
 function PromptActions({
   row,
+  providerOptions,
   onRun,
-  onToggle,
+  onRunAdvanced,
   onDelete,
 }: {
   row: PromptRow;
-  onRun: (
+  providerOptions: ProviderOption[];
+  onRun: (promptId: Id<"prompts">, label: string) => Promise<void>;
+  onRunAdvanced: (
     promptId: Id<"prompts">,
     label: string,
-    browserEngine: BrowserEngine
-  ) => Promise<void>;
-  onToggle: (row: PromptRow) => Promise<void>;
+    providerSlugs: string[],
+    browserEngines: BrowserEngine[]
+  ) => Promise<boolean>;
   onDelete: (row: PromptRow) => Promise<void>;
 }) {
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [selectedProviderSlugs, setSelectedProviderSlugs] = useState<string[]>(
+    []
+  );
+  const [selectedEngines, setSelectedEngines] = useState<BrowserEngine[]>([
+    defaultBrowserEngine,
+  ]);
+  const [advancedRunning, setAdvancedRunning] = useState(false);
+  const enabledProviderOptions = providerOptions.filter(
+    (provider) => provider.active
+  );
+  const canRunAdvanced =
+    selectedProviderSlugs.length > 0 &&
+    selectedEngines.length > 0 &&
+    !advancedRunning;
+
+  const openAdvanced = () => {
+    setSelectedProviderSlugs(
+      enabledProviderOptions.map((provider) => provider.slug)
+    );
+    setSelectedEngines([defaultBrowserEngine]);
+    setAdvancedOpen(true);
+  };
+
+  const runAdvanced = async () => {
+    if (!canRunAdvanced) {
+      return;
+    }
+
+    setAdvancedRunning(true);
+    try {
+      const didQueue = await onRunAdvanced(
+        row.id,
+        row.excerpt,
+        selectedProviderSlugs,
+        selectedEngines
+      );
+      if (didQueue) {
+        setAdvancedOpen(false);
+      }
+    } finally {
+      setAdvancedRunning(false);
+    }
+  };
+
   return (
-    <DropdownMenu>
-      <Tooltip>
-        <DropdownMenuTrigger asChild>
-          <TooltipPrimitive.Trigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Actions for ${row.excerpt}`}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <MoreHorizontal />
-            </Button>
-          </TooltipPrimitive.Trigger>
-        </DropdownMenuTrigger>
-        <TooltipContent>Actions</TooltipContent>
-      </Tooltip>
-      <DropdownMenuContent
-        align="end"
-        onClick={(event) => event.stopPropagation()}
-        onKeyDown={(event) => event.stopPropagation()}
-      >
-        {browserEngineOptions.map((option) => (
-          <DropdownMenuItem
-            key={option.value}
-            onClick={() => void onRun(row.id, row.excerpt, option.value)}
-          >
-            <Play />
-            Run all providers with {option.label}
-          </DropdownMenuItem>
-        ))}
-        <DropdownMenuItem onClick={() => void onToggle(row)}>
-          {row.active ? "Pause" : "Resume"}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          variant="destructive"
-          onClick={() => void onDelete(row)}
+    <>
+      <DropdownMenu>
+        <Tooltip>
+          <DropdownMenuTrigger asChild>
+            <TooltipPrimitive.Trigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Actions for ${row.excerpt}`}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <MoreHorizontal />
+              </Button>
+            </TooltipPrimitive.Trigger>
+          </DropdownMenuTrigger>
+          <TooltipContent>Actions</TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent
+          align="end"
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
         >
-          Delete
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          <DropdownMenuGroup>
+            <DropdownMenuItem onClick={() => void onRun(row.id, row.excerpt)}>
+              <Play />
+              Run
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={openAdvanced}>
+              <SlidersHorizontal />
+              Advanced
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => void onDelete(row)}
+            >
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <Dialog open={advancedOpen} onOpenChange={setAdvancedOpen}>
+        <DialogContent onClick={(event) => event.stopPropagation()}>
+          <DialogHeader>
+            <DialogTitle>Advanced run</DialogTitle>
+            <DialogDescription>
+              Select enabled providers and browser engines to queue parallel
+              runs.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <fieldset className="flex min-w-0 flex-col gap-2">
+              <legend className="text-sm font-medium">Providers</legend>
+              {enabledProviderOptions.length ? (
+                enabledProviderOptions.map((provider) => {
+                  const inputId = `advanced-provider-${String(row.id)}-${provider.slug}`;
+                  return (
+                    <div
+                      key={provider.slug}
+                      className="flex min-w-0 items-center gap-2 rounded-md border p-2"
+                    >
+                      <Checkbox
+                        id={inputId}
+                        checked={selectedProviderSlugs.includes(provider.slug)}
+                        onCheckedChange={(checked) =>
+                          setSelectedProviderSlugs((current) =>
+                            toggleSelection(
+                              current,
+                              provider.slug,
+                              checked === true
+                            )
+                          )
+                        }
+                      />
+                      <Label
+                        htmlFor={inputId}
+                        className="min-w-0 flex-1 cursor-pointer"
+                      >
+                        <span className="truncate">{provider.name}</span>
+                      </Label>
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="text-muted-foreground text-sm">
+                  No enabled providers.
+                </p>
+              )}
+            </fieldset>
+
+            <fieldset className="flex min-w-0 flex-col gap-2">
+              <legend className="text-sm font-medium">Engines</legend>
+              {browserEngineOptions.map((engine) => {
+                const inputId = `advanced-engine-${String(row.id)}-${engine.value}`;
+                return (
+                  <div
+                    key={engine.value}
+                    className="flex min-w-0 items-center gap-2 rounded-md border p-2"
+                  >
+                    <Checkbox
+                      id={inputId}
+                      checked={selectedEngines.includes(engine.value)}
+                      onCheckedChange={(checked) =>
+                        setSelectedEngines((current) =>
+                          toggleSelection(
+                            current,
+                            engine.value,
+                            checked === true
+                          )
+                        )
+                      }
+                    />
+                    <Label
+                      htmlFor={inputId}
+                      className="min-w-0 flex-1 cursor-pointer"
+                    >
+                      <span className="truncate">{engine.label}</span>
+                    </Label>
+                  </div>
+                );
+              })}
+            </fieldset>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setAdvancedOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={!canRunAdvanced}
+              onClick={() => void runAdvanced()}
+            >
+              <Play data-icon="inline-start" />
+              Run
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -157,21 +328,24 @@ function MetricHead({
 
 function PromptTable({
   rows,
+  providerOptions,
   selectedPromptId,
   onSelectPrompt,
   onRun,
-  onToggle,
+  onRunAdvanced,
   onDelete,
 }: {
   rows: PromptRow[];
+  providerOptions: ProviderOption[];
   selectedPromptId: Id<"prompts"> | null;
   onSelectPrompt: (value: Id<"prompts"> | null) => void;
-  onRun: (
+  onRun: (promptId: Id<"prompts">, label: string) => Promise<void>;
+  onRunAdvanced: (
     promptId: Id<"prompts">,
     label: string,
-    browserEngine: BrowserEngine
-  ) => Promise<void>;
-  onToggle: (row: PromptRow) => Promise<void>;
+    providerSlugs: string[],
+    browserEngines: BrowserEngine[]
+  ) => Promise<boolean>;
   onDelete: (row: PromptRow) => Promise<void>;
 }) {
   return (
@@ -233,14 +407,15 @@ function PromptTable({
                 {row.active ? (
                   <Badge variant="secondary">Active</Badge>
                 ) : (
-                  <Badge variant="outline">Paused</Badge>
+                  <Badge variant="outline">Inactive</Badge>
                 )}
               </TableCell>
               <TableCell className="text-right">
                 <PromptActions
                   row={row}
+                  providerOptions={providerOptions}
                   onRun={onRun}
-                  onToggle={onToggle}
+                  onRunAdvanced={onRunAdvanced}
                   onDelete={onDelete}
                 />
               </TableCell>
@@ -255,17 +430,18 @@ function PromptTable({
 export function PromptsPage({
   loading = false,
   rows,
+  providers,
   selectedPromptId,
   onSelectPrompt,
   createOpen,
   onCreateOpenChange,
   onCreatePrompt,
-  onUpdatePrompt,
   onDeletePrompt,
   onTriggerSelectedNow,
 }: {
   loading?: boolean;
   rows: PromptRow[];
+  providers: ProviderOption[];
   selectedPromptId: Id<"prompts"> | null;
   onSelectPrompt: (value: Id<"prompts"> | null) => void;
   createOpen?: boolean;
@@ -274,15 +450,12 @@ export function PromptsPage({
     promptText: string;
     active?: boolean;
   }) => Promise<Id<"prompts">>;
-  onUpdatePrompt: (args: {
-    id: Id<"prompts">;
-    active?: boolean;
-  }) => Promise<Id<"prompts">>;
   onDeletePrompt: (args: { id: Id<"prompts"> }) => Promise<Id<"prompts">>;
   onTriggerSelectedNow: (args: {
     promptIds: Array<Id<"prompts">>;
     label?: string;
     browserEngine?: BrowserEngine;
+    providerSlugs?: string[];
   }) => Promise<{ queuedCount: number }>;
 }) {
   const [internalCreateOpen, setInternalCreateOpen] = useState(false);
@@ -290,36 +463,60 @@ export function PromptsPage({
   const isCreateOpen = createOpen ?? internalCreateOpen;
   const setCreateOpen = onCreateOpenChange ?? setInternalCreateOpen;
 
-  const queuePrompt = async (
-    promptId: Id<"prompts">,
-    label: string,
-    browserEngine: BrowserEngine
-  ) => {
+  const queuePrompt = async (promptId: Id<"prompts">, label: string) => {
     try {
       const result = await onTriggerSelectedNow({
         promptIds: [promptId],
         label,
-        browserEngine,
+        browserEngine: defaultBrowserEngine,
       });
-      const engineLabel =
-        browserEngineOptions.find((option) => option.value === browserEngine)
-          ?.label ?? "Selected engine";
       toast.success(
         result.queuedCount === 1
-          ? `${engineLabel} run queued.`
-          : `${engineLabel} run queued across ${result.queuedCount} providers.`
+          ? "Run queued."
+          : `Run queued across ${result.queuedCount} providers.`
       );
     } catch (error) {
       toast.error(errorMessage(error));
     }
   };
 
-  const togglePrompt = async (row: PromptRow) => {
+  const queueAdvancedPrompt = async (
+    promptId: Id<"prompts">,
+    label: string,
+    providerSlugs: string[],
+    browserEngines: BrowserEngine[]
+  ) => {
+    if (!providerSlugs.length) {
+      toast.error("Select at least one provider.");
+      return false;
+    }
+    if (!browserEngines.length) {
+      toast.error("Select at least one engine.");
+      return false;
+    }
+
     try {
-      await onUpdatePrompt({ id: row.id, active: !row.active });
-      toast.success(row.active ? "Prompt paused." : "Prompt resumed.");
+      const results = await Promise.all(
+        browserEngines.map((browserEngine) =>
+          onTriggerSelectedNow({
+            promptIds: [promptId],
+            label,
+            browserEngine,
+            providerSlugs,
+          })
+        )
+      );
+      const queuedCount = results.reduce(
+        (sum, result) => sum + result.queuedCount,
+        0
+      );
+      toast.success(
+        queuedCount === 1 ? "Run queued." : `Queued ${queuedCount} runs.`
+      );
+      return true;
     } catch (error) {
       toast.error(errorMessage(error));
+      return false;
     }
   };
 
@@ -368,10 +565,11 @@ export function PromptsPage({
               ) : (
                 <PromptTable
                   rows={rows}
+                  providerOptions={providers}
                   selectedPromptId={selectedPromptId}
                   onSelectPrompt={onSelectPrompt}
                   onRun={queuePrompt}
-                  onToggle={togglePrompt}
+                  onRunAdvanced={queueAdvancedPrompt}
                   onDelete={removePrompt}
                 />
               )}

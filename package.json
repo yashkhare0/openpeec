@@ -19,6 +19,7 @@
     "test": "vitest",
     "test:once": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:vite-only": "OPENPEEC_E2E_LIVE=0 playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
     "test:coverage": "vitest run --coverage --coverage.reporter=text",
@@ -43,6 +44,8 @@
     "runner:queue:docker:once": "node runner/process-queued-runs.mjs --config runner/example.monitor.docker.json --once",
     "runner:queue:nodriver": "node runner/process-queued-runs.mjs --config runner/example.nodriver-chatgpt.json --poll-interval-ms 1000",
     "runner:queue:nodriver:once": "node runner/process-queued-runs.mjs --config runner/example.nodriver-chatgpt.json --once",
+    "codex:bridge:setup": "tsx src/cli/codex-bridge-setup.ts",
+    "codex:bridge:start": "tsx src/cli/codex-bridge-start.ts",
     "docker:dev": "docker compose up --build",
     "docker:nodriver:fixture": "docker compose run --build --rm runner-nodriver"
   },
@@ -99,6 +102,7 @@
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.2",
     "tailwindcss": "^4.2.1",
+    "tsx": "^4.21.0",
     "typescript": "^5.6.2",
     "vite": "^6.4.1",
     "vitest": "^2.1.1"

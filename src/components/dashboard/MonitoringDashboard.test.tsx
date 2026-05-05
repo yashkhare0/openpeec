@@ -6,6 +6,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const useQueryMock = vi.hoisted(() => vi.fn());
 const useMutationMock = vi.hoisted(() => vi.fn());
 const promptsPageMock = vi.hoisted(() => vi.fn());
+const runsPageMock = vi.hoisted(() => vi.fn());
+const sourcesPageMock = vi.hoisted(() => vi.fn());
+const sourceDetailPageMock = vi.hoisted(() => vi.fn());
 const siteHeaderMock = vi.hoisted(() => vi.fn());
 const mutationFns = vi.hoisted(() => ({
   ensureProvidersSeeded: vi.fn().mockResolvedValue([]),
@@ -15,6 +18,7 @@ const mutationFns = vi.hoisted(() => ({
   triggerSelectedPromptsNow: vi.fn(),
   retryPromptRun: vi.fn(),
   cancelPromptRun: vi.fn(),
+  deletePromptRun: vi.fn(),
   createTrackedEntity: vi.fn(),
   updateTrackedEntity: vi.fn(),
   deleteTrackedEntity: vi.fn(),
@@ -46,6 +50,7 @@ vi.mock("../../../convex/_generated/api", () => ({
       triggerSelectedPromptsNow: "triggerSelectedPromptsNow",
       retryPromptRun: "retryPromptRun",
       cancelPromptRun: "cancelPromptRun",
+      deletePromptRun: "deletePromptRun",
       createTrackedEntity: "createTrackedEntity",
       updateTrackedEntity: "updateTrackedEntity",
       deleteTrackedEntity: "deleteTrackedEntity",
@@ -104,6 +109,9 @@ vi.mock("@/components/layout/SiteHeader", () => ({
   SiteHeader: (props: {
     searchValue?: string;
     onSearchValue?: (value: string) => void;
+    searchPlaceholder?: string;
+    searchLabel?: string;
+    action?: ReactNode;
   }) => {
     siteHeaderMock(props);
     return (
@@ -143,7 +151,10 @@ vi.mock("./ResponseDetailPage", () => ({
 }));
 
 vi.mock("./RunsPage", () => ({
-  RunsPage: () => <div>Runs Surface</div>,
+  RunsPage: (props: { searchValue: string; statusFilters: string[] }) => {
+    runsPageMock(props);
+    return <div>Runs Surface</div>;
+  },
 }));
 
 vi.mock("./ResponsesPage", () => ({
@@ -151,7 +162,24 @@ vi.mock("./ResponsesPage", () => ({
 }));
 
 vi.mock("./SourcesPage", () => ({
-  SourcesPage: () => <div>Sources Surface</div>,
+  SourcesPage: (props: { onOpenSource?: (domain: string) => void }) => {
+    sourcesPageMock(props);
+    return (
+      <div>
+        Sources Surface
+        <button onClick={() => props.onOpenSource?.("github.com")}>
+          Open GitHub source
+        </button>
+      </div>
+    );
+  },
+}));
+
+vi.mock("./SourceDetailPage", () => ({
+  SourceDetailPage: (props: { source?: { domain: string } }) => {
+    sourceDetailPageMock(props);
+    return <div>Source Detail Surface {props.source?.domain}</div>;
+  },
 }));
 
 const providers = [
@@ -238,11 +266,30 @@ const runRows = [
   },
 ];
 
+const sourceRows = [
+  {
+    domain: "github.com",
+    type: "docs",
+    citations: 3,
+    responseCount: 2,
+    promptCount: 1,
+    usedShare: 13,
+    avgCitationsPerRun: 0.4,
+    avgQualityScore: 82,
+    avgPosition: 2,
+    ownedShare: 0,
+    latestResponses: [],
+  },
+];
+
 describe("MonitoringDashboard", () => {
   beforeEach(() => {
     useQueryMock.mockReset();
     useMutationMock.mockReset();
     promptsPageMock.mockReset();
+    runsPageMock.mockReset();
+    sourcesPageMock.mockReset();
+    sourceDetailPageMock.mockReset();
     siteHeaderMock.mockReset();
     Object.values(mutationFns).forEach((fn) => fn.mockClear());
 
@@ -272,7 +319,7 @@ describe("MonitoringDashboard", () => {
         case "listSources":
           return args === "skip"
             ? undefined
-            : { meta: { totalDomains: 1 }, items: [] };
+            : { meta: { totalDomains: 1 }, items: sourceRows };
         case "getPromptAnalysis":
           return undefined;
         case "listTrackedEntities":
@@ -334,10 +381,13 @@ describe("MonitoringDashboard", () => {
     });
     expect(window.location.search).not.toContain("range=");
 
-    const runGroupsCall = useQueryMock.mock.calls.find(
-      ([name]) => name === "listRunGroups"
-    );
-    expect(runGroupsCall?.[1]).toEqual({ limit: 200 });
+    expect(
+      useQueryMock.mock.calls.some(
+        ([name, args]) =>
+          name === "listRunGroups" &&
+          JSON.stringify(args) === JSON.stringify({ limit: 200 })
+      )
+    ).toBe(true);
   });
 
   it("routes prompt search through the header", async () => {
@@ -358,6 +408,35 @@ describe("MonitoringDashboard", () => {
     );
   });
 
+  it("routes runs search and status filters through the header", async () => {
+    const { MonitoringDashboard } = await import("./MonitoringDashboard");
+    window.history.replaceState(
+      {},
+      "",
+      "/?page=runs&search=blocked&status=blocked"
+    );
+
+    render(<MonitoringDashboard />);
+
+    expect(await screen.findByText("Runs Surface")).toBeTruthy();
+    expect(siteHeaderMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        searchValue: "blocked",
+        searchPlaceholder: "Search runs...",
+        searchLabel: "Search runs",
+        action: expect.anything(),
+      })
+    );
+    expect(runsPageMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        searchValue: "blocked",
+        statusFilters: ["blocked"],
+      })
+    );
+
+    expect(window.location.search).toContain("status=blocked");
+  });
+
   it("does not query prompt analysis while showing a prompt run detail", async () => {
     const { MonitoringDashboard } = await import("./MonitoringDashboard");
     window.history.replaceState(
@@ -373,5 +452,30 @@ describe("MonitoringDashboard", () => {
       ([name]) => name === "getPromptAnalysis"
     );
     expect(promptAnalysisCalls).toEqual([["getPromptAnalysis", "skip"]]);
+  });
+
+  it("opens source details from the sources list", async () => {
+    const user = userEvent.setup();
+    const { MonitoringDashboard } = await import("./MonitoringDashboard");
+    window.history.replaceState({}, "", "/?page=sources");
+
+    render(<MonitoringDashboard />);
+
+    await user.click(
+      await screen.findByRole("button", { name: /open github source/i })
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/source detail surface github.com/i)
+      ).toBeTruthy();
+    });
+    expect(sourceDetailPageMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        source: expect.objectContaining({ domain: "github.com" }),
+      })
+    );
+    expect(window.location.search).toContain("page=sources");
+    expect(window.location.search).toContain("source=github.com");
   });
 });

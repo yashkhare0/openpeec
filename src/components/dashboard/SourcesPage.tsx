@@ -47,7 +47,7 @@ import { DashboardTableCardSkeleton } from "./components/LoadingState";
 
 type TrackedKind = "brand" | "competitor" | "product" | "feature" | "other";
 
-type SourceLatestResponse = {
+export type SourceLatestResponse = {
   runId: Id<"promptRuns">;
   promptId: Id<"prompts">;
   promptExcerpt: string;
@@ -57,7 +57,7 @@ type SourceLatestResponse = {
   position: number;
 };
 
-type SourceItem = {
+export type SourceItem = {
   domain: string;
   type: string;
   citations: number;
@@ -68,10 +68,12 @@ type SourceItem = {
   avgQualityScore?: number;
   avgPosition?: number;
   ownedShare: number;
+  promptExcerpts?: string[];
   latestResponses?: SourceLatestResponse[];
+  mentionedEntities?: string[];
 };
 
-type TrackedEntity = {
+export type TrackedEntity = {
   _id: Id<"trackedEntities">;
   name: string;
   kind: TrackedKind;
@@ -102,7 +104,7 @@ type SourcesPageProps = {
   onDeleteEntity: (args: {
     id: Id<"trackedEntities">;
   }) => Promise<Id<"trackedEntities">>;
-  onOpenRun?: (runId: Id<"promptRuns">) => void;
+  onOpenSource?: (domain: string) => void;
   promptFilter?: {
     promptId: Id<"prompts">;
     promptExcerpt: string;
@@ -148,7 +150,7 @@ export function SourcesPage({
   onCreateEntity,
   onUpdateEntity,
   onDeleteEntity,
-  onOpenRun,
+  onOpenSource,
   promptFilter,
   onPromptFilterClear,
 }: SourcesPageProps) {
@@ -437,39 +439,34 @@ export function SourcesPage({
                   <TableBody>
                     {visibleSources.map((source) => {
                       const latestResponse = source.latestResponses?.[0];
-                      const canOpenLatestResponse =
-                        latestResponse !== undefined && onOpenRun !== undefined;
-                      const openLatestResponse = () => {
-                        if (!latestResponse || !onOpenRun) return;
-                        onOpenRun(latestResponse.runId);
+                      const canOpenSource = onOpenSource !== undefined;
+                      const openSource = () => {
+                        if (!onOpenSource) return;
+                        onOpenSource(source.domain);
                       };
 
                       return (
                         <TableRow
                           key={source.domain}
                           className={cn(
-                            canOpenLatestResponse && clickableTableRowClassName
+                            canOpenSource && clickableTableRowClassName
                           )}
-                          tabIndex={canOpenLatestResponse ? 0 : undefined}
+                          tabIndex={canOpenSource ? 0 : undefined}
                           aria-label={
-                            canOpenLatestResponse
-                              ? `Open latest response for ${source.domain}`
+                            canOpenSource
+                              ? `Open source details for ${source.domain}`
                               : undefined
                           }
-                          onClick={
-                            canOpenLatestResponse
-                              ? openLatestResponse
-                              : undefined
-                          }
+                          onClick={canOpenSource ? openSource : undefined}
                           onKeyDown={
-                            canOpenLatestResponse
+                            canOpenSource
                               ? (event) => {
                                   if (
                                     event.key === "Enter" ||
                                     event.key === " "
                                   ) {
                                     event.preventDefault();
-                                    openLatestResponse();
+                                    openSource();
                                   }
                                 }
                               : undefined

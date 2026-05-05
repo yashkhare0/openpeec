@@ -43,9 +43,14 @@ function renderRunsPage(props: Partial<ComponentProps<typeof RunsPage>> = {}) {
     <TooltipProvider>
       <RunsPage
         groups={[baseGroup]}
+        searchValue=""
+        statusFilters={[]}
         selectedRunGroupId={null}
+        onOpenRun={vi.fn()}
         onOpenRunGroup={vi.fn()}
         onOpenPrompt={vi.fn()}
+        onCancelRuns={vi.fn()}
+        onDeleteRuns={vi.fn()}
         {...props}
       />
     </TooltipProvider>
@@ -53,7 +58,7 @@ function renderRunsPage(props: Partial<ComponentProps<typeof RunsPage>> = {}) {
 }
 
 describe("RunsPage", () => {
-  it("shows compact provider status summaries on grouped runs", () => {
+  it("shows one compact provider status summary on grouped runs", () => {
     renderRunsPage({
       groups: [
         {
@@ -66,7 +71,7 @@ describe("RunsPage", () => {
               providerSlug: "google-ai-mode",
               providerName: "Google AI Mode",
               channelName: "Google AI Mode",
-              status: "failed",
+              status: "blocked",
               latencyMs: 2400,
               citationCount: 1,
             },
@@ -75,8 +80,12 @@ describe("RunsPage", () => {
       ],
     });
 
-    expect(screen.getByText("OpenAI Success")).toBeTruthy();
-    expect(screen.getByText("Google AI Mode Failed")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /open google ai mode run/i })
+    ).toBeTruthy();
+    expect(screen.getByText("1 Blocked")).toBeTruthy();
+    expect(screen.queryByText("OpenAI Success")).toBeNull();
+    expect(screen.queryByText("Google AI Mode Blocked")).toBeNull();
     expect(screen.queryByText("OpenAI · Camoufox")).toBeNull();
   });
 
@@ -91,9 +100,38 @@ describe("RunsPage", () => {
     const cells = within(dataRow!).getAllByRole("cell");
     expect(cells[1]?.textContent).toContain("Best AI visibility tools");
     expect(cells[1]?.textContent).not.toContain("Manual run");
-    expect(cells[2]?.textContent).toContain("OpenAI");
-    expect(cells[2]?.textContent).toContain("Success");
+    expect(cells[2]?.textContent).toContain("Successful");
+    expect(cells[2]?.textContent).not.toContain("OpenAI");
     expect(cells[2]?.textContent).not.toContain("Camoufox");
+  });
+
+  it("filters runs from header-owned search and status values", () => {
+    renderRunsPage({
+      searchValue: "blocked provider",
+      statusFilters: ["blocked"],
+      groups: [
+        baseGroup,
+        {
+          ...baseGroup,
+          id: "run_group_2",
+          status: "blocked",
+          promptExcerpt: "Blocked provider flow",
+          providers: [
+            {
+              ...baseGroup.providers[0],
+              runId: "run_2" as Id<"promptRuns">,
+              providerSlug: "google-ai-mode",
+              providerName: "Google AI Mode",
+              status: "blocked",
+              responseSummary: "Google blocked the page.",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(screen.getByText("Blocked provider flow")).toBeTruthy();
+    expect(screen.queryByText("Best AI visibility tools")).toBeNull();
   });
 
   it("derives older provider engines from the runner name in details", async () => {
@@ -114,17 +152,18 @@ describe("RunsPage", () => {
       ],
     });
 
-    expect(screen.getByText("OpenAI Success")).toBeTruthy();
-    await user.hover(screen.getByLabelText("Run details"));
-    expect(await screen.findAllByText(/engine Nodriver/)).not.toHaveLength(0);
+    expect(screen.getByText("Successful")).toBeTruthy();
+    await user.hover(screen.getByRole("button", { name: /open openai run/i }));
+    expect((await screen.findAllByText(/Nodriver/)).length).toBeGreaterThan(0);
   });
 
   it("opens grouped run rows by click and keyboard without hijacking nested controls", async () => {
     const user = userEvent.setup();
     const onOpenRunGroup = vi.fn();
+    const onOpenRun = vi.fn();
     const onOpenPrompt = vi.fn();
 
-    renderRunsPage({ onOpenRunGroup, onOpenPrompt });
+    renderRunsPage({ onOpenRun, onOpenRunGroup, onOpenPrompt });
 
     const dataRow = screen.getByRole("row", {
       name: "Open run group for Best AI visibility tools",
@@ -141,13 +180,50 @@ describe("RunsPage", () => {
     expect(onOpenPrompt).toHaveBeenCalledWith("prompt_1");
     expect(onOpenRunGroup).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByLabelText("Run details"));
+    await user.click(screen.getByLabelText(/Timing for run queued/i));
+    expect(onOpenRunGroup).toHaveBeenCalledTimes(1);
+
+    await user.click(
+      within(dataRow).getByRole("button", { name: /open openai run/i })
+    );
+    expect(onOpenRun).toHaveBeenCalledWith("run_1");
     expect(onOpenRunGroup).toHaveBeenCalledTimes(1);
 
     dataRow.focus();
     await user.keyboard("{Enter}");
     await user.keyboard(" ");
     expect(onOpenRunGroup).toHaveBeenCalledTimes(3);
+  });
+
+  it("offers cancel and delete actions for queued provider runs", async () => {
+    const user = userEvent.setup();
+    const onCancelRuns = vi.fn().mockResolvedValue(undefined);
+    const onDeleteRuns = vi.fn().mockResolvedValue(undefined);
+
+    renderRunsPage({
+      onCancelRuns,
+      onDeleteRuns,
+      groups: [
+        {
+          ...baseGroup,
+          status: "queued",
+          providers: [
+            {
+              ...baseGroup.providers[0],
+              status: "queued",
+            },
+          ],
+        },
+      ],
+    });
+
+    await user.click(screen.getByLabelText(/actions for queued runs/i));
+    await user.click(screen.getByRole("menuitem", { name: /cancel queued/i }));
+    expect(onCancelRuns).toHaveBeenCalledWith(["run_1"]);
+
+    await user.click(screen.getByLabelText(/actions for queued runs/i));
+    await user.click(screen.getByRole("menuitem", { name: /delete queued/i }));
+    expect(onDeleteRuns).toHaveBeenCalledWith(["run_1"]);
   });
 
   it("does not repeat a run label that matches the prompt text", () => {

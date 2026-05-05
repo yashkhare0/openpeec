@@ -11,7 +11,6 @@ import { ChevronRight } from "lucide-react";
 import type { Id } from "../../../convex/_generated/dataModel";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ChartContainer,
@@ -19,6 +18,14 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { InlineEmpty } from "./components/EmptyState";
 import {
@@ -68,7 +75,6 @@ const sourceChartConfig = {
 export function PromptDetailPage({
   loading = false,
   promptAnalysis,
-  onBack,
   selectedRunId,
   onOpenRun,
   onOpenRunGroup,
@@ -133,7 +139,6 @@ export function PromptDetailPage({
       }
     | null
     | undefined;
-  onBack: () => void;
   selectedRunId: Id<"promptRuns"> | null;
   onOpenRun: (value: Id<"promptRuns">) => void;
   onOpenRunGroup?: (value: string) => void;
@@ -141,12 +146,6 @@ export function PromptDetailPage({
   if (loading) {
     return (
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-        <div className="flex items-center gap-2 px-4 lg:px-6">
-          <Button variant="outline" size="sm" onClick={onBack}>
-            Back to prompts
-          </Button>
-        </div>
-
         <div className="grid gap-4 px-4 lg:px-6 xl:grid-cols-[minmax(0,1.1fr)_380px]">
           <div className="flex flex-col gap-4">
             <DashboardCardSkeleton
@@ -233,17 +232,16 @@ export function PromptDetailPage({
     "Prompt";
   const promptBody = promptAnalysis.prompt.promptText.trim();
   const showPromptBody = promptBody.length > 0 && promptBody !== promptTitle;
+  const hasCapturedSources = promptAnalysis.responses.some(
+    (response) =>
+      (response.sourceCount ?? response.sourceDomains.length) > 0 ||
+      response.sourceDomains.length > 0
+  );
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="flex items-center gap-2 px-4 lg:px-6">
-        <Button variant="outline" size="sm" onClick={onBack}>
-          Back to prompts
-        </Button>
-      </div>
-
       <div className="grid gap-4 px-4 lg:px-6 xl:grid-cols-[minmax(0,1.1fr)_380px]">
-        <div className="flex flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-4">
           <section className="space-y-4">
             <div className="max-w-3xl space-y-2">
               <h1 className="text-xl font-semibold tracking-tight">
@@ -374,64 +372,81 @@ export function PromptDetailPage({
             </div>
           ) : null}
 
-          <Card>
+          <Card className="min-w-0">
             <CardHeader className="pb-2">
               <CardTitle>Responses</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent>
               {promptAnalysis.responses.length === 0 ? (
                 <InlineEmpty text="No responses captured for this prompt." />
               ) : (
-                promptAnalysis.responses.map((response) => {
-                  const sourceCount =
-                    response.sourceCount ?? response.sourceDomains.length;
-                  const hasCaptureDetails =
-                    response.warnings.length > 0 ||
-                    Boolean(response.evidencePath) ||
-                    response.attempt !== undefined;
-                  const openResponse = () => {
-                    if (response.runGroupId && onOpenRunGroup) {
-                      onOpenRunGroup(response.runGroupId);
-                      return;
-                    }
-                    onOpenRun(response.id);
-                  };
+                <Table className="min-w-[900px] table-fixed">
+                  <colgroup>
+                    <col className="w-[150px]" />
+                    <col className="w-[150px]" />
+                    <col />
+                    <col className="w-[96px]" />
+                    <col className="w-[104px]" />
+                    <col className="w-[88px]" />
+                    <col className="w-8" />
+                  </colgroup>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Provider</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Summary</TableHead>
+                      <TableHead className="text-right">Sources</TableHead>
+                      <TableHead className="text-right">Citation</TableHead>
+                      <TableHead>Started</TableHead>
+                      <TableHead />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {promptAnalysis.responses.map((response) => {
+                      const sourceCount =
+                        response.sourceCount ?? response.sourceDomains.length;
+                      const openResponse = () => {
+                        if (response.runGroupId && onOpenRunGroup) {
+                          onOpenRunGroup(response.runGroupId);
+                          return;
+                        }
+                        onOpenRun(response.id);
+                      };
 
-                  return (
-                    <div
-                      key={String(response.id)}
-                      className={cn(
-                        "bg-card rounded-lg border",
-                        selectedRunId === response.id &&
-                          "border-primary bg-muted/30"
-                      )}
-                    >
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`Open ${response.providerName} response from ${formatFreshness(
-                          response.startedAt
-                        )}`}
-                        onClick={openResponse}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            openResponse();
-                          }
-                        }}
-                        className={cn(
-                          clickableTableRowClassName,
-                          "group flex w-full flex-col gap-3 rounded-lg p-3 text-left"
-                        )}
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1 space-y-1.5">
-                            <div className="flex flex-wrap items-center gap-2">
+                      return (
+                        <TableRow
+                          key={String(response.id)}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Open ${response.providerName} response from ${formatFreshness(
+                            response.startedAt
+                          )}`}
+                          className={cn(
+                            clickableTableRowClassName,
+                            selectedRunId === response.id && "bg-muted/30"
+                          )}
+                          onClick={openResponse}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              openResponse();
+                            }
+                          }}
+                        >
+                          <TableCell>
+                            <div className="min-w-0">
+                              <p className="truncate font-medium">
+                                {response.providerName}
+                              </p>
+                              <p className="text-muted-foreground truncate text-xs">
+                                {response.providerSlug}
+                              </p>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1.5">
                               <Badge variant="secondary">
                                 {titleCase(response.status)}
-                              </Badge>
-                              <Badge variant="outline">
-                                {response.providerName}
                               </Badge>
                               {response.warnings.length > 0 ? (
                                 <Badge
@@ -442,143 +457,96 @@ export function PromptDetailPage({
                                   {response.warnings.length === 1 ? "" : "s"}
                                 </Badge>
                               ) : null}
-                              <span className="text-muted-foreground text-xs">
-                                {formatFreshness(response.startedAt)}
-                              </span>
                             </div>
-                            <p className="text-foreground/90 line-clamp-2 text-sm">
+                          </TableCell>
+                          <TableCell className="whitespace-normal">
+                            <p className="line-clamp-2">
                               {response.responseSummary ||
                                 response.responseTextPreview ||
                                 "No response summary available."}
                             </p>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            <div className="flex flex-wrap justify-end gap-1.5">
-                              <Badge variant="outline">
-                                {sourceCount} sources
-                              </Badge>
-                              {response.citationQualityScore !== undefined ? (
-                                <Badge variant="outline">
-                                  Citation{" "}
-                                  {formatScore(response.citationQualityScore)}
-                                </Badge>
-                              ) : null}
-                            </div>
-                            <ChevronRight className="text-muted-foreground group-hover:text-foreground size-4 transition-transform group-hover:translate-x-0.5" />
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {response.sourceDomains.slice(0, 4).map((domain) => (
-                            <Badge
-                              key={`${response.id}-${domain}`}
-                              variant="outline"
-                            >
-                              {domain}
-                            </Badge>
-                          ))}
-                          {response.mentionNames.slice(0, 4).map((name) => (
-                            <Badge
-                              key={`${response.id}-${name}`}
-                              variant="secondary"
-                            >
-                              {name}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                      {hasCaptureDetails ? (
-                        <details className="border-t px-3 py-2 text-xs">
-                          <summary className="text-muted-foreground hover:text-foreground cursor-pointer font-medium">
-                            Capture details
-                          </summary>
-                          <div className="text-muted-foreground mt-2 space-y-2">
-                            {response.warnings.length > 0 ? (
-                              <div>
-                                <p className="text-foreground font-medium">
-                                  Warnings
-                                </p>
-                                <ul className="mt-1 list-disc space-y-1 pl-4">
-                                  {response.warnings.map((warning) => (
-                                    <li key={`${response.id}-${warning}`}>
-                                      {warning}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            ) : null}
-                            {response.evidencePath ? (
-                              <div>
-                                <p className="text-foreground font-medium">
-                                  Evidence path
-                                </p>
-                                <code className="bg-muted/40 mt-1 block rounded-md px-2 py-1 break-all">
-                                  {response.evidencePath}
-                                </code>
-                              </div>
-                            ) : null}
-                            {response.attempt !== undefined ? (
-                              <p>
-                                Attempt{" "}
-                                <span className="text-foreground tabular-nums">
-                                  {response.attempt}
-                                </span>
-                              </p>
-                            ) : null}
-                          </div>
-                        </details>
-                      ) : null}
-                    </div>
-                  );
-                })
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {sourceCount}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatScore(response.citationQualityScore)}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {formatFreshness(response.startedAt)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <ChevronRight className="text-muted-foreground inline-block" />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
               )}
             </CardContent>
           </Card>
         </div>
 
-        <div className="flex flex-col gap-4">
-          <Card>
+        <div className="flex min-w-0 flex-col gap-4">
+          <Card className="min-w-0">
             <CardHeader className="pb-2">
               <CardTitle>Source Breakdown</CardTitle>
             </CardHeader>
             <CardContent>
               {promptAnalysis.sourceBreakdown.length === 0 ? (
-                <InlineEmpty text="No source breakdown for this prompt yet." />
+                <InlineEmpty
+                  text={
+                    hasCapturedSources
+                      ? "No source breakdown for this prompt yet."
+                      : "No cited sources captured for this prompt yet."
+                  }
+                />
               ) : (
-                <div className="divide-y">
-                  {promptAnalysis.sourceBreakdown.slice(0, 8).map((source) => (
-                    <div key={source.domain} className="py-3 first:pt-0">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-medium">{source.domain}</p>
-                          <p className="text-muted-foreground text-xs">
-                            {titleCase(source.type)} | {source.responseCount}{" "}
-                            responses
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap justify-end gap-1.5">
-                          <Badge variant="outline">
-                            {source.citationCount} citations
-                          </Badge>
-                          <Badge variant="outline">
-                            Owned {formatPercent(source.ownedShare)}
-                          </Badge>
-                        </div>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {source.avgQualityScore !== undefined ? (
-                          <Badge variant="secondary">
-                            Quality {formatScore(source.avgQualityScore)}
-                          </Badge>
-                        ) : null}
-                        {source.avgPosition !== undefined ? (
-                          <Badge variant="secondary">
-                            Avg position #{source.avgPosition.toFixed(1)}
-                          </Badge>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <Table className="min-w-[560px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Domain</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead className="text-right">Citations</TableHead>
+                      <TableHead className="text-right">Quality</TableHead>
+                      <TableHead className="text-right">Latest</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {promptAnalysis.sourceBreakdown
+                      .slice(0, 8)
+                      .map((source) => {
+                        const latestResponse = source.latestResponses[0];
+                        return (
+                          <TableRow key={source.domain}>
+                            <TableCell>
+                              <div className="min-w-0">
+                                <p className="truncate font-medium">
+                                  {source.domain}
+                                </p>
+                                <p className="text-muted-foreground text-xs">
+                                  {source.responseCount} responses
+                                </p>
+                              </div>
+                            </TableCell>
+                            <TableCell>{titleCase(source.type)}</TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {source.citationCount}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {formatScore(source.avgQualityScore)}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-right">
+                              {latestResponse
+                                ? formatFreshness(latestResponse.startedAt)
+                                : "-"}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                  </TableBody>
+                </Table>
               )}
             </CardContent>
           </Card>

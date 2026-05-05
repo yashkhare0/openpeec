@@ -1,6 +1,13 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { ArrowUpRight, Plus } from "lucide-react";
+import {
+  ArrowUpRight,
+  MoreHorizontal,
+  Pencil,
+  Play,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -9,18 +16,41 @@ import { api } from "../../../convex/_generated/api";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Label } from "@/components/ui/label";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { Textarea } from "@/components/ui/textarea";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
+import {
+  ListFilterDropdown,
+  type ListFilterOption,
+} from "./components/ListFilterDropdown";
 import { StatusBanner } from "./components/StatusBanner";
 import { OverviewPage } from "./OverviewPage";
 import { PromptDetailPage } from "./PromptDetailPage";
 import { PromptsPage } from "./PromptsPage";
 import { ProvidersPage } from "./ProvidersPage";
 import { ResponseDetailPage } from "./ResponseDetailPage";
-import { ResponsesPage } from "./ResponsesPage";
+import { ResponsesPage, type ResponseStatusFilterValue } from "./ResponsesPage";
 import { RunGroupDetailPage } from "./RunGroupDetailPage";
-import { RunsPage } from "./RunsPage";
+import { RunsPage, type RunStatusFilterValue } from "./RunsPage";
+import { SourceDetailPage } from "./SourceDetailPage";
 import { SourcesPage } from "./SourcesPage";
 
 type PageKey =
@@ -33,6 +63,9 @@ type PageKey =
 type Tone = "positive" | "negative" | "neutral";
 type TrackedKind = "brand" | "competitor" | "product" | "feature" | "other";
 type RunDetailContext = "prompts" | "runs" | "responses" | null;
+type PromptStateFilterValue = "active" | "inactive";
+type ProviderStateFilterValue = "active" | "paused" | "unavailable";
+type ProviderSessionFilterValue = "stored" | "guest";
 
 const DASHBOARD_PAGES: PageKey[] = [
   "overview",
@@ -43,31 +76,252 @@ const DASHBOARD_PAGES: PageKey[] = [
   "sources",
 ];
 const DEFAULT_RANGE_DAYS = 7;
+const RUN_STATUS_FILTER_OPTIONS: Array<{
+  value: RunStatusFilterValue;
+  label: string;
+}> = [
+  { value: "queued", label: "Queued" },
+  { value: "running", label: "Running" },
+  { value: "blocked", label: "Blocked" },
+  { value: "success", label: "Successful" },
+  { value: "failed", label: "Failed" },
+];
+const RESPONSE_STATUS_FILTER_OPTIONS: Array<
+  ListFilterOption<ResponseStatusFilterValue>
+> = RUN_STATUS_FILTER_OPTIONS;
+const PROMPT_STATE_FILTER_OPTIONS: Array<
+  ListFilterOption<PromptStateFilterValue>
+> = [
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
+];
+const PROVIDER_STATE_FILTER_OPTIONS: Array<
+  ListFilterOption<ProviderStateFilterValue>
+> = [
+  { value: "active", label: "Active" },
+  { value: "paused", label: "Paused" },
+  { value: "unavailable", label: "Unavailable" },
+];
+const PROVIDER_SESSION_FILTER_OPTIONS: Array<
+  ListFilterOption<ProviderSessionFilterValue>
+> = [
+  { value: "stored", label: "Stored session" },
+  { value: "guest", label: "Guest session" },
+];
+
+type PromptActionPrompt = {
+  _id: Id<"prompts">;
+  excerpt: string;
+  promptText: string;
+};
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return "Action failed.";
+}
+
+function promptActionLabel(prompt: PromptActionPrompt) {
+  return prompt.excerpt.trim() || prompt.promptText.trim() || "Prompt";
+}
+
+function PromptDetailHeaderActions({
+  prompt,
+  onEdit,
+  onRun,
+  onDelete,
+}: {
+  prompt: PromptActionPrompt;
+  onEdit: () => void;
+  onRun: () => void;
+  onDelete: () => void;
+}) {
+  const label = promptActionLabel(prompt);
+
+  return (
+    <div className="flex items-center justify-end">
+      <div className="hidden items-center gap-2 md:flex">
+        <Button type="button" variant="outline" size="sm" onClick={onEdit}>
+          <Pencil data-icon="inline-start" />
+          Edit
+        </Button>
+        <Button type="button" size="sm" onClick={onRun}>
+          <Play data-icon="inline-start" />
+          Run
+        </Button>
+        <Button
+          type="button"
+          variant="destructive"
+          size="sm"
+          onClick={onDelete}
+        >
+          <Trash2 data-icon="inline-start" />
+          Delete
+        </Button>
+      </div>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="md:hidden"
+            aria-label={`Actions for ${label}`}
+          >
+            <MoreHorizontal />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuGroup>
+            <DropdownMenuItem onClick={onEdit}>
+              <Pencil />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onRun}>
+              <Play />
+              Run
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuItem variant="destructive" onClick={onDelete}>
+              <Trash2 />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
 
 function isPageKey(value: string | null): value is PageKey {
   return value !== null && DASHBOARD_PAGES.includes(value as PageKey);
 }
 
+function uniqueValues<T extends string>(values: T[]): T[] {
+  return Array.from(new Set(values));
+}
+
+function readFilterValues<T extends string>(
+  params: URLSearchParams,
+  key: string,
+  allowedValues?: readonly T[]
+): T[] {
+  const values = params
+    .getAll(key)
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter(Boolean) as T[];
+
+  const filteredValues = allowedValues
+    ? values.filter((value) => allowedValues.includes(value))
+    : values;
+
+  return uniqueValues(filteredValues);
+}
+
+function writeFilterValues<T extends string>(
+  params: URLSearchParams,
+  key: string,
+  values: T[]
+) {
+  values.forEach((value) => params.append(key, value));
+}
+
+function filterOptionValues<T extends string>(
+  options: Array<ListFilterOption<T>>
+): T[] {
+  return options.map((option) => option.value);
+}
+
+function toProviderSessionFilterValue(provider: {
+  slug: string;
+  sessionMode?: "guest" | "stored";
+}): ProviderSessionFilterValue {
+  return (
+    provider.sessionMode ?? (provider.slug === "openai" ? "stored" : "guest")
+  );
+}
+
+function toProviderStateFilterValue(provider: {
+  slug: string;
+  active: boolean;
+}): ProviderStateFilterValue {
+  if (provider.active) {
+    return "active";
+  }
+
+  return provider.slug === "openai" || provider.slug === "google-ai-mode"
+    ? "paused"
+    : "unavailable";
+}
+
+function titleCase(value: string): string {
+  return value
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((item) => item.charAt(0).toUpperCase() + item.slice(1).toLowerCase())
+    .join(" ");
+}
+
 function parseDashboardUrlState(): {
   page: PageKey;
   promptSearch: string;
+  promptStateFilters: PromptStateFilterValue[];
+  runStatusFilters: RunStatusFilterValue[];
+  responseStatusFilters: ResponseStatusFilterValue[];
+  responseProviderFilters: string[];
+  providerStateFilters: ProviderStateFilterValue[];
+  providerSessionFilters: ProviderSessionFilterValue[];
+  sourceTypeFilters: string[];
   selectedPromptId: Id<"prompts"> | null;
   selectedRunId: Id<"promptRuns"> | null;
   selectedRunGroupId: string | null;
+  selectedSourceDomain: string | null;
   runDetailContext: RunDetailContext;
 } {
   const params = new URLSearchParams(window.location.search);
   const pageValue = params.get("page");
   const contextValue = params.get("context");
+  const page = isPageKey(pageValue) ? pageValue : "overview";
 
   return {
-    page: isPageKey(pageValue) ? pageValue : "overview",
+    page,
     promptSearch: params.get("search")?.trim() || "",
+    promptStateFilters: readFilterValues(
+      params,
+      "promptState",
+      filterOptionValues(PROMPT_STATE_FILTER_OPTIONS)
+    ),
+    runStatusFilters: readFilterValues(
+      params,
+      "status",
+      filterOptionValues(RUN_STATUS_FILTER_OPTIONS)
+    ),
+    responseStatusFilters: readFilterValues(
+      params,
+      "responseStatus",
+      filterOptionValues(RESPONSE_STATUS_FILTER_OPTIONS)
+    ),
+    responseProviderFilters: readFilterValues(params, "responseProvider"),
+    providerStateFilters: readFilterValues(
+      params,
+      "providerState",
+      filterOptionValues(PROVIDER_STATE_FILTER_OPTIONS)
+    ),
+    providerSessionFilters: readFilterValues(
+      params,
+      "providerSession",
+      filterOptionValues(PROVIDER_SESSION_FILTER_OPTIONS)
+    ),
+    sourceTypeFilters: readFilterValues(params, "sourceType"),
     selectedPromptId:
       (params.get("prompt")?.trim() as Id<"prompts"> | null) ?? null,
     selectedRunId:
       (params.get("run")?.trim() as Id<"promptRuns"> | null) ?? null,
     selectedRunGroupId: params.get("group")?.trim() || null,
+    selectedSourceDomain: params.get("source")?.trim() || null,
     runDetailContext: (contextValue === "prompts" ||
     contextValue === "runs" ||
     contextValue === "responses"
@@ -79,9 +333,17 @@ function parseDashboardUrlState(): {
 function writeDashboardUrlState(state: {
   page: PageKey;
   promptSearch: string;
+  promptStateFilters: PromptStateFilterValue[];
+  runStatusFilters: RunStatusFilterValue[];
+  responseStatusFilters: ResponseStatusFilterValue[];
+  responseProviderFilters: string[];
+  providerStateFilters: ProviderStateFilterValue[];
+  providerSessionFilters: ProviderSessionFilterValue[];
+  sourceTypeFilters: string[];
   selectedPromptId: Id<"prompts"> | null;
   selectedRunId: Id<"promptRuns"> | null;
   selectedRunGroupId: string | null;
+  selectedSourceDomain: string | null;
   runDetailContext: RunDetailContext;
 }) {
   const params = new URLSearchParams();
@@ -91,6 +353,27 @@ function writeDashboardUrlState(state: {
   if (state.promptSearch) {
     params.set("search", state.promptSearch);
   }
+  if (state.page === "prompts") {
+    writeFilterValues(params, "promptState", state.promptStateFilters);
+  }
+  if (state.page === "runs") {
+    writeFilterValues(params, "status", state.runStatusFilters);
+  }
+  if (state.page === "responses") {
+    writeFilterValues(params, "responseStatus", state.responseStatusFilters);
+    writeFilterValues(
+      params,
+      "responseProvider",
+      state.responseProviderFilters
+    );
+  }
+  if (state.page === "providers") {
+    writeFilterValues(params, "providerState", state.providerStateFilters);
+    writeFilterValues(params, "providerSession", state.providerSessionFilters);
+  }
+  if (state.page === "sources") {
+    writeFilterValues(params, "sourceType", state.sourceTypeFilters);
+  }
   if (state.selectedPromptId) {
     params.set("prompt", String(state.selectedPromptId));
   }
@@ -99,6 +382,9 @@ function writeDashboardUrlState(state: {
   }
   if (state.selectedRunGroupId) {
     params.set("group", state.selectedRunGroupId);
+  }
+  if (state.page === "sources" && state.selectedSourceDomain) {
+    params.set("source", state.selectedSourceDomain);
   }
   if (state.runDetailContext) {
     params.set("context", state.runDetailContext);
@@ -117,7 +403,30 @@ export function MonitoringDashboard() {
   const [promptSearch, setPromptSearch] = useState(
     initialUrlState.promptSearch
   );
+  const [promptStateFilters, setPromptStateFilters] = useState<
+    PromptStateFilterValue[]
+  >(initialUrlState.promptStateFilters);
+  const [runStatusFilters, setRunStatusFilters] = useState<
+    RunStatusFilterValue[]
+  >(initialUrlState.runStatusFilters);
+  const [responseStatusFilters, setResponseStatusFilters] = useState<
+    ResponseStatusFilterValue[]
+  >(initialUrlState.responseStatusFilters);
+  const [responseProviderFilters, setResponseProviderFilters] = useState<
+    string[]
+  >(initialUrlState.responseProviderFilters);
+  const [providerStateFilters, setProviderStateFilters] = useState<
+    ProviderStateFilterValue[]
+  >(initialUrlState.providerStateFilters);
+  const [providerSessionFilters, setProviderSessionFilters] = useState<
+    ProviderSessionFilterValue[]
+  >(initialUrlState.providerSessionFilters);
+  const [sourceTypeFilters, setSourceTypeFilters] = useState<string[]>(
+    initialUrlState.sourceTypeFilters
+  );
   const [promptCreateOpen, setPromptCreateOpen] = useState(false);
+  const [promptEditOpen, setPromptEditOpen] = useState(false);
+  const [promptEditText, setPromptEditText] = useState("");
   const [selectedPromptId, setSelectedPromptId] =
     useState<Id<"prompts"> | null>(initialUrlState.selectedPromptId);
   const [selectedRunId, setSelectedRunId] = useState<Id<"promptRuns"> | null>(
@@ -126,6 +435,9 @@ export function MonitoringDashboard() {
   const [selectedRunGroupId, setSelectedRunGroupId] = useState<string | null>(
     initialUrlState.selectedRunGroupId
   );
+  const [selectedSourceDomain, setSelectedSourceDomain] = useState<
+    string | null
+  >(initialUrlState.selectedSourceDomain);
   const [sourcePromptFilter, setSourcePromptFilter] = useState<{
     promptId: Id<"prompts">;
     promptExcerpt: string;
@@ -152,19 +464,30 @@ export function MonitoringDashboard() {
   const isRunsPage = page === "runs";
   const isResponsesPage = page === "responses";
   const isSourcesPage = page === "sources";
+  const showingPromptsList = isPromptsPage && promptView === "list";
   const showingRunDetailForRuns =
     page === "runs" && runDetailContext === "runs" && selectedRunId !== null;
   const showingRunGroupDetailForRuns =
     page === "runs" &&
     runDetailContext === "runs" &&
     selectedRunGroupId !== null;
+  const showingRunsList =
+    isRunsPage && !showingRunDetailForRuns && !showingRunGroupDetailForRuns;
   const showingRunDetailForResponses =
     page === "responses" &&
     runDetailContext === "responses" &&
     selectedRunId !== null;
-  const shouldLoadPromptAnalytics = isPromptsPage && promptView === "list";
-  const shouldLoadRunsList =
-    isOverviewPage || (isResponsesPage && !showingRunDetailForResponses);
+  const showingResponsesList = isResponsesPage && !showingRunDetailForResponses;
+  const showingSourceDetail = isSourcesPage && selectedSourceDomain !== null;
+  const showingSourcesList = isSourcesPage && !showingSourceDetail;
+  const showingListScreen =
+    showingPromptsList ||
+    showingRunsList ||
+    showingResponsesList ||
+    isProvidersPage ||
+    showingSourcesList;
+  const shouldLoadPromptAnalytics = showingPromptsList;
+  const shouldLoadRunsList = isOverviewPage || showingResponsesList;
 
   const ensureProvidersSeeded = useMutation(
     api.analytics.ensureProvidersSeeded
@@ -178,6 +501,7 @@ export function MonitoringDashboard() {
   );
   const retryPromptRun = useMutation(api.analytics.retryPromptRun);
   const cancelPromptRun = useMutation(api.analytics.cancelPromptRun);
+  const deletePromptRun = useMutation(api.analytics.deletePromptRun);
   const createTrackedEntity = useMutation(api.analytics.createTrackedEntity);
   const updateTrackedEntity = useMutation(api.analytics.updateTrackedEntity);
   const deleteTrackedEntity = useMutation(api.analytics.deleteTrackedEntity);
@@ -231,7 +555,7 @@ export function MonitoringDashboard() {
   );
   const entities = useQuery(
     api.analytics.listTrackedEntities,
-    isSourcesPage ? {} : "skip"
+    showingSourcesList ? {} : "skip"
   );
   const runDetail = useQuery(
     api.analytics.getPromptRun,
@@ -256,7 +580,8 @@ export function MonitoringDashboard() {
   const responsesPageLoading =
     isResponsesPage && !showingRunDetailForResponses && runs === undefined;
   const sourcesPageLoading =
-    isSourcesPage && (sources === undefined || entities === undefined);
+    isSourcesPage &&
+    (sources === undefined || (showingSourcesList && entities === undefined));
   const promptDetailLoading =
     promptView === "prompt" &&
     selectedPromptId !== null &&
@@ -278,14 +603,26 @@ export function MonitoringDashboard() {
 
   const promptRows = useMemo(
     () =>
-      (promptAnalytics ?? []).filter((row) =>
-        !search
-          ? true
-          : `${row.excerpt} ${row.latestResponseSummary ?? ""} ${(row.topEntities ?? []).join(" ")} ${(row.topSources ?? []).join(" ")}`
-              .toLowerCase()
-              .includes(search)
-      ),
-    [promptAnalytics, search]
+      (promptAnalytics ?? []).filter((row) => {
+        const state: PromptStateFilterValue = row.active
+          ? "active"
+          : "inactive";
+        if (
+          promptStateFilters.length > 0 &&
+          !promptStateFilters.includes(state)
+        ) {
+          return false;
+        }
+
+        if (!search) {
+          return true;
+        }
+
+        return `${row.excerpt} ${row.latestResponseSummary ?? ""} ${(row.topEntities ?? []).join(" ")} ${(row.topSources ?? []).join(" ")}`
+          .toLowerCase()
+          .includes(search);
+      }),
+    [promptAnalytics, promptStateFilters, search]
   );
 
   useEffect(() => {
@@ -293,9 +630,17 @@ export function MonitoringDashboard() {
       const next = parseDashboardUrlState();
       setPage(next.page);
       setPromptSearch(next.promptSearch);
+      setPromptStateFilters(next.promptStateFilters);
+      setRunStatusFilters(next.runStatusFilters);
+      setResponseStatusFilters(next.responseStatusFilters);
+      setResponseProviderFilters(next.responseProviderFilters);
+      setProviderStateFilters(next.providerStateFilters);
+      setProviderSessionFilters(next.providerSessionFilters);
+      setSourceTypeFilters(next.sourceTypeFilters);
       setSelectedPromptId(next.selectedPromptId);
       setSelectedRunId(next.selectedRunId);
       setSelectedRunGroupId(next.selectedRunGroupId);
+      setSelectedSourceDomain(next.selectedSourceDomain);
       setRunDetailContext(next.runDetailContext);
       setSourcePromptFilter(null);
     };
@@ -310,18 +655,34 @@ export function MonitoringDashboard() {
     writeDashboardUrlState({
       page,
       promptSearch,
+      promptStateFilters,
+      runStatusFilters,
+      responseStatusFilters,
+      responseProviderFilters,
+      providerStateFilters,
+      providerSessionFilters,
+      sourceTypeFilters,
       selectedPromptId,
       selectedRunId,
       selectedRunGroupId,
+      selectedSourceDomain,
       runDetailContext,
     });
   }, [
     page,
     promptSearch,
+    promptStateFilters,
+    runStatusFilters,
+    responseStatusFilters,
+    responseProviderFilters,
+    providerStateFilters,
+    providerSessionFilters,
+    sourceTypeFilters,
     runDetailContext,
     selectedPromptId,
     selectedRunId,
     selectedRunGroupId,
+    selectedSourceDomain,
   ]);
 
   useEffect(() => {
@@ -425,14 +786,114 @@ export function MonitoringDashboard() {
         (run) =>
           run.responseSummary ||
           run.status === "success" ||
-          run.status === "failed"
+          run.status === "failed" ||
+          run.status === "blocked" ||
+          run.status === "running" ||
+          run.status === "queued"
       ),
     [runs]
+  );
+
+  const responseProviderFilterOptions = useMemo(
+    () =>
+      uniqueValues(
+        responseRows
+          .map((run) => run.providerSlug ?? run.providerName)
+          .filter(Boolean)
+      )
+        .sort((left, right) => left.localeCompare(right))
+        .map((value) => {
+          const row = responseRows.find(
+            (run) => (run.providerSlug ?? run.providerName) === value
+          );
+          return {
+            value,
+            label: row?.providerName ?? titleCase(value),
+          };
+        }),
+    [responseRows]
+  );
+
+  const filteredProviders = useMemo(
+    () =>
+      (providers ?? []).filter((provider) => {
+        const state = toProviderStateFilterValue(provider);
+        const session = toProviderSessionFilterValue(provider);
+        if (
+          providerStateFilters.length > 0 &&
+          !providerStateFilters.includes(state)
+        ) {
+          return false;
+        }
+        if (
+          providerSessionFilters.length > 0 &&
+          !providerSessionFilters.includes(session)
+        ) {
+          return false;
+        }
+        if (!search) {
+          return true;
+        }
+
+        return `${provider.name} ${provider.slug} ${provider.channelName ?? ""} ${provider.channelSlug ?? ""} ${provider.url}`
+          .toLowerCase()
+          .includes(search);
+      }),
+    [providerSessionFilters, providerStateFilters, providers, search]
+  );
+
+  const sourceTypeFilterOptions = useMemo(
+    () =>
+      uniqueValues([
+        ...(sources?.items ?? []).map((source) => source.type),
+        ...sourceTypeFilters,
+      ])
+        .filter(Boolean)
+        .sort((left, right) => left.localeCompare(right))
+        .map((value) => ({
+          value,
+          label: titleCase(value),
+        })),
+    [sourceTypeFilters, sources?.items]
+  );
+
+  const filteredSources = useMemo(
+    () =>
+      (sources?.items ?? []).filter((source) => {
+        if (
+          sourceTypeFilters.length > 0 &&
+          !sourceTypeFilters.includes(source.type)
+        ) {
+          return false;
+        }
+        if (!search) {
+          return true;
+        }
+
+        return `${source.domain} ${source.type} ${(source.latestResponses ?? [])
+          .map(
+            (response) =>
+              `${response.promptExcerpt} ${response.providerName} ${response.responseSummary}`
+          )
+          .join(" ")}`
+          .toLowerCase()
+          .includes(search);
+      }),
+    [search, sourceTypeFilters, sources?.items]
   );
 
   const kpis = useMemo(
     () => mapKpis(overview, sources?.meta.totalDomains),
     [overview, sources?.meta.totalDomains]
+  );
+  const selectedSource = useMemo(
+    () =>
+      selectedSourceDomain
+        ? (sources?.items ?? []).find(
+            (source) => source.domain === selectedSourceDomain
+          )
+        : undefined,
+    [selectedSourceDomain, sources?.items]
   );
 
   const recentRuns = useMemo(
@@ -454,9 +915,11 @@ export function MonitoringDashboard() {
   const navigatePage = (nextPage: PageKey) => {
     setPage(nextPage);
     setPromptCreateOpen(false);
+    setPromptEditOpen(false);
     setSelectedPromptId(null);
     setSelectedRunId(null);
     setSelectedRunGroupId(null);
+    setSelectedSourceDomain(null);
     setRunDetailContext(null);
     setSourcePromptFilter(null);
   };
@@ -464,9 +927,11 @@ export function MonitoringDashboard() {
   const openPrompt = (promptId: Id<"prompts"> | null) => {
     setPage("prompts");
     setPromptCreateOpen(false);
+    setPromptEditOpen(false);
     setSelectedPromptId(promptId);
     setSelectedRunId(null);
     setSelectedRunGroupId(null);
+    setSelectedSourceDomain(null);
     setRunDetailContext(null);
     setSourcePromptFilter(null);
   };
@@ -482,6 +947,7 @@ export function MonitoringDashboard() {
     setSelectedPromptId(null);
     setSelectedRunId(null);
     setSelectedRunGroupId(runGroupId);
+    setSelectedSourceDomain(null);
     setRunDetailContext(runGroupId ? "runs" : null);
     setSourcePromptFilter(null);
   };
@@ -490,6 +956,7 @@ export function MonitoringDashboard() {
     setPage("runs");
     setSelectedRunId(null);
     setSelectedRunGroupId(runGroupId);
+    setSelectedSourceDomain(null);
     setRunDetailContext(runGroupId ? "runs" : null);
     setSourcePromptFilter(null);
   };
@@ -501,6 +968,7 @@ export function MonitoringDashboard() {
     setPage(nextPage);
     setSelectedRunId(runId);
     setSelectedRunGroupId(null);
+    setSelectedSourceDomain(null);
     setRunDetailContext(runId ? nextPage : null);
     setSourcePromptFilter(null);
   };
@@ -514,8 +982,21 @@ export function MonitoringDashboard() {
     setSelectedPromptId(null);
     setSelectedRunId(null);
     setSelectedRunGroupId(null);
+    setSelectedSourceDomain(null);
     setRunDetailContext(null);
     setSourcePromptFilter({ promptId, promptExcerpt });
+  };
+
+  const openSource = (domain: string | null) => {
+    setPage("sources");
+    setPromptCreateOpen(false);
+    setPromptEditOpen(false);
+    setSelectedPromptId(null);
+    setSelectedRunId(null);
+    setSelectedRunGroupId(null);
+    setSelectedSourceDomain(domain);
+    setRunDetailContext(null);
+    setSourcePromptFilter(null);
   };
 
   const handleRetryRun = async (runId: Id<"promptRuns">) => {
@@ -525,9 +1006,101 @@ export function MonitoringDashboard() {
     });
   };
 
+  const handleCancelRuns = async (runIds: Array<Id<"promptRuns">>) => {
+    await Promise.all(runIds.map((runId) => cancelPromptRun({ runId })));
+    toast.success(
+      runIds.length === 1
+        ? "Run cancelled."
+        : `${runIds.length} queued runs cancelled.`
+    );
+  };
+
   const handleCancelRun = async (runId: Id<"promptRuns">) => {
-    await cancelPromptRun({ runId });
-    toast.success("Run cancelled.");
+    await handleCancelRuns([runId]);
+  };
+
+  const handleDeleteRuns = async (runIds: Array<Id<"promptRuns">>) => {
+    await Promise.all(runIds.map((runId) => deletePromptRun({ runId })));
+    toast.success(
+      runIds.length === 1
+        ? "Queued run deleted."
+        : `${runIds.length} queued runs deleted.`
+    );
+    if (selectedRunId && runIds.includes(selectedRunId)) {
+      setSelectedRunId(null);
+      setRunDetailContext(null);
+    }
+  };
+
+  const handleDeleteRun = async (runId: Id<"promptRuns">) => {
+    await handleDeleteRuns([runId]);
+  };
+
+  const promptActionPrompt =
+    promptView === "prompt" && promptAnalysis ? promptAnalysis.prompt : null;
+
+  const openPromptEditDialog = () => {
+    if (!promptActionPrompt) {
+      return;
+    }
+    setPromptEditText(promptActionPrompt.promptText);
+    setPromptEditOpen(true);
+  };
+
+  const handleSavePromptEdit = async () => {
+    if (!promptActionPrompt) {
+      return;
+    }
+
+    const promptText = promptEditText.trim();
+    if (!promptText) {
+      toast.error("Prompt text is required.");
+      return;
+    }
+
+    try {
+      await updatePrompt({ id: promptActionPrompt._id, promptText });
+      setPromptEditOpen(false);
+      toast.success("Prompt updated.");
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
+  };
+
+  const handleRunPrompt = async () => {
+    if (!promptActionPrompt) {
+      return;
+    }
+
+    try {
+      const result = await triggerSelectedPromptsNow({
+        promptIds: [promptActionPrompt._id],
+        label: promptActionLabel(promptActionPrompt),
+        browserEngine: "camoufox",
+      });
+      toast.success(
+        result.queuedCount === 1
+          ? "Run queued."
+          : `Run queued across ${result.queuedCount} providers.`
+      );
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
+  };
+
+  const handleDeletePrompt = async () => {
+    if (!promptActionPrompt) {
+      return;
+    }
+
+    try {
+      await deletePrompt({ id: promptActionPrompt._id });
+      setPromptEditOpen(false);
+      toast.success("Prompt deleted.");
+      openPrompt(null);
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
   };
 
   const breadcrumbs = (() => {
@@ -587,7 +1160,181 @@ export function MonitoringDashboard() {
       ];
     }
 
+    if (showingSourceDetail) {
+      return [
+        {
+          label: "Sources",
+          onClick: () => openSource(null),
+        },
+        { label: selectedSource?.domain ?? selectedSourceDomain ?? "Source" },
+      ];
+    }
+
     return [{ label: page.charAt(0).toUpperCase() + page.slice(1) }];
+  })();
+
+  const headerSearchPlaceholder = showingRunsList
+    ? "Search runs..."
+    : showingResponsesList
+      ? "Search responses..."
+      : isProvidersPage
+        ? "Search providers..."
+        : showingSourcesList
+          ? "Search sources..."
+          : "Search prompts...";
+  const headerSearchLabel = showingRunsList
+    ? "Search runs"
+    : showingResponsesList
+      ? "Search responses"
+      : isProvidersPage
+        ? "Search providers"
+        : showingSourcesList
+          ? "Search sources"
+          : "Search prompts";
+
+  const headerAction = (() => {
+    if (showingPromptsList) {
+      return (
+        <div className="flex items-center gap-2">
+          <ListFilterDropdown
+            label="Filter prompts"
+            groups={[
+              {
+                label: "State",
+                values: promptStateFilters,
+                options: PROMPT_STATE_FILTER_OPTIONS,
+                onValuesChange: (values) =>
+                  setPromptStateFilters(values as PromptStateFilterValue[]),
+              },
+            ]}
+          />
+          <Button
+            type="button"
+            aria-label="New prompt"
+            className="px-2 sm:px-2.5"
+            onClick={() => setPromptCreateOpen(true)}
+          >
+            <Plus data-icon="inline-start" />
+            <span aria-hidden="true" className="hidden sm:inline">
+              New prompt
+            </span>
+          </Button>
+        </div>
+      );
+    }
+
+    if (isPromptsPage && promptView === "prompt" && promptActionPrompt) {
+      return (
+        <PromptDetailHeaderActions
+          prompt={promptActionPrompt}
+          onEdit={openPromptEditDialog}
+          onRun={handleRunPrompt}
+          onDelete={handleDeletePrompt}
+        />
+      );
+    }
+
+    if (showingRunGroupDetailForRuns && runGroupDetail) {
+      return (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            openPrompt(
+              runGroupDetail.prompt?._id ?? runGroupDetail.group.promptId
+            )
+          }
+        >
+          Open prompt
+          <ArrowUpRight data-icon="inline-end" />
+        </Button>
+      );
+    }
+
+    if (showingRunsList) {
+      return (
+        <ListFilterDropdown
+          label="Filter runs by status"
+          groups={[
+            {
+              label: "Status",
+              values: runStatusFilters,
+              options: RUN_STATUS_FILTER_OPTIONS,
+              onValuesChange: (values) =>
+                setRunStatusFilters(values as RunStatusFilterValue[]),
+            },
+          ]}
+        />
+      );
+    }
+
+    if (showingResponsesList) {
+      return (
+        <ListFilterDropdown
+          label="Filter responses"
+          groups={[
+            {
+              label: "Status",
+              values: responseStatusFilters,
+              options: RESPONSE_STATUS_FILTER_OPTIONS,
+              onValuesChange: (values) =>
+                setResponseStatusFilters(values as ResponseStatusFilterValue[]),
+            },
+            {
+              label: "Provider",
+              values: responseProviderFilters,
+              options: responseProviderFilterOptions,
+              onValuesChange: setResponseProviderFilters,
+            },
+          ]}
+        />
+      );
+    }
+
+    if (isProvidersPage) {
+      return (
+        <ListFilterDropdown
+          label="Filter providers"
+          groups={[
+            {
+              label: "State",
+              values: providerStateFilters,
+              options: PROVIDER_STATE_FILTER_OPTIONS,
+              onValuesChange: (values) =>
+                setProviderStateFilters(values as ProviderStateFilterValue[]),
+            },
+            {
+              label: "Session",
+              values: providerSessionFilters,
+              options: PROVIDER_SESSION_FILTER_OPTIONS,
+              onValuesChange: (values) =>
+                setProviderSessionFilters(
+                  values as ProviderSessionFilterValue[]
+                ),
+            },
+          ]}
+        />
+      );
+    }
+
+    if (showingSourcesList) {
+      return (
+        <ListFilterDropdown
+          label="Filter sources"
+          groups={[
+            {
+              label: "Type",
+              values: sourceTypeFilters,
+              options: sourceTypeFilterOptions,
+              onValuesChange: setSourceTypeFilters,
+            },
+          ]}
+        />
+      );
+    }
+
+    return undefined;
   })();
 
   return (
@@ -602,47 +1349,50 @@ export function MonitoringDashboard() {
         <AppSidebar page={page} onPage={navigatePage} />
         <SidebarInset className="min-w-0">
           <SiteHeader
-            searchValue={
-              isPromptsPage && promptView === "list" ? promptSearch : undefined
-            }
-            onSearchValue={
-              isPromptsPage && promptView === "list"
-                ? setPromptSearch
-                : undefined
-            }
-            searchPlaceholder="Search prompts..."
-            action={
-              isPromptsPage && promptView === "list" ? (
-                <Button
-                  type="button"
-                  aria-label="New prompt"
-                  className="px-2 sm:px-2.5"
-                  onClick={() => setPromptCreateOpen(true)}
-                >
-                  <Plus data-icon="inline-start" />
-                  <span aria-hidden="true" className="hidden sm:inline">
-                    New prompt
-                  </span>
-                </Button>
-              ) : showingRunGroupDetailForRuns && runGroupDetail ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    openPrompt(
-                      runGroupDetail.prompt?._id ??
-                        runGroupDetail.group.promptId
-                    )
-                  }
-                >
-                  Open prompt
-                  <ArrowUpRight data-icon="inline-end" />
-                </Button>
-              ) : undefined
-            }
+            searchValue={showingListScreen ? promptSearch : undefined}
+            onSearchValue={showingListScreen ? setPromptSearch : undefined}
+            searchPlaceholder={headerSearchPlaceholder}
+            searchLabel={headerSearchLabel}
+            action={headerAction}
             breadcrumbs={breadcrumbs}
           />
+
+          {promptActionPrompt ? (
+            <Dialog open={promptEditOpen} onOpenChange={setPromptEditOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Edit prompt</DialogTitle>
+                  <DialogDescription>
+                    Update the question used for future runs.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="prompt-edit-text">Prompt text</Label>
+                  <Textarea
+                    id="prompt-edit-text"
+                    value={promptEditText}
+                    onChange={(event) => setPromptEditText(event.target.value)}
+                    rows={8}
+                  />
+                </div>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setPromptEditOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => void handleSavePromptEdit()}
+                  >
+                    Save changes
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          ) : null}
 
           <div className="flex min-w-0 flex-1 flex-col">
             {pageLoading ? (
@@ -675,12 +1425,12 @@ export function MonitoringDashboard() {
                   <PromptsPage
                     loading={promptsPageLoading}
                     rows={promptRows}
+                    providers={providers ?? []}
                     selectedPromptId={selectedPromptId}
                     onSelectPrompt={openPrompt}
                     createOpen={promptCreateOpen}
                     onCreateOpenChange={setPromptCreateOpen}
                     onCreatePrompt={createPrompt}
-                    onUpdatePrompt={updatePrompt}
                     onDeletePrompt={deletePrompt}
                     onTriggerSelectedNow={triggerSelectedPromptsNow}
                   />
@@ -689,7 +1439,6 @@ export function MonitoringDashboard() {
                   <PromptDetailPage
                     loading={promptDetailLoading}
                     promptAnalysis={promptAnalysis}
-                    onBack={() => openPrompt(null)}
                     selectedRunId={selectedRunId}
                     onOpenRun={openRunFromPromptDetail}
                     onOpenRunGroup={openRunGroupFromPromptDetail}
@@ -701,6 +1450,7 @@ export function MonitoringDashboard() {
                     runDetail={runDetail}
                     onRetryRun={handleRetryRun}
                     onCancelRun={handleCancelRun}
+                    onDeleteRun={handleDeleteRun}
                   />
                 ) : null}
               </>
@@ -720,6 +1470,7 @@ export function MonitoringDashboard() {
                   runDetail={runDetail}
                   onRetryRun={handleRetryRun}
                   onCancelRun={handleCancelRun}
+                  onDeleteRun={handleDeleteRun}
                   onOpenPrompt={
                     runDetail?.run.promptId
                       ? () => openPrompt(runDetail.run.promptId)
@@ -730,9 +1481,14 @@ export function MonitoringDashboard() {
                 <RunsPage
                   loading={runsPageLoading}
                   groups={runGroups ?? []}
+                  searchValue={promptSearch}
+                  statusFilters={runStatusFilters}
                   selectedRunGroupId={selectedRunGroupId}
+                  onOpenRun={(runId) => openGlobalRunDetail("runs", runId)}
                   onOpenRunGroup={openRunGroup}
                   onOpenPrompt={openPrompt}
+                  onCancelRuns={handleCancelRuns}
+                  onDeleteRuns={handleDeleteRuns}
                 />
               )
             ) : null}
@@ -744,6 +1500,7 @@ export function MonitoringDashboard() {
                   runDetail={runDetail}
                   onRetryRun={handleRetryRun}
                   onCancelRun={handleCancelRun}
+                  onDeleteRun={handleDeleteRun}
                   onOpenPrompt={
                     runDetail?.run.promptId
                       ? () => openPrompt(runDetail.run.promptId)
@@ -754,9 +1511,17 @@ export function MonitoringDashboard() {
                 <ResponsesPage
                   loading={responsesPageLoading}
                   runs={responseRows}
+                  searchValue={promptSearch}
+                  statusFilters={responseStatusFilters}
+                  providerFilters={responseProviderFilters}
+                  providers={providers ?? []}
                   selectedRunId={selectedRunId}
                   onOpenRun={(runId) => openGlobalRunDetail("responses", runId)}
                   onOpenPrompt={openPrompt}
+                  onRetryRun={handleRetryRun}
+                  onCancelRun={handleCancelRun}
+                  onDeleteRun={handleDeleteRun}
+                  onTriggerSelectedNow={triggerSelectedPromptsNow}
                 />
               )
             ) : null}
@@ -764,29 +1529,37 @@ export function MonitoringDashboard() {
             {page === "providers" ? (
               <ProvidersPage
                 loading={providersPageLoading}
-                providers={providers ?? []}
+                providers={filteredProviders}
                 onUpdateProvider={updateProvider}
               />
             ) : null}
 
             {page === "sources" ? (
-              <SourcesPage
-                loading={sourcesPageLoading}
-                sources={sources?.items ?? []}
-                entities={entities ?? []}
-                newEntityName={newEntityName}
-                onNewEntityName={setNewEntityName}
-                newEntityKind={newEntityKind}
-                onNewEntityKind={setNewEntityKind}
-                newEntityDomain={newEntityDomain}
-                onNewEntityDomain={setNewEntityDomain}
-                onCreateEntity={createTrackedEntity}
-                onUpdateEntity={updateTrackedEntity}
-                onDeleteEntity={deleteTrackedEntity}
-                onOpenRun={(runId) => openGlobalRunDetail("responses", runId)}
-                promptFilter={sourcePromptFilter}
-                onPromptFilterClear={() => setSourcePromptFilter(null)}
-              />
+              showingSourceDetail ? (
+                <SourceDetailPage
+                  loading={sourcesPageLoading}
+                  source={selectedSource}
+                  onOpenRun={(runId) => openGlobalRunDetail("responses", runId)}
+                />
+              ) : (
+                <SourcesPage
+                  loading={sourcesPageLoading}
+                  sources={filteredSources}
+                  entities={entities ?? []}
+                  newEntityName={newEntityName}
+                  onNewEntityName={setNewEntityName}
+                  newEntityKind={newEntityKind}
+                  onNewEntityKind={setNewEntityKind}
+                  newEntityDomain={newEntityDomain}
+                  onNewEntityDomain={setNewEntityDomain}
+                  onCreateEntity={createTrackedEntity}
+                  onUpdateEntity={updateTrackedEntity}
+                  onDeleteEntity={deleteTrackedEntity}
+                  onOpenSource={openSource}
+                  promptFilter={sourcePromptFilter}
+                  onPromptFilterClear={() => setSourcePromptFilter(null)}
+                />
+              )
             ) : null}
           </div>
         </SidebarInset>
