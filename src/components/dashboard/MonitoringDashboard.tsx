@@ -1230,8 +1230,12 @@ export function MonitoringDashboard() {
         <PromptDetailHeaderActions
           prompt={promptActionPrompt}
           onEdit={openPromptEditDialog}
-          onRun={handleRunPrompt}
-          onDelete={handleDeletePrompt}
+          onRun={() => {
+            void handleRunPrompt();
+          }}
+          onDelete={() => {
+            void handleDeletePrompt();
+          }}
         />
       );
     }

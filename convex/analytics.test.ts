@@ -25,13 +25,6 @@ test("createPrompt rejects empty text", async () => {
 test("queue workflow: enqueue single-provider run, claim group, complete success", async () => {
   const t = convexTest(schema, modules);
   await t.mutation(api.analytics.ensureProvidersSeeded, {});
-  const providers = await t.query(api.analytics.listProviders, {});
-  const google = providers.find((p) => p.slug === "google-ai-mode");
-  expect(google).toBeDefined();
-  await t.mutation(api.analytics.updateProvider, {
-    id: google!._id,
-    active: false,
-  });
 
   const promptId = await t.mutation(api.analytics.createPrompt, {
     promptText: "OpenPeec convex-test deterministic prompt body.",
@@ -43,6 +36,7 @@ test("queue workflow: enqueue single-provider run, claim group, complete success
       promptIds: [promptId],
       label: "convex-test-queue",
       browserEngine: "playwright",
+      providerSlugs: ["openai"],
     }
   );
   expect(queuedCount).toBe(1);
@@ -98,13 +92,6 @@ test("queue workflow: enqueue single-provider run, claim group, complete success
 test("queued prompt runs can be cancelled or deleted", async () => {
   const t = convexTest(schema, modules);
   await t.mutation(api.analytics.ensureProvidersSeeded, {});
-  const providers = await t.query(api.analytics.listProviders, {});
-  const google = providers.find((p) => p.slug === "google-ai-mode");
-  expect(google).toBeDefined();
-  await t.mutation(api.analytics.updateProvider, {
-    id: google!._id,
-    active: false,
-  });
 
   const promptId = await t.mutation(api.analytics.createPrompt, {
     promptText: "Queued run management prompt.",
@@ -114,6 +101,7 @@ test("queued prompt runs can be cancelled or deleted", async () => {
     promptIds: [promptId],
     label: "cancel-test",
     browserEngine: "playwright",
+    providerSlugs: ["openai"],
   });
   const cancellableRuns = await t.query(api.analytics.listPromptRuns, {
     promptId,
@@ -137,6 +125,7 @@ test("queued prompt runs can be cancelled or deleted", async () => {
     promptIds: [promptId],
     label: "delete-test",
     browserEngine: "playwright",
+    providerSlugs: ["openai"],
   });
   const deletableRuns = await t.query(api.analytics.listPromptRuns, {
     promptId,

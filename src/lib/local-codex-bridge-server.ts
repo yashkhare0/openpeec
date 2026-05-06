@@ -7,7 +7,7 @@ import {
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { LocalCodexBridgeConfig } from "./codex-bridge";
 
@@ -81,8 +81,10 @@ function clipText(value: string, maxLength: number) {
   return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
+const ansiColorEscape = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+
 function stripAnsi(value: string) {
-  return value.replace(/\u001b\[[0-9;]*m/g, "");
+  return value.replace(ansiColorEscape, "");
 }
 
 function schemaAllowsNull(schema: unknown): boolean {
@@ -610,7 +612,7 @@ async function runCodexExec(
       spawnConfig.command,
       spawnConfig.args,
       spawnConfig.options
-    ) as ChildProcessWithoutNullStreams;
+    );
 
     child.stdin.end(prompt);
     child.stdout.on("data", (chunk: Buffer | string) =>
@@ -795,54 +797,56 @@ async function handleChatCompletions(
 }
 
 export async function serveLocalCodexBridge(config: LocalCodexBridgeConfig) {
-  const server = createServer(async (req, res) => {
-    try {
-      const url = new URL(
-        req.url ?? "/",
-        `http://${req.headers.host ?? "localhost"}`
-      );
+  const server = createServer((req, res) => {
+    void (async () => {
+      try {
+        const url = new URL(
+          req.url ?? "/",
+          `http://${req.headers.host ?? "localhost"}`
+        );
 
-      if (req.method === "GET" && url.pathname === "/health") {
-        sendJson(res, 200, { status: "ok" });
-        return;
-      }
+        if (req.method === "GET" && url.pathname === "/health") {
+          sendJson(res, 200, { status: "ok" });
+          return;
+        }
 
-      if (req.method === "GET" && url.pathname === "/v1/models") {
-        sendJson(res, 200, {
-          object: "list",
-          data: [
-            {
-              object: "model",
-              id: `${config.bridgeModel}:${config.bridgeReasoning}`,
-              label: `${config.bridgeModel} (${config.bridgeReasoning})`,
+        if (req.method === "GET" && url.pathname === "/v1/models") {
+          sendJson(res, 200, {
+            object: "list",
+            data: [
+              {
+                object: "model",
+                id: `${config.bridgeModel}:${config.bridgeReasoning}`,
+                label: `${config.bridgeModel} (${config.bridgeReasoning})`,
+              },
+            ],
+            defaults: {
+              model: `${config.bridgeModel}:${config.bridgeReasoning}`,
             },
-          ],
-          defaults: {
-            model: `${config.bridgeModel}:${config.bridgeReasoning}`,
+          });
+          return;
+        }
+
+        if (req.method === "POST" && url.pathname === "/v1/chat/completions") {
+          await handleChatCompletions(req, res, config);
+          return;
+        }
+
+        sendJson(res, 404, {
+          error: {
+            message: "Not found.",
+            type: "not_found",
           },
         });
-        return;
+      } catch (error) {
+        sendJson(res, 500, {
+          error: {
+            message: error instanceof Error ? error.message : String(error),
+            type: "internal_server_error",
+          },
+        });
       }
-
-      if (req.method === "POST" && url.pathname === "/v1/chat/completions") {
-        await handleChatCompletions(req, res, config);
-        return;
-      }
-
-      sendJson(res, 404, {
-        error: {
-          message: "Not found.",
-          type: "not_found",
-        },
-      });
-    } catch (error) {
-      sendJson(res, 500, {
-        error: {
-          message: error instanceof Error ? error.message : String(error),
-          type: "internal_server_error",
-        },
-      });
-    }
+    })();
   });
 
   await new Promise<void>((resolve, reject) => {
