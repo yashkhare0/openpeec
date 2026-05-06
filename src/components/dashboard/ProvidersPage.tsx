@@ -327,19 +327,25 @@ export function ProvidersPage({
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <Label htmlFor={activeSwitchId} className="sr-only">
-                            {provider.active ? "Pause" : "Enable"}{" "}
-                            {provider.name}
-                          </Label>
-                          <Switch
-                            id={activeSwitchId}
-                            checked={provider.active}
-                            disabled={!canToggleActive}
-                            aria-label={`${provider.active ? "Pause" : "Enable"} ${provider.name}`}
-                            onCheckedChange={(checked) =>
-                              void toggleActive(provider, checked)
-                            }
-                          />
+                          {canToggleActive ? (
+                            <>
+                              <Label
+                                htmlFor={activeSwitchId}
+                                className="sr-only"
+                              >
+                                {provider.active ? "Pause" : "Enable"}{" "}
+                                {provider.name}
+                              </Label>
+                              <Switch
+                                id={activeSwitchId}
+                                checked={provider.active}
+                                aria-label={`${provider.active ? "Pause" : "Enable"} ${provider.name}`}
+                                onCheckedChange={(checked) =>
+                                  void toggleActive(provider, checked)
+                                }
+                              />
+                            </>
+                          ) : null}
                           <div className="min-w-0">
                             <TooltipLabel
                               tooltip={!runnable ? "Runner pending" : undefined}

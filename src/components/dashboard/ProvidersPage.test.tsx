@@ -67,6 +67,7 @@ describe("ProvidersPage", () => {
     expect(screen.queryByText("Deep link")).toBeNull();
     expect(screen.queryByText("Runner pending")).toBeNull();
     expect(screen.queryByText("Not supported")).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Enable Claude" })).toBeNull();
 
     const unavailable = screen.getByText("Unavailable");
     await user.hover(unavailable);
