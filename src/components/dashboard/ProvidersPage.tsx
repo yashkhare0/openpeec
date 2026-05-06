@@ -42,7 +42,11 @@ type ProviderRow = {
   active: boolean;
 };
 
-const RUNNABLE_PROVIDER_SLUGS = new Set(["openai", "google-ai-mode"]);
+const RUNNABLE_PROVIDER_SLUGS = new Set([
+  "openai",
+  "google-ai-mode",
+  "mistral",
+]);
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
