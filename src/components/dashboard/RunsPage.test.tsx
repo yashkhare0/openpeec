@@ -58,7 +58,9 @@ function renderRunsPage(props: Partial<ComponentProps<typeof RunsPage>> = {}) {
 }
 
 describe("RunsPage", () => {
-  it("shows one compact provider status summary on grouped runs", () => {
+  it("shows one compact provider status summary on grouped runs", async () => {
+    const user = userEvent.setup();
+
     renderRunsPage({
       groups: [
         {
@@ -80,13 +82,32 @@ describe("RunsPage", () => {
       ],
     });
 
-    expect(
-      screen.getByRole("button", { name: /open google ai mode run/i })
-    ).toBeTruthy();
+    const providerButton = screen.getByRole("button", {
+      name: /open google ai mode run/i,
+    });
+    expect(providerButton).toBeTruthy();
     expect(screen.getByText("1 Blocked")).toBeTruthy();
     expect(screen.queryByText("OpenAI Success")).toBeNull();
     expect(screen.queryByText("Google AI Mode Blocked")).toBeNull();
     expect(screen.queryByText("OpenAI · Camoufox")).toBeNull();
+
+    await user.hover(providerButton);
+
+    const detailLists = await screen.findAllByRole("list", {
+      name: "Provider run details",
+    });
+    const details = detailLists[0]!;
+
+    expect(details).toBeTruthy();
+    expect(within(details).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(details).getByText("OpenAI")).toBeTruthy();
+    expect(within(details).getByText("Google AI Mode")).toBeTruthy();
+    expect(
+      within(details).getByText(
+        "ChatGPT web · Camoufox · Stored session · 1.2s"
+      )
+    ).toBeTruthy();
+    expect(within(details).getByText("3 sources · 3 citations")).toBeTruthy();
   });
 
   it("keeps prompt details under the Prompt column and providers under Providers", () => {

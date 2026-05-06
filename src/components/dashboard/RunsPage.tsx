@@ -24,6 +24,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
+import {
   Table,
   TableBody,
   TableCell,
@@ -362,7 +371,7 @@ function ProviderSummary({
           side="bottom"
           align="start"
           sideOffset={6}
-          className="max-w-none"
+          className="w-80 max-w-none p-2"
         >
           <ProviderStatusList providers={group.providers} />
         </TooltipContent>
@@ -381,25 +390,50 @@ function getPrimaryProviderRun(providers: ProviderRun[], status: string) {
 
 function ProviderStatusList({ providers }: { providers: ProviderRun[] }) {
   return (
-    <div className="flex min-w-64 flex-col gap-2 text-left">
+    <ItemGroup
+      role="list"
+      aria-label="Provider run details"
+      className="min-w-0 gap-1 text-left"
+    >
       {providers.map((run) => (
-        <div key={String(run.runId)} className="flex min-w-0 flex-col gap-0.5">
-          <div className="flex min-w-0 items-center justify-between gap-3">
-            <span className="flex min-w-0 items-center gap-1.5">
-              <ProviderStatusIcon status={run.status} />
-              <span className="truncate">{run.providerName}</span>
-            </span>
-            <span className="text-background/70 shrink-0">
-              {formatProviderStatus(run.status)}
-            </span>
-          </div>
-          <span className="text-background/70 truncate pl-5">
-            {formatBrowserEngine(resolveBrowserEngine(run))} ·{" "}
-            {formatDuration(getRuntimeMs(run))}
-          </span>
-        </div>
+        <Item
+          key={String(run.runId)}
+          role="listitem"
+          size="xs"
+          className="text-background flex-nowrap items-start border-transparent px-2 py-2"
+        >
+          <ItemMedia variant="icon" className="text-background/80">
+            <ProviderStatusIcon status={run.status} className="size-4" />
+          </ItemMedia>
+          <ItemContent className="min-w-0">
+            <ItemTitle className="text-background w-full text-xs">
+              {run.providerName}
+            </ItemTitle>
+            <ItemDescription className="text-background/70 line-clamp-1 text-[11px]">
+              {formatProviderRunMeta(run)}
+            </ItemDescription>
+            <ProviderRunStats run={run} />
+          </ItemContent>
+          <ItemActions className="text-background/70 self-start text-[11px] font-medium">
+            {formatProviderStatus(run.status)}
+          </ItemActions>
+        </Item>
       ))}
-    </div>
+    </ItemGroup>
+  );
+}
+
+function ProviderRunStats({ run }: { run: ProviderRun }) {
+  const stats = formatProviderRunStats(run);
+
+  if (!stats) {
+    return null;
+  }
+
+  return (
+    <ItemDescription className="text-background/60 line-clamp-1 text-[11px]">
+      {stats}
+    </ItemDescription>
   );
 }
 
@@ -587,6 +621,33 @@ function formatSessionMode(mode: ProviderRun["sessionMode"]) {
     return "Guest session";
   }
   return "Unknown session";
+}
+
+function formatProviderRunMeta(run: ProviderRun) {
+  const engine = resolveBrowserEngine(run);
+  const runtime = formatDuration(getRuntimeMs(run));
+  const details = [
+    run.channelName,
+    engine ? formatBrowserEngine(engine) : undefined,
+    run.sessionMode ? formatSessionMode(run.sessionMode) : undefined,
+    runtime === "-" ? undefined : runtime,
+  ].filter(Boolean);
+
+  return details.length > 0 ? details.join(" · ") : "Run details unavailable";
+}
+
+function formatProviderRunStats(run: ProviderRun) {
+  const stats = [
+    typeof run.sourceCount === "number"
+      ? countLabel(run.sourceCount, "source", "sources")
+      : undefined,
+    countLabel(run.citationCount, "citation", "citations"),
+    run.warnings?.length
+      ? countLabel(run.warnings.length, "warning", "warnings")
+      : undefined,
+  ].filter(Boolean);
+
+  return stats.join(" · ");
 }
 
 function summarizeProviderStatuses(providers: ProviderRun[]): {
