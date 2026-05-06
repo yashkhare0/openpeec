@@ -53,7 +53,11 @@ type PatchObject = Record<string, unknown>;
 type BrowserEngine = "playwright" | "camoufox" | "nodriver";
 
 const crons = new Crons(components.crons);
-const RUNNABLE_PROVIDER_SLUGS = new Set(["openai", "google-ai-mode"]);
+const RUNNABLE_PROVIDER_SLUGS = new Set([
+  "openai",
+  "google-ai-mode",
+  "mistral",
+]);
 
 const DEFAULT_PROVIDER_DEFINITIONS = [
   {
