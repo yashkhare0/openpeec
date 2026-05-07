@@ -190,6 +190,17 @@ export default defineConfig({
   },
   server: {
     port: 5999,
+    fs: {
+      // When running the dev server from a `.claude/worktrees/<branch>/`
+      // checkout, the worktree's node_modules is symlinked to the parent
+      // project's hoisted store; Vite's default fs.allow scopes serving to
+      // the worktree alone and rejects fontsource/woff2 fetches. Widen the
+      // allow-list to the project root only in that case so production
+      // builds and main-checkout dev runs keep the default tight scoping.
+      allow: __dirname.includes("/.claude/worktrees/")
+        ? [path.resolve(__dirname, "..", "..", "..")]
+        : [path.resolve(__dirname)],
+    },
     watch: {
       ignored: [
         "**/e2e/**",
