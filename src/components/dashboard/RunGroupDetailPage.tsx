@@ -1,12 +1,22 @@
 import { useState, type KeyboardEvent } from "react";
-import { AlertTriangleIcon, ArrowUpRightIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  ArrowUpRightIcon,
+  ChevronDownIcon,
+} from "lucide-react";
 import { Cell, Pie, PieChart } from "recharts";
 import type { Id } from "../../../convex/_generated/dataModel";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   ChartContainer,
   ChartTooltip,
@@ -22,10 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import {
-  clickableTableRowClassName,
-  InfoTooltip,
-} from "./components/InfoTooltip";
+import { clickableTableRowClassName } from "./components/InfoTooltip";
 import { InlineEmpty } from "./components/EmptyState";
 import { DashboardCardSkeleton } from "./components/LoadingState";
 
@@ -272,17 +279,21 @@ function ProviderComparison({
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <CardTitle>Provider comparison</CardTitle>
-          <InfoTooltip label="Provider comparison sources">
-            <SourceComparisonTooltip
-              runs={runs}
-              promptId={promptId}
-              promptTitle={promptTitle}
-              onOpenSourcesForPrompt={onOpenSourcesForPrompt}
-            />
-          </InfoTooltip>
-        </div>
+        <CardTitle>Provider comparison</CardTitle>
+        {onOpenSourcesForPrompt ? (
+          <CardAction>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label="Open sources for this prompt"
+              onClick={() => onOpenSourcesForPrompt(promptId, promptTitle)}
+            >
+              Open sources
+              <ArrowUpRightIcon data-icon="inline-end" />
+            </Button>
+          </CardAction>
+        ) : null}
       </CardHeader>
       <CardContent>
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.8fr)]">
@@ -396,6 +407,20 @@ function ProviderResponseTabs({
     <Card>
       <CardHeader>
         <CardTitle>Provider responses</CardTitle>
+        {selectedRun && onOpenRun ? (
+          <CardAction>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label={`Open ${selectedRun.providerName} response`}
+              onClick={() => onOpenRun(selectedRun._id)}
+            >
+              Open response
+              <ArrowUpRightIcon data-icon="inline-end" />
+            </Button>
+          </CardAction>
+        ) : null}
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <Tabs
@@ -403,20 +428,14 @@ function ProviderResponseTabs({
           onValueChange={(value) => onSelectRun(value as Id<"promptRuns">)}
           className="flex flex-col gap-4"
         >
-          <TabsList
-            variant="line"
-            className="w-full justify-start overflow-x-auto"
-          >
+          <TabsList className="bg-muted/40 max-w-full justify-start overflow-x-auto border">
             {runs.map((run) => (
               <TabsTrigger
                 key={String(run._id)}
                 value={String(run._id)}
-                className="max-w-[220px] justify-start"
+                className="text-muted-foreground data-[state=active]:ring-border max-w-[220px] min-w-28 flex-none px-3 data-[state=active]:font-semibold data-[state=active]:ring-1"
               >
                 <span className="truncate">{run.providerName}</span>
-                <Badge variant="outline" className={statusTone(run.status)}>
-                  {titleCase(run.status)}
-                </Badge>
               </TabsTrigger>
             ))}
           </TabsList>
@@ -427,7 +446,7 @@ function ProviderResponseTabs({
               value={String(run._id)}
               className="mt-4"
             >
-              <ProviderResponsePanel run={run} onOpenRun={onOpenRun} />
+              <ProviderResponsePanel run={run} />
             </TabsContent>
           ))}
         </Tabs>
@@ -436,39 +455,10 @@ function ProviderResponseTabs({
   );
 }
 
-function ProviderResponsePanel({
-  run,
-  onOpenRun,
-}: {
-  run: ProviderRun;
-  onOpenRun?: (runId: Id<"promptRuns">) => void;
-}) {
-  const sourceCount = run.sourceCount ?? run.citations.length;
-
+function ProviderResponsePanel({ run }: { run: ProviderRun }) {
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Badge variant="outline" className={statusTone(run.status)}>
-          {titleCase(run.status)}
-        </Badge>
-        <Badge variant="outline">{formatRuntime(run)}</Badge>
-        <Badge variant="outline">{sourceCount} sources</Badge>
-      </div>
-
       <ResponseTextPanel run={run} />
-
-      {onOpenRun ? (
-        <div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onOpenRun(run._id)}
-          >
-            Open response
-            <ArrowUpRightIcon data-icon="inline-end" />
-          </Button>
-        </div>
-      ) : null}
 
       <ProviderSources run={run} />
 
@@ -504,6 +494,7 @@ function ProviderResponsePanel({
 }
 
 function ResponseTextPanel({ run }: { run: ProviderRun }) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const content = run.responseText?.trim() || run.responseSummary?.trim();
 
   if (!content) {
@@ -548,17 +539,30 @@ function ResponseTextPanel({ run }: { run: ProviderRun }) {
     <section className="flex flex-col gap-2">
       <p className="text-sm font-medium">Answer</p>
       <div className="bg-muted/20 rounded-md border p-3">
-        <p className="line-clamp-8 text-sm leading-6 whitespace-pre-wrap">
+        <p
+          className={cn(
+            "text-sm leading-6 whitespace-pre-wrap",
+            !isExpanded && "line-clamp-8"
+          )}
+        >
           {content}
         </p>
-        <details className="mt-3 border-t pt-3">
-          <summary className="text-muted-foreground cursor-pointer text-xs font-medium">
-            Show full answer
-          </summary>
-          <div className="mt-3 max-h-[28rem] overflow-y-auto pr-2">
-            <p className="text-sm leading-6 whitespace-pre-wrap">{content}</p>
-          </div>
-        </details>
+        <div className="mt-3 border-t pt-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground h-7 px-0 hover:bg-transparent"
+            aria-expanded={isExpanded}
+            onClick={() => setIsExpanded((value) => !value)}
+          >
+            <ChevronDownIcon
+              data-icon="inline-start"
+              className={cn("transition-transform", isExpanded && "rotate-180")}
+            />
+            {isExpanded ? "Show less" : "Show full answer"}
+          </Button>
+        </div>
       </div>
     </section>
   );
@@ -694,63 +698,6 @@ function ComparisonPie({
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-function SourceComparisonTooltip({
-  runs,
-  promptId,
-  promptTitle,
-  onOpenSourcesForPrompt,
-}: {
-  runs: ProviderRun[];
-  promptId: Id<"prompts">;
-  promptTitle: string;
-  onOpenSourcesForPrompt?: (
-    promptId: Id<"prompts">,
-    promptExcerpt: string
-  ) => void;
-}) {
-  const rows = runs.map((run) => ({
-    providerName: run.providerName,
-    domains: Array.from(
-      new Set(run.citations.map(getCitationDomain).filter(Boolean))
-    ),
-  }));
-  const totalDomains = new Set(rows.flatMap((row) => row.domains));
-
-  return (
-    <div className="flex max-w-80 flex-col gap-2">
-      <p>Source domains captured by each provider in this prompt run group.</p>
-      {totalDomains.size ? (
-        <div className="flex flex-col gap-1.5">
-          {rows.map((row) => (
-            <div key={row.providerName} className="text-xs">
-              <span className="font-medium">{row.providerName}: </span>
-              <span className="text-muted-foreground">
-                {row.domains.length ? row.domains.join(", ") : "No sources"}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-muted-foreground text-xs">
-          No provider captured sources for this prompt yet.
-        </p>
-      )}
-      {onOpenSourcesForPrompt ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="mt-1 w-fit"
-          onClick={() => onOpenSourcesForPrompt(promptId, promptTitle)}
-        >
-          Open filtered sources
-          <ArrowUpRightIcon data-icon="inline-end" />
-        </Button>
-      ) : null}
     </div>
   );
 }

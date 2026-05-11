@@ -15,6 +15,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import { InlineEmpty } from "./components/EmptyState";
 import { InfoTooltip } from "./components/InfoTooltip";
 import { DashboardTableCardSkeleton } from "./components/LoadingState";
@@ -49,10 +55,6 @@ function errorMessage(error: unknown): string {
 
 function sessionModeLabel(mode: SessionMode | undefined) {
   return mode === "stored" ? "Stored" : "Guest";
-}
-
-function channelDetail(provider: ProviderRow) {
-  return provider.channelSlug ?? "Browser";
 }
 
 function profileStatus(
@@ -102,6 +104,38 @@ function readinessStatus(provider: ProviderRow, runnable: boolean) {
 function providerStateLabel(provider: ProviderRow, runnable: boolean) {
   if (provider.active) return "Active";
   return runnable ? "Paused" : "Unavailable";
+}
+
+function TooltipLabel({
+  children,
+  tooltip,
+  className,
+}: {
+  children: string;
+  tooltip?: string;
+  className?: string;
+}) {
+  const label = <span className={className}>{children}</span>;
+
+  if (!tooltip) return label;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={`${children}: ${tooltip}`}
+          className={cn(
+            "focus-visible:border-ring focus-visible:ring-ring/50 inline-flex w-fit cursor-help rounded-sm border-0 bg-transparent p-0 text-left outline-none focus-visible:ring-3",
+            className
+          )}
+        >
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 async function openLocalSessionWindow(providerSlug: string) {
@@ -284,9 +318,7 @@ export function ProvidersPage({
                   const readiness = readinessStatus(provider, runnable);
                   const stateLabel = providerStateLabel(provider, runnable);
                   const activeSwitchId = `provider-active-${provider.slug}`;
-                  const activeDetailId = `${activeSwitchId}-detail`;
                   const sessionSwitchId = `stored-session-${provider.slug}`;
-                  const sessionDetailId = `${sessionSwitchId}-detail`;
 
                   return (
                     <TableRow key={String(provider._id)}>
@@ -295,32 +327,32 @@ export function ProvidersPage({
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <Label htmlFor={activeSwitchId} className="sr-only">
-                            {provider.active ? "Pause" : "Enable"}{" "}
-                            {provider.name}
-                          </Label>
-                          <Switch
-                            id={activeSwitchId}
-                            checked={provider.active}
-                            disabled={!canToggleActive}
-                            aria-describedby={
-                              !runnable ? activeDetailId : undefined
-                            }
-                            aria-label={`${provider.active ? "Pause" : "Enable"} ${provider.name}`}
-                            onCheckedChange={(checked) =>
-                              void toggleActive(provider, checked)
-                            }
-                          />
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium">{stateLabel}</p>
-                            {!runnable ? (
-                              <p
-                                id={activeDetailId}
-                                className="text-muted-foreground truncate text-xs"
+                          {canToggleActive ? (
+                            <>
+                              <Label
+                                htmlFor={activeSwitchId}
+                                className="sr-only"
                               >
-                                Runner pending
-                              </p>
-                            ) : null}
+                                {provider.active ? "Pause" : "Enable"}{" "}
+                                {provider.name}
+                              </Label>
+                              <Switch
+                                id={activeSwitchId}
+                                checked={provider.active}
+                                aria-label={`${provider.active ? "Pause" : "Enable"} ${provider.name}`}
+                                onCheckedChange={(checked) =>
+                                  void toggleActive(provider, checked)
+                                }
+                              />
+                            </>
+                          ) : null}
+                          <div className="min-w-0">
+                            <TooltipLabel
+                              tooltip={!runnable ? "Runner pending" : undefined}
+                              className="text-sm font-medium"
+                            >
+                              {stateLabel}
+                            </TooltipLabel>
                           </div>
                         </div>
                       </TableCell>
@@ -328,9 +360,6 @@ export function ProvidersPage({
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium">
                             {provider.channelName ?? "Browser UI"}
-                          </p>
-                          <p className="text-muted-foreground truncate text-xs">
-                            {channelDetail(provider)}
                           </p>
                         </div>
                       </TableCell>
@@ -343,28 +372,22 @@ export function ProvidersPage({
                             id={sessionSwitchId}
                             checked={sessionMode === "stored"}
                             disabled={!supportsStoredSession}
-                            aria-describedby={
-                              !supportsStoredSession
-                                ? sessionDetailId
-                                : undefined
-                            }
                             aria-label={`Use stored session for ${provider.name}`}
                             onCheckedChange={(checked) =>
                               void toggleStoredSession(provider, checked)
                             }
                           />
                           <div className="min-w-0">
-                            <p className="text-sm font-medium">
+                            <TooltipLabel
+                              tooltip={
+                                !supportsStoredSession
+                                  ? "Not supported"
+                                  : undefined
+                              }
+                              className="text-sm font-medium"
+                            >
                               {sessionModeLabel(sessionMode)}
-                            </p>
-                            {!supportsStoredSession ? (
-                              <p
-                                id={sessionDetailId}
-                                className="text-muted-foreground truncate text-xs"
-                              >
-                                Not supported
-                              </p>
-                            ) : null}
+                            </TooltipLabel>
                           </div>
                         </div>
                       </TableCell>
@@ -381,13 +404,21 @@ export function ProvidersPage({
                         </div>
                       </TableCell>
                       <TableCell className="whitespace-normal">
-                        <div className="flex flex-col gap-1">
-                          <Badge variant={readiness.variant}>
-                            {readiness.label}
-                          </Badge>
-                          <p className="text-muted-foreground truncate text-xs">
-                            {readiness.detail}
-                          </p>
+                        <div className="flex">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                aria-label={`${readiness.label}: ${readiness.detail}`}
+                                className="focus-visible:border-ring focus-visible:ring-ring/50 inline-flex cursor-help rounded-4xl border-0 bg-transparent p-0 outline-none focus-visible:ring-3"
+                              >
+                                <Badge variant={readiness.variant}>
+                                  {readiness.label}
+                                </Badge>
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent>{readiness.detail}</TooltipContent>
+                          </Tooltip>
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
@@ -397,11 +428,6 @@ export function ProvidersPage({
                             size="sm"
                             variant="outline"
                             disabled={!supportsStoredSession}
-                            aria-describedby={
-                              !supportsStoredSession
-                                ? sessionDetailId
-                                : undefined
-                            }
                             onClick={() => void openSession(provider)}
                           >
                             <KeyRound data-icon="inline-start" />

@@ -1,0 +1,223 @@
+import fs from "node:fs";
+import fsp from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { serveLocalCodexBridge } from "./local-codex-bridge-server";
+
+export interface LocalCodexBridgeConfig {
+  bridgeDir: string;
+  bridgeRepoUrl: string;
+  bridgePort: string;
+  bridgeApiKey: string;
+  bridgeModel: string;
+  bridgeReasoning: string;
+  appRoot: string;
+  codexHome: string;
+  codexAuthPath: string;
+}
+
+interface CodexModelCacheFile {
+  models?: Array<{
+    slug?: string;
+    priority?: number;
+    supported_in_api?: boolean;
+    visibility?: string;
+  }>;
+}
+
+const DEFAULT_CODEX_BRIDGE_MODEL = "gpt-5.5";
+const PREFERRED_CODEX_BRIDGE_MODELS = [
+  "gpt-5.5",
+  "gpt-5.4",
+  "gpt-5.3-codex",
+  "gpt-5.4-mini",
+  "gpt-5.2",
+];
+
+function prefersShell() {
+  return process.platform === "win32";
+}
+
+function runCommand(command: string, args: string[], cwd?: string) {
+  const result = spawnSync(command, args, {
+    cwd,
+    stdio: "inherit",
+    shell: prefersShell(),
+  });
+
+  if (result.status !== 0) {
+    throw new Error(`Command failed: ${command} ${args.join(" ")}`);
+  }
+}
+
+function formatEnvValue(value: string) {
+  return value.includes(" ") ? `"${value.replace(/"/g, '\\"')}"` : value;
+}
+
+function readCodexConfigModel(codexHome: string): string | null {
+  const configPath = path.join(codexHome, "config.toml");
+
+  try {
+    const content = fs.readFileSync(configPath, "utf8");
+    const match = content.match(/^\s*model\s*=\s*["']([^"']+)["']/m);
+    return match?.[1]?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function readInstalledCodexModels(codexHome: string): string[] {
+  const cachePath = path.join(codexHome, "models_cache.json");
+
+  try {
+    const payload = JSON.parse(
+      fs.readFileSync(cachePath, "utf8")
+    ) as CodexModelCacheFile;
+    return (
+      payload.models
+        ?.filter(
+          (model) =>
+            Boolean(model.slug) &&
+            model.supported_in_api !== false &&
+            model.visibility !== "hidden"
+        )
+        .sort((left, right) => (right.priority ?? 0) - (left.priority ?? 0))
+        .map((model) => model.slug as string) ?? []
+    );
+  } catch {
+    return [];
+  }
+}
+
+function resolveDefaultBridgeModel(codexHome: string): string {
+  const configuredModel = readCodexConfigModel(codexHome);
+  const installedModels = readInstalledCodexModels(codexHome);
+
+  if (
+    configuredModel &&
+    (installedModels.length === 0 || installedModels.includes(configuredModel))
+  ) {
+    return configuredModel;
+  }
+
+  return (
+    PREFERRED_CODEX_BRIDGE_MODELS.find((model) =>
+      installedModels.includes(model)
+    ) ??
+    installedModels[0] ??
+    configuredModel ??
+    DEFAULT_CODEX_BRIDGE_MODEL
+  );
+}
+
+export function getLocalCodexBridgeConfig(
+  appRoot = process.cwd()
+): LocalCodexBridgeConfig {
+  const codexHome = path.join(os.homedir(), ".codex");
+
+  return {
+    bridgeDir: path.join(appRoot, ".codex-temp", "CodexBridge"),
+    bridgeRepoUrl: "https://github.com/begonia599/CodexBridge.git",
+    bridgePort: process.env.CODEX_BRIDGE_PORT?.trim() || "8081",
+    bridgeApiKey: process.env.CODEX_BRIDGE_API_KEY?.trim() || "change-me",
+    bridgeModel:
+      process.env.CODEX_BRIDGE_MODEL?.trim() ||
+      resolveDefaultBridgeModel(codexHome),
+    bridgeReasoning: process.env.CODEX_BRIDGE_REASONING?.trim() || "medium",
+    appRoot,
+    codexHome,
+    codexAuthPath: path.join(codexHome, "auth.json"),
+  };
+}
+
+export async function ensureCodexBridgePrerequisites(
+  config: LocalCodexBridgeConfig
+) {
+  const codexVersion = spawnSync("codex", ["--version"], {
+    encoding: "utf8",
+    shell: prefersShell(),
+  });
+
+  if (codexVersion.status !== 0) {
+    throw new Error(
+      "Codex CLI is not available on PATH. Install it first, then sign in with your ChatGPT account."
+    );
+  }
+
+  try {
+    await fsp.access(config.codexAuthPath);
+  } catch {
+    throw new Error(
+      `Codex auth was not found at ${config.codexAuthPath}. Run \`codex\` on the host first to log in.`
+    );
+  }
+}
+
+export async function ensureLocalCodexBridgeCheckout(
+  config: LocalCodexBridgeConfig
+) {
+  const gitDir = path.join(config.bridgeDir, ".git");
+
+  try {
+    await fsp.access(gitDir);
+    runCommand("git", ["pull", "--ff-only"], config.bridgeDir);
+    return;
+  } catch {
+    await fsp.mkdir(path.dirname(config.bridgeDir), { recursive: true });
+  }
+
+  runCommand(
+    "git",
+    ["clone", "--depth", "1", config.bridgeRepoUrl, config.bridgeDir],
+    config.appRoot
+  );
+}
+
+export async function installLocalCodexBridge(config: LocalCodexBridgeConfig) {
+  runCommand("npm", ["install", "--no-fund", "--no-audit"], config.bridgeDir);
+}
+
+export async function writeLocalCodexBridgeEnv(config: LocalCodexBridgeConfig) {
+  const bridgeEnvPath = path.join(config.bridgeDir, ".env");
+  const normalizedWorkdir = config.appRoot.replace(/\\/g, "/");
+
+  const content = [
+    "# Generated by openpeec codex bridge setup",
+    `PORT=${config.bridgePort}`,
+    `CODEX_MODEL=${config.bridgeModel}`,
+    `CODEX_REASONING=${config.bridgeReasoning}`,
+    `CODEX_BRIDGE_API_KEY=${config.bridgeApiKey}`,
+    "CODEX_SKIP_GIT_CHECK=true",
+    "CODEX_SANDBOX_MODE=read-only",
+    `CODEX_WORKDIR=${formatEnvValue(normalizedWorkdir)}`,
+    "CODEX_NETWORK_ACCESS=false",
+    "CODEX_WEB_SEARCH=false",
+    "CODEX_APPROVAL_POLICY=never",
+    "CODEX_LOG_REQUESTS=false",
+    "CODEX_REQUIRE_SESSION_ID=false",
+    "",
+  ].join("\n");
+
+  await fsp.writeFile(bridgeEnvPath, content, "utf8");
+}
+
+export function getRecommendedCodexAppEnv(config: LocalCodexBridgeConfig) {
+  return {
+    AI_BASE_URL: `http://127.0.0.1:${config.bridgePort}/v1`,
+    DOCKER_AI_BASE_URL: `http://host.docker.internal:${config.bridgePort}/v1`,
+    AI_API_KEY: config.bridgeApiKey,
+    AI_MODEL: `${config.bridgeModel}:${config.bridgeReasoning}`,
+    AI_TRANSPORT: "openai-compatible",
+  };
+}
+
+export async function setupLocalCodexBridge(config: LocalCodexBridgeConfig) {
+  await ensureCodexBridgePrerequisites(config);
+  await fsp.mkdir(path.dirname(config.bridgeDir), { recursive: true });
+}
+
+export async function startLocalCodexBridge(config: LocalCodexBridgeConfig) {
+  await setupLocalCodexBridge(config);
+  await serveLocalCodexBridge(config);
+}

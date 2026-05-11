@@ -95,9 +95,8 @@ function localProviderSessionApi(): Plugin {
   return {
     name: "local-provider-session-api",
     configureServer(server) {
-      server.middlewares.use(
-        "/local-provider-session/open",
-        async (req, res) => {
+      server.middlewares.use("/local-provider-session/open", (req, res) => {
+        void (async () => {
           if (req.method !== "POST") {
             sendJson(res, 405, { error: "Method not allowed" });
             return;
@@ -169,8 +168,8 @@ function localProviderSessionApi(): Plugin {
             profileDir: defaults.profileDir ?? null,
             url: defaults.url,
           });
-        }
-      );
+        })();
+      });
     },
   };
 }

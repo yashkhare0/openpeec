@@ -1,5 +1,10 @@
 import { useEffect, useRef } from "react";
-import { ArrowUpRightIcon, RefreshCcwIcon, XCircleIcon } from "lucide-react";
+import {
+  ArrowUpRightIcon,
+  RefreshCcwIcon,
+  Trash2Icon,
+  XCircleIcon,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -178,6 +183,7 @@ export function ResponseDetailPage({
   onOpenPrompt,
   onRetryRun,
   onCancelRun,
+  onDeleteRun,
 }: {
   loading?: boolean;
   runDetail:
@@ -237,6 +243,7 @@ export function ResponseDetailPage({
   onOpenPrompt?: () => void;
   onRetryRun?: (runId: Id<"promptRuns">) => void | Promise<void>;
   onCancelRun?: (runId: Id<"promptRuns">) => void | Promise<void>;
+  onDeleteRun?: (runId: Id<"promptRuns">) => void | Promise<void>;
 }) {
   if (loading) {
     return (
@@ -306,6 +313,7 @@ export function ResponseDetailPage({
   const runStatus = runDetail.run.status.toLowerCase();
   const isSuccessfulRun = runStatus === "success";
   const isRetryable = runStatus === "failed" || runStatus === "blocked";
+  const isQueuedRun = runStatus === "queued";
   const isCancelable = runStatus === "queued" || runStatus === "running";
   const runSummaryLabel = isSuccessfulRun ? "Response Summary" : "Run Summary";
   const responseText =
@@ -323,7 +331,8 @@ export function ResponseDetailPage({
   const hasRunActions =
     Boolean(onOpenPrompt) ||
     (isRetryable && Boolean(onRetryRun)) ||
-    (isCancelable && Boolean(onCancelRun));
+    (isCancelable && Boolean(onCancelRun)) ||
+    (isQueuedRun && Boolean(onDeleteRun));
   const noCitationMessage =
     runStatus === "blocked"
       ? "This run was blocked before ChatGPT produced a valid response, so no citations were recorded."
@@ -387,7 +396,19 @@ export function ResponseDetailPage({
                   }}
                 >
                   <XCircleIcon data-icon="inline-start" />
-                  Cancel run
+                  {isQueuedRun ? "Cancel queued run" : "Cancel run"}
+                </Button>
+              ) : null}
+              {isQueuedRun && onDeleteRun ? (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    void onDeleteRun(runDetail.run._id);
+                  }}
+                >
+                  <Trash2Icon data-icon="inline-start" />
+                  Delete run
                 </Button>
               ) : null}
             </div>

@@ -654,7 +654,7 @@ describe("extractGoogleAiModeResponse", () => {
         const previousDocument = globalThis.document;
         const previousWindow = globalThis.window;
         globalThis.document = dom.window.document;
-        globalThis.window = dom.window as typeof globalThis.window;
+        globalThis.window = dom.window;
         try {
           return fn(args);
         } finally {

@@ -34,7 +34,11 @@ if (typeof globalThis.ResizeObserver === "undefined") {
   });
 }
 
-if (typeof window !== "undefined") {
+if (
+  typeof window !== "undefined" &&
+  typeof HTMLElement !== "undefined" &&
+  HTMLElement.prototype
+) {
   Object.defineProperties(HTMLElement.prototype, {
     clientWidth: {
       configurable: true,

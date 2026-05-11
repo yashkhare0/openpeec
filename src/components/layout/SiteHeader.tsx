@@ -18,12 +18,14 @@ export function SiteHeader({
   searchValue,
   onSearchValue,
   searchPlaceholder = "Search...",
+  searchLabel = "Search",
   action,
   breadcrumbs,
 }: {
   searchValue?: string;
   onSearchValue?: (value: string) => void;
   searchPlaceholder?: string;
+  searchLabel?: string;
   action?: ReactNode;
   breadcrumbs?: Array<{ label: string; onClick?: () => void }>;
 }) {
@@ -60,7 +62,7 @@ export function SiteHeader({
     <header className="bg-background flex min-h-14 shrink-0 items-center gap-2 border-b px-4 py-2">
       <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <SidebarTrigger className="md:hidden shrink-0" />
+          <SidebarTrigger className="shrink-0 md:hidden" />
           <div className="min-w-0 flex-1">
             {breadcrumbs?.length ? (
               <Breadcrumb className="min-w-0">
@@ -148,7 +150,7 @@ export function SiteHeader({
                   onClick={openSearch}
                 >
                   <Search />
-                  <span className="sr-only">Search prompts</span>
+                  <span className="sr-only">{searchLabel}</span>
                 </Button>
               )}
             </div>

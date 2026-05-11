@@ -45,7 +45,7 @@ const pageItems: PageItem[] = [
 ];
 
 const navButtonClassName =
-  "h-9 rounded-lg border border-transparent px-3 text-sidebar-foreground/74 transition-colors hover:border-sidebar-border/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:border-sidebar-primary/30 data-[active=true]:bg-sidebar-primary/12 data-[active=true]:text-sidebar-primary data-[active=true]:shadow-none group-data-[collapsible=icon]:size-9! group-data-[collapsible=icon]:p-2!";
+  "h-9 justify-start rounded-lg border border-transparent px-3 text-sidebar-foreground/74 transition-colors hover:border-sidebar-border/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:border-sidebar-primary/30 data-[active=true]:bg-sidebar-primary/12 data-[active=true]:text-sidebar-primary data-[active=true]:shadow-none group-data-[collapsible=icon]:size-9! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0! group-data-[collapsible=icon]:[&>span]:hidden";
 
 function SidebarCollapseButton() {
   const { state, toggleSidebar, isMobile } = useSidebar();

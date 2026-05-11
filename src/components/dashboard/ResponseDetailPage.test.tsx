@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -97,6 +98,20 @@ const successfulRunDetail = {
   ],
 };
 
+const queuedRunDetail = {
+  ...successfulRunDetail,
+  run: {
+    ...successfulRunDetail.run,
+    _id: "run_queued" as Id<"promptRuns">,
+    status: "queued",
+    finishedAt: undefined,
+    latencyMs: undefined,
+    responseText: undefined,
+    responseSummary: undefined,
+  },
+  citations: [],
+};
+
 describe("ResponseDetailPage", () => {
   it("keeps blocked provider runs focused on status, summary, and evidence", () => {
     renderResponseDetail(
@@ -140,6 +155,28 @@ describe("ResponseDetailPage", () => {
       "https://docs.example.com/ai-visibility"
     );
     expect(screen.getByText("Response screenshot")).toBeTruthy();
+  });
+
+  it("allows queued runs to be cancelled or deleted", async () => {
+    const user = userEvent.setup();
+    const onCancelRun = vi.fn();
+    const onDeleteRun = vi.fn();
+
+    renderResponseDetail(
+      <ResponseDetailPage
+        runDetail={queuedRunDetail}
+        onCancelRun={onCancelRun}
+        onDeleteRun={onDeleteRun}
+      />
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /cancel queued run/i })
+    );
+    expect(onCancelRun).toHaveBeenCalledWith("run_queued");
+
+    await user.click(screen.getByRole("button", { name: /delete run/i }));
+    expect(onDeleteRun).toHaveBeenCalledWith("run_queued");
   });
 });
 
