@@ -1,6 +1,5 @@
 import { useMemo, type ComponentProps, type ReactNode } from "react";
 import {
-  ArrowUpRight,
   Ban,
   CheckCircle2,
   CircleAlert,
@@ -14,7 +13,6 @@ import {
 import type { Id } from "../../../convex/_generated/dataModel";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,22 +31,12 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { InlineEmpty } from "./components/EmptyState";
-import { clickableTableRowClassName } from "./components/InfoTooltip";
-import { DashboardTableCardSkeleton } from "./components/LoadingState";
 
 type BrowserEngine = "playwright" | "camoufox" | "nodriver";
 export type RunStatusFilterValue =
@@ -136,114 +124,364 @@ export function RunsPage({
     });
   }, [groups, searchValue, statusFilters]);
 
-  return (
-    <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="px-4 lg:px-6">
-        {loading ? (
-          <DashboardTableCardSkeleton titleWidth="w-16" rows={6} columns={6} />
-        ) : (
-          <Card>
-            <CardContent>
-              {filteredGroups.length === 0 ? (
-                <InlineEmpty text="No runs match the current filters." />
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Queued</TableHead>
-                      <TableHead>Prompt</TableHead>
-                      <TableHead>Providers</TableHead>
-                      <TableHead className="text-right">Runtime</TableHead>
-                      <TableHead className="text-right">
-                        Sources / citations
-                      </TableHead>
-                      <TableHead className="w-10">
-                        <span className="sr-only">Actions</span>
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredGroups.map((group) => {
-                      const visibleRunLabel = getVisibleRunLabel(group);
+  const totalRuns = filteredGroups.reduce(
+    (sum, group) => sum + group.providers.length,
+    0
+  );
+  const totalSources = filteredGroups.reduce(
+    (sum, group) => sum + group.sourceCount,
+    0
+  );
+  const failedRuns = filteredGroups.reduce(
+    (sum, group) =>
+      sum +
+      group.providers.filter((p) => p.status === "failed" || p.status === "blocked")
+        .length,
+    0
+  );
 
-                      return (
-                        <TableRow
-                          key={group.id}
-                          aria-label={`Open run group for ${group.promptExcerpt}`}
-                          className={cn(
-                            clickableTableRowClassName,
-                            selectedRunGroupId === group.id && "bg-muted/30"
-                          )}
-                          tabIndex={0}
-                          onClick={() => onOpenRunGroup(group.id)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              onOpenRunGroup(group.id);
-                            }
-                          }}
-                        >
-                          <TableCell>
-                            <div className="flex items-center gap-1">
-                              <span className="font-medium">
-                                {formatFreshness(group.queuedAt)}
-                              </span>
-                              <RunTimingTooltip group={group} />
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <button
-                              type="button"
-                              className="hover:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 rounded-sm text-left transition-colors outline-none focus-visible:ring-3"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                onOpenPrompt(group.promptId);
-                              }}
-                            >
-                              <p className="font-medium">
-                                {group.promptExcerpt}
-                              </p>
-                              {visibleRunLabel ? (
-                                <p className="text-muted-foreground mt-1 text-xs">
-                                  {visibleRunLabel}
-                                </p>
-                              ) : null}
-                            </button>
-                          </TableCell>
-                          <TableCell>
-                            <ProviderSummary
-                              group={group}
-                              onOpenRun={onOpenRun}
-                            />
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {formatGroupRuntime(group)}
-                          </TableCell>
-                          <TableCell
-                            className="text-right tabular-nums"
-                            aria-label={`${group.sourceCount} sources, ${group.citationCount} citations`}
-                          >
-                            {group.sourceCount} / {group.citationCount}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <QueuedRunActions
-                              group={group}
-                              onCancelRuns={onCancelRuns}
-                              onDeleteRuns={onDeleteRuns}
-                            />
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+  return (
+    <div className="flex flex-col gap-6 py-4 md:py-6">
+      <div className="space-y-6 px-4 lg:px-6">
+        <RunsPageHeader
+          loading={loading}
+          totalGroups={filteredGroups.length}
+          totalRuns={totalRuns}
+          totalSources={totalSources}
+          failedRuns={failedRuns}
+        />
+
+        {loading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div
+                key={index}
+                className="h-20 animate-pulse rounded-xl border border-border/60 bg-card/40"
+              />
+            ))}
+          </div>
+        ) : filteredGroups.length === 0 ? (
+          <article className="rounded-xl border border-border/70 bg-card/60 p-6">
+            <InlineEmpty text="No runs match the current filters." />
+          </article>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {filteredGroups.map((group) => (
+              <RunGroupStrip
+                key={group.id}
+                group={group}
+                selected={selectedRunGroupId === group.id}
+                onOpenRun={onOpenRun}
+                onOpenRunGroup={onOpenRunGroup}
+                onOpenPrompt={onOpenPrompt}
+                onCancelRuns={onCancelRuns}
+                onDeleteRuns={onDeleteRuns}
+              />
+            ))}
+          </ul>
         )}
       </div>
     </div>
   );
+}
+
+// -----------------------------------------------------------------------------
+// Editorial header — mono caps eyebrow, masthead headline, scan-at-a-glance stats
+// -----------------------------------------------------------------------------
+
+function RunsPageHeader({
+  loading,
+  totalGroups,
+  totalRuns,
+  totalSources,
+  failedRuns,
+}: {
+  loading: boolean;
+  totalGroups: number;
+  totalRuns: number;
+  totalSources: number;
+  failedRuns: number;
+}) {
+  return (
+    <header className="flex flex-col gap-4 border-b border-border/60 pb-5 sm:flex-row sm:items-end sm:justify-between">
+      <div className="space-y-2">
+        <p className="font-mono text-[10px] tracking-[0.32em] text-muted-foreground uppercase">
+          GEO Pulse / Runs
+        </p>
+        <h1 className="font-display text-4xl font-extrabold leading-[1.05] tracking-[-0.022em] text-foreground sm:text-[2.75rem]">
+          Every prompt, every provider, every run.
+        </h1>
+        <p className="text-muted-foreground text-sm max-w-xl">
+          One row per queued run group, with a status chip per provider. Click
+          a chip to see that provider&apos;s response, or the row to compare all
+          providers side-by-side.
+        </p>
+      </div>
+      <dl className="flex shrink-0 items-end gap-6 font-mono text-[11px] tracking-[0.18em] text-muted-foreground uppercase">
+        <RunsMetaStat label="Groups" value={totalGroups.toString()} loading={loading} />
+        <RunsMetaStat label="Runs" value={totalRuns.toString()} loading={loading} />
+        <RunsMetaStat label="Sources" value={totalSources.toString()} loading={loading} />
+        <RunsMetaStat
+          label="Failed"
+          value={failedRuns.toString()}
+          loading={loading}
+          tone={failedRuns > 0 ? "negative" : "neutral"}
+        />
+      </dl>
+    </header>
+  );
+}
+
+function RunsMetaStat({
+  label,
+  value,
+  loading,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  loading: boolean;
+  tone?: "neutral" | "negative";
+}) {
+  return (
+    <div className="text-right">
+      <dt>{label}</dt>
+      <dd
+        className={cn(
+          "font-display text-xl font-bold tabular-nums tracking-tight",
+          tone === "negative" ? "text-negative" : "text-foreground"
+        )}
+      >
+        {loading ? (
+          <span className="inline-block h-5 w-10 animate-pulse rounded-sm bg-muted/60" />
+        ) : (
+          value
+        )}
+      </dd>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Run-group strip — dense one-line-per-group with per-provider status chips
+// -----------------------------------------------------------------------------
+
+function RunGroupStrip({
+  group,
+  selected,
+  onOpenRun,
+  onOpenRunGroup,
+  onOpenPrompt,
+  onCancelRuns,
+  onDeleteRuns,
+}: {
+  group: RunGroupRow;
+  selected: boolean;
+  onOpenRun: (runId: Id<"promptRuns">) => void;
+  onOpenRunGroup: (runGroupId: string) => void;
+  onOpenPrompt: (promptId: Id<"prompts">) => void;
+  onCancelRuns: (runIds: Array<Id<"promptRuns">>) => Promise<void>;
+  onDeleteRuns: (runIds: Array<Id<"promptRuns">>) => Promise<void>;
+}) {
+  const visibleRunLabel = getVisibleRunLabel(group);
+  const summary = summarizeProviderStatuses(group.providers);
+  return (
+    <li>
+      <article
+        role="button"
+        tabIndex={0}
+        aria-label={`Open run group for ${group.promptExcerpt}`}
+        onClick={() => onOpenRunGroup(group.id)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onOpenRunGroup(group.id);
+          }
+        }}
+        className={cn(
+          "group flex cursor-pointer flex-col gap-3 rounded-xl border border-border/70 bg-card/60 px-4 py-4 transition-colors hover:border-foreground/20 hover:bg-foreground/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-row sm:items-center sm:gap-5 sm:py-3.5",
+          selected && "border-foreground/30 bg-foreground/[0.06]"
+        )}
+      >
+        {/* LEFT: timestamp + prompt */}
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <div className="flex items-center gap-2 font-mono text-[10px] tracking-[0.24em] text-muted-foreground uppercase">
+            <span>{formatFreshness(group.queuedAt)}</span>
+            <span className="text-muted-foreground/40">·</span>
+            <span>{group.providers.length} provider{group.providers.length === 1 ? "" : "s"}</span>
+            <RunTimingTooltip group={group} />
+          </div>
+          <button
+            type="button"
+            className="hover:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 rounded-sm text-left outline-none focus-visible:ring-3"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenPrompt(group.promptId);
+            }}
+          >
+            <p className="font-semibold text-sm text-foreground line-clamp-2">
+              {group.promptExcerpt}
+            </p>
+            {visibleRunLabel ? (
+              <p className="font-mono text-[10px] tracking-[0.2em] text-muted-foreground uppercase mt-1">
+                {visibleRunLabel}
+              </p>
+            ) : null}
+          </button>
+        </div>
+
+        {/* MIDDLE: per-provider status chips */}
+        <RowControl>
+          <ProviderStatusGrid providers={group.providers} onOpenRun={onOpenRun} />
+        </RowControl>
+
+        {/* RIGHT: tabular metrics + actions */}
+        <div className="flex shrink-0 items-center gap-5">
+          <MetricCell
+            label="Runtime"
+            value={formatGroupRuntime(group)}
+          />
+          <MetricCell
+            label="Src / cit"
+            value={`${group.sourceCount} / ${group.citationCount}`}
+          />
+          <RowControl>
+            <GroupStatusPill status={summary.status} />
+          </RowControl>
+          <RowControl>
+            <QueuedRunActions
+              group={group}
+              onCancelRuns={onCancelRuns}
+              onDeleteRuns={onDeleteRuns}
+            />
+          </RowControl>
+        </div>
+      </article>
+    </li>
+  );
+}
+
+function MetricCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="hidden text-right md:block">
+      <p className="font-mono text-[9px] tracking-[0.24em] text-muted-foreground uppercase">
+        {label}
+      </p>
+      <p className="font-display text-base font-bold tabular-nums tracking-tight text-foreground">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function ProviderStatusGrid({
+  providers,
+  onOpenRun,
+}: {
+  providers: ProviderRun[];
+  onOpenRun: (runId: Id<"promptRuns">) => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {providers.map((run) => (
+            <ProviderStatusChip
+              key={String(run.runId)}
+              run={run}
+              onOpenRun={onOpenRun}
+            />
+          ))}
+        </div>
+      </TooltipTrigger>
+      <TooltipContent
+        side="bottom"
+        align="start"
+        sideOffset={6}
+        className="w-80 max-w-none p-2"
+      >
+        <ProviderStatusList providers={providers} />
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function ProviderStatusChip({
+  run,
+  onOpenRun,
+}: {
+  run: ProviderRun;
+  onOpenRun: (runId: Id<"promptRuns">) => void;
+}) {
+  const tone = providerChipTone(run.status);
+  return (
+    <button
+      type="button"
+      aria-label={`Open ${run.providerName} run (${formatProviderStatus(run.status)})`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpenRun(run.runId);
+      }}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors hover:bg-foreground/5",
+        tone.className
+      )}
+    >
+      <ProviderStatusIcon status={run.status} className="size-3" />
+      <span className="font-semibold normal-case tracking-normal">
+        {shortProviderName(run.providerName)}
+      </span>
+    </button>
+  );
+}
+
+function GroupStatusPill({ status }: { status: string }) {
+  const tone = providerChipTone(status);
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em]",
+        tone.className
+      )}
+    >
+      {formatProviderStatus(status)}
+    </span>
+  );
+}
+
+function providerChipTone(status: string): { className: string } {
+  const normalized = status.toLowerCase();
+  if (normalized === "success") {
+    return {
+      className: "border-positive/40 text-positive bg-positive/10",
+    };
+  }
+  if (normalized === "failed" || normalized === "blocked") {
+    return {
+      className: "border-negative/40 text-negative bg-negative/10",
+    };
+  }
+  if (normalized === "running") {
+    return {
+      className: "border-primary/40 text-primary bg-primary/10",
+    };
+  }
+  if (normalized === "queued") {
+    return {
+      className: "border-highlight/50 text-highlight-foreground bg-highlight/15",
+    };
+  }
+  return {
+    className: "border-border/60 text-muted-foreground bg-muted/30",
+  };
+}
+
+function shortProviderName(name: string) {
+  const trimmed = name.trim();
+  // Aliases so the chip stays narrow inside the row.
+  if (trimmed === "Google AI Mode") return "Google AI";
+  if (trimmed === "Mistral Le Chat") return "Le Chat";
+  return trimmed;
 }
 
 function RunTimingTooltip({ group }: { group: RunGroupRow }) {
@@ -325,66 +563,6 @@ function TimingMetric({ label, value }: { label: string; value: string }) {
       <span className="text-muted-foreground text-[11px]">{label}</span>
       <span className="truncate text-xs font-medium tabular-nums">{value}</span>
     </div>
-  );
-}
-
-function ProviderSummary({
-  group,
-  onOpenRun,
-}: {
-  group: RunGroupRow;
-  onOpenRun: (runId: Id<"promptRuns">) => void;
-}) {
-  const summary = summarizeProviderStatuses(group.providers);
-  const primaryRun = getPrimaryProviderRun(group.providers, summary.status);
-
-  return (
-    <RowControl>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant={summary.variant}
-            size="sm"
-            disabled={!primaryRun}
-            aria-label={
-              primaryRun
-                ? `Open ${primaryRun.providerName} run`
-                : "No provider runs"
-            }
-            className="rounded-full"
-            onClick={() => {
-              if (primaryRun) {
-                onOpenRun(primaryRun.runId);
-              }
-            }}
-          >
-            <ProviderStatusIcon
-              status={summary.status}
-              data-icon="inline-start"
-            />
-            {summary.label}
-            {primaryRun ? <ArrowUpRight data-icon="inline-end" /> : null}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent
-          side="bottom"
-          align="start"
-          sideOffset={6}
-          className="w-80 max-w-none p-2"
-        >
-          <ProviderStatusList providers={group.providers} />
-        </TooltipContent>
-      </Tooltip>
-    </RowControl>
-  );
-}
-
-function getPrimaryProviderRun(providers: ProviderRun[], status: string) {
-  return (
-    providers.find((run) => run.status === status) ??
-    providers.find((run) => run.status === "success") ??
-    providers[0]
   );
 }
 
