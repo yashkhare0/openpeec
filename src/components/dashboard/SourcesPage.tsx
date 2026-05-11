@@ -1,10 +1,9 @@
 import type { Id } from "../../../convex/_generated/dataModel";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,21 +27,8 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { InlineEmpty } from "./components/EmptyState";
-import {
-  clickableTableRowClassName,
-  InfoTooltip,
-} from "./components/InfoTooltip";
-import { DashboardTableCardSkeleton } from "./components/LoadingState";
 
 type TrackedKind = "brand" | "competitor" | "product" | "feature" | "other";
 
@@ -350,189 +336,417 @@ export function SourcesPage({
       )
     : sources;
 
-  return (
-    <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="px-4 lg:px-6">
-        {loading ? (
-          <DashboardTableCardSkeleton titleWidth="w-20" rows={6} columns={6} />
-        ) : (
-          <Card>
-            <CardContent className="flex flex-col gap-3">
-              {promptFilter ? (
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <Badge variant="secondary" className="max-w-full">
-                    <span className="text-muted-foreground mr-1">Prompt</span>
-                    <span className="truncate">
-                      {promptFilter.promptExcerpt}
-                    </span>
-                  </Badge>
-                  {onPromptFilterClear ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={onPromptFilterClear}
-                    >
-                      Clear
-                    </Button>
-                  ) : null}
-                </div>
-              ) : null}
-              {visibleSources.length ? (
-                <Table className="min-w-[1160px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Domain</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          Used share
-                          <InfoTooltip label="Used share definition">
-                            Share of captured source citations attributed to
-                            this domain.
-                          </InfoTooltip>
-                        </div>
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          Responses
-                          <InfoTooltip label="Responses definition">
-                            Number of AI responses where this domain appeared as
-                            a source.
-                          </InfoTooltip>
-                        </div>
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          Avg quality
-                          <InfoTooltip label="Average quality definition">
-                            Mean source quality score for responses citing this
-                            domain.
-                          </InfoTooltip>
-                        </div>
-                      </TableHead>
-                      <TableHead>Most used by</TableHead>
-                      <TableHead>Latest response</TableHead>
-                      <TableHead>Last seen</TableHead>
-                      <TableHead className="text-right">Rank</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {visibleSources.map((source) => {
-                      const latestResponse = source.latestResponses?.[0];
-                      const mostUsedBy = getMostUsedProvider(
-                        source.latestResponses
-                      );
-                      const canOpenSource = onOpenSource !== undefined;
-                      const openSource = () => {
-                        if (!onOpenSource) return;
-                        onOpenSource(source.domain);
-                      };
+  const ownedSourceCount = visibleSources.filter(
+    (source) => source.ownedShare > 0
+  ).length;
+  const totalResponseCount = visibleSources.reduce(
+    (sum, source) => sum + source.responseCount,
+    0
+  );
+  const avgQuality = (() => {
+    const values = visibleSources
+      .map((source) => source.avgQualityScore)
+      .filter((value): value is number => typeof value === "number");
+    if (!values.length) return undefined;
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  })();
+  const typeMix = buildTypeMix(visibleSources);
 
-                      return (
-                        <TableRow
-                          key={source.domain}
-                          className={cn(
-                            canOpenSource && clickableTableRowClassName
-                          )}
-                          tabIndex={canOpenSource ? 0 : undefined}
-                          aria-label={
-                            canOpenSource
-                              ? `Open source details for ${source.domain}`
-                              : undefined
-                          }
-                          onClick={canOpenSource ? openSource : undefined}
-                          onKeyDown={
-                            canOpenSource
-                              ? (event) => {
-                                  if (
-                                    event.key === "Enter" ||
-                                    event.key === " "
-                                  ) {
-                                    event.preventDefault();
-                                    openSource();
-                                  }
-                                }
-                              : undefined
-                          }
-                        >
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <div className="bg-muted flex size-6 items-center justify-center rounded">
-                                <img
-                                  src={`https://www.google.com/s2/favicons?domain=${source.domain}&sz=32`}
-                                  alt=""
-                                  className="size-4 rounded-sm"
-                                  onError={(event) => {
-                                    (
-                                      event.target as HTMLImageElement
-                                    ).style.display = "none";
-                                  }}
-                                />
-                              </div>
-                              <span className="font-medium">
-                                {source.domain}
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">
-                              {titleCase(source.type)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {formatPercent(source.usedShare)}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {source.responseCount}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {source.avgQualityScore !== undefined
-                              ? Math.round(source.avgQualityScore)
-                              : "-"}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground text-sm">
-                            {mostUsedBy}
-                          </TableCell>
-                          <TableCell className="min-w-[280px] whitespace-normal">
-                            {latestResponse ? (
-                              <p className="line-clamp-2 text-sm font-medium">
-                                {latestResponse.promptExcerpt}
-                              </p>
-                            ) : (
-                              <p className="text-muted-foreground text-sm">
-                                No latest response
-                              </p>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
-                            {latestResponse
-                              ? formatFreshness(latestResponse.startedAt)
-                              : "-"}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {latestResponse
-                              ? `#${latestResponse.position}`
-                              : "-"}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              ) : (
-                <InlineEmpty
-                  text={
-                    promptFilter
-                      ? "No source analytics matched this prompt."
-                      : "No source analytics available yet."
-                  }
-                />
-              )}
-            </CardContent>
-          </Card>
+  return (
+    <div className="flex flex-col gap-6 py-4 md:py-6">
+      <div className="space-y-6 px-4 lg:px-6">
+        <SourcesPageHeader
+          loading={loading}
+          totalDomains={visibleSources.length}
+          ownedDomains={ownedSourceCount}
+          totalResponses={totalResponseCount}
+          avgQuality={avgQuality}
+        />
+
+        {promptFilter ? (
+          <div className="flex items-center gap-2 rounded-xl border border-highlight/40 bg-highlight/[0.06] px-3 py-2.5">
+            <span className="font-mono text-[10px] tracking-[0.24em] text-highlight-foreground/80 uppercase">
+              Filtered by prompt
+            </span>
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
+              {promptFilter.promptExcerpt}
+            </span>
+            {onPromptFilterClear ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onPromptFilterClear}
+                aria-label="Clear prompt filter"
+              >
+                <X data-icon="inline-start" />
+                Clear
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+
+        {typeMix.total > 0 ? <SourceTypeMix mix={typeMix} /> : null}
+
+        {loading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div
+                key={index}
+                className="h-24 animate-pulse rounded-xl border border-border/60 bg-card/40"
+              />
+            ))}
+          </div>
+        ) : visibleSources.length ? (
+          <ol className="flex flex-col gap-2">
+            {visibleSources.map((source, index) => (
+              <SourceStrip
+                key={source.domain}
+                source={source}
+                rank={index + 1}
+                onOpenSource={onOpenSource}
+              />
+            ))}
+          </ol>
+        ) : (
+          <article className="rounded-xl border border-border/70 bg-card/60 p-6">
+            <InlineEmpty
+              text={
+                promptFilter
+                  ? "No source analytics matched this prompt."
+                  : "No source analytics available yet."
+              }
+            />
+          </article>
         )}
       </div>
     </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Editorial header — eyebrow, masthead, totals
+// -----------------------------------------------------------------------------
+
+function SourcesPageHeader({
+  loading,
+  totalDomains,
+  ownedDomains,
+  totalResponses,
+  avgQuality,
+}: {
+  loading: boolean;
+  totalDomains: number;
+  ownedDomains: number;
+  totalResponses: number;
+  avgQuality: number | undefined;
+}) {
+  return (
+    <header className="flex flex-col gap-4 border-b border-border/60 pb-5 sm:flex-row sm:items-end sm:justify-between">
+      <div className="space-y-2">
+        <p className="font-mono text-[10px] tracking-[0.32em] text-muted-foreground uppercase">
+          GEO Pulse / Sources
+        </p>
+        <h1 className="font-display text-4xl font-extrabold leading-[1.05] tracking-[-0.022em] text-foreground sm:text-[2.75rem]">
+          Who&apos;s citing your topics.
+        </h1>
+        <p className="text-muted-foreground text-sm max-w-xl">
+          Every domain that an AI provider has cited in your monitored
+          prompts. Track competitor share, find under-cited owned
+          domains, and pivot the leaderboard to a single prompt when
+          you need to.
+        </p>
+      </div>
+      <dl className="flex shrink-0 items-end gap-6 font-mono text-[11px] tracking-[0.18em] text-muted-foreground uppercase">
+        <SourcesMetaStat
+          label="Domains"
+          value={totalDomains.toString()}
+          loading={loading}
+        />
+        <SourcesMetaStat
+          label="Owned"
+          value={ownedDomains.toString()}
+          loading={loading}
+          tone={ownedDomains > 0 ? "highlight" : "neutral"}
+        />
+        <SourcesMetaStat
+          label="Responses"
+          value={totalResponses.toString()}
+          loading={loading}
+        />
+        <SourcesMetaStat
+          label="Avg quality"
+          value={
+            typeof avgQuality === "number" ? Math.round(avgQuality).toString() : "-"
+          }
+          loading={loading}
+        />
+      </dl>
+    </header>
+  );
+}
+
+function SourcesMetaStat({
+  label,
+  value,
+  loading,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  loading: boolean;
+  tone?: "neutral" | "highlight";
+}) {
+  return (
+    <div className="text-right">
+      <dt>{label}</dt>
+      <dd
+        className={cn(
+          "font-display text-xl font-bold tabular-nums tracking-tight",
+          tone === "highlight"
+            ? "text-highlight-foreground"
+            : "text-foreground"
+        )}
+      >
+        {loading ? (
+          <span className="inline-block h-5 w-10 animate-pulse rounded-sm bg-muted/60" />
+        ) : (
+          value
+        )}
+      </dd>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Source-type mix bar — same visual grammar as OverviewPage source mix,
+// but inline (compact) here since the leaderboard is the main surface.
+// -----------------------------------------------------------------------------
+
+const TYPE_PALETTE: Record<string, string> = {
+  docs: "var(--chart-1)",
+  editorial: "var(--chart-3)",
+  ugc: "var(--chart-2)",
+  social: "var(--chart-5)",
+  corporate: "var(--chart-4)",
+  other: "var(--muted-foreground)",
+};
+
+function typeColor(type: string, fallbackIndex: number) {
+  return (
+    TYPE_PALETTE[type as keyof typeof TYPE_PALETTE] ??
+    `var(--chart-${(fallbackIndex % 5) + 1})`
+  );
+}
+
+type TypeMixEntry = { type: string; citations: number; share: number };
+type TypeMix = { total: number; entries: TypeMixEntry[] };
+
+function buildTypeMix(sources: SourceItem[]): TypeMix {
+  const totals = new Map<string, number>();
+  for (const source of sources) {
+    totals.set(source.type, (totals.get(source.type) ?? 0) + source.citations);
+  }
+  const total = [...totals.values()].reduce((sum, value) => sum + value, 0);
+  const entries = [...totals.entries()]
+    .map(([type, citations]) => ({
+      type,
+      citations,
+      share: total ? (citations / total) * 100 : 0,
+    }))
+    .sort((a, b) => b.citations - a.citations);
+  return { total, entries };
+}
+
+function SourceTypeMix({ mix }: { mix: TypeMix }) {
+  return (
+    <section className="space-y-3 rounded-xl border border-border/70 bg-card/60 p-4">
+      <div className="flex items-end justify-between gap-3">
+        <p className="font-mono text-[10px] tracking-[0.32em] text-muted-foreground uppercase">
+          Source mix
+        </p>
+        <p className="font-mono text-[10px] tracking-[0.2em] text-muted-foreground uppercase">
+          By type
+        </p>
+      </div>
+      <div className="flex h-3 w-full overflow-hidden rounded-full border border-border/50 bg-muted/20">
+        {mix.entries.map((entry, index) => (
+          <span
+            key={entry.type}
+            title={`${entry.type} — ${Math.round(entry.share)}%`}
+            className="h-full"
+            style={{
+              width: `${entry.share}%`,
+              backgroundColor: typeColor(entry.type, index),
+            }}
+          />
+        ))}
+      </div>
+      <ul className="flex flex-wrap gap-x-5 gap-y-1.5">
+        {mix.entries.map((entry, index) => (
+          <li
+            key={entry.type}
+            className="flex items-center gap-2 text-sm"
+          >
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-sm"
+              style={{ backgroundColor: typeColor(entry.type, index) }}
+            />
+            <span className="font-medium capitalize text-foreground">
+              {entry.type}
+            </span>
+            <span className="font-mono text-[11px] tabular-nums tracking-wider text-muted-foreground">
+              {entry.citations} · {Math.round(entry.share)}%
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Source strip — one domain per row, GEO-leaderboard pattern
+// -----------------------------------------------------------------------------
+
+function SourceStrip({
+  source,
+  rank,
+  onOpenSource,
+}: {
+  source: SourceItem;
+  rank: number;
+  onOpenSource?: (domain: string) => void;
+}) {
+  const canOpen = Boolean(onOpenSource);
+  const isOwned = source.ownedShare > 0;
+  const latestResponse = source.latestResponses?.[0];
+  const mostUsedBy = getMostUsedProvider(source.latestResponses);
+  const shareWidth = Math.max(0, Math.min(100, source.usedShare));
+
+  const open = () => onOpenSource?.(source.domain);
+
+  return (
+    <li>
+      <article
+        role={canOpen ? "button" : undefined}
+        tabIndex={canOpen ? 0 : undefined}
+        aria-label={canOpen ? `Open source details for ${source.domain}` : undefined}
+        onClick={canOpen ? open : undefined}
+        onKeyDown={
+          canOpen
+            ? (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  open();
+                }
+              }
+            : undefined
+        }
+        className={cn(
+          "group grid items-center gap-4 rounded-xl border bg-card/60 px-4 py-3.5 transition-colors sm:grid-cols-[28px_1fr_180px_84px] sm:gap-5",
+          canOpen && "cursor-pointer hover:bg-foreground/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          isOwned
+            ? "border-highlight/40 bg-highlight/[0.06]"
+            : "border-border/70"
+        )}
+      >
+        {/* Rank chip */}
+        <span
+          className={cn(
+            "font-mono text-[11px] tabular-nums tracking-wider hidden sm:inline-block",
+            isOwned ? "text-highlight-foreground" : "text-muted-foreground"
+          )}
+        >
+          {String(rank).padStart(2, "0")}
+        </span>
+
+        {/* Domain + metadata */}
+        <div className="min-w-0 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <SourceFavicon domain={source.domain} />
+            <span className="truncate font-semibold text-sm text-foreground">
+              {source.domain}
+            </span>
+            {isOwned ? (
+              <Badge
+                variant="outline"
+                className="border-highlight/50 bg-highlight/15 text-highlight-foreground font-mono text-[9px] uppercase tracking-widest"
+              >
+                Owned
+              </Badge>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10px] tracking-[0.16em] text-muted-foreground uppercase">
+            <span>{source.type}</span>
+            {source.avgQualityScore !== undefined ? (
+              <span>Q {Math.round(source.avgQualityScore)}</span>
+            ) : null}
+            {source.avgPosition !== undefined ? (
+              <span>Pos {source.avgPosition.toFixed(1)}</span>
+            ) : null}
+            <span>{source.responseCount} response{source.responseCount === 1 ? "" : "s"}</span>
+            {mostUsedBy !== "-" ? (
+              <span>Via {mostUsedBy}</span>
+            ) : null}
+            {latestResponse ? (
+              <span>{formatFreshness(latestResponse.startedAt)}</span>
+            ) : null}
+          </div>
+          {latestResponse ? (
+            <p className="line-clamp-1 text-xs text-muted-foreground/90">
+              Latest: <span className="text-foreground/85">{latestResponse.promptExcerpt}</span>
+            </p>
+          ) : null}
+        </div>
+
+        {/* Share bar */}
+        <div className="hidden sm:block">
+          <div
+            className="relative h-2 w-full overflow-hidden rounded-full bg-muted/40"
+            role="presentation"
+          >
+            <div
+              className={cn(
+                "absolute inset-y-0 left-0 rounded-full",
+                isOwned ? "bg-highlight" : "bg-foreground/80"
+              )}
+              style={{ width: `${shareWidth}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Used share % */}
+        <div className="text-right">
+          <p
+            className={cn(
+              "font-display text-2xl font-extrabold tabular-nums tracking-tight",
+              isOwned ? "text-highlight-foreground" : "text-foreground"
+            )}
+          >
+            {formatPercent(source.usedShare)}
+          </p>
+          <p className="font-mono text-[9px] tracking-[0.24em] text-muted-foreground uppercase">
+            Share
+          </p>
+        </div>
+      </article>
+    </li>
+  );
+}
+
+function SourceFavicon({ domain }: { domain: string }) {
+  return (
+    <span className="bg-muted/40 inline-flex size-5 shrink-0 items-center justify-center rounded">
+      <img
+        src={`https://www.google.com/s2/favicons?domain=${domain}&sz=32`}
+        alt=""
+        className="size-3.5 rounded-sm"
+        onError={(event) => {
+          (event.target as HTMLImageElement).style.display = "none";
+        }}
+        loading="lazy"
+      />
+    </span>
   );
 }
 
