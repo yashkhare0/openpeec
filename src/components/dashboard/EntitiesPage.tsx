@@ -411,6 +411,9 @@ export function EntitiesPage({
 }: EntitiesPageProps) {
   const [createOpen, setCreateOpen] = useState(false);
   const needle = searchValue.trim().toLowerCase();
+  const meta = data?.meta;
+  const hasRecentMentionData = (data?.recentMentions.length ?? 0) > 0;
+  const showRecentMentions = hasRecentMentionData || Boolean(needle);
 
   const filteredEntities = useMemo(() => {
     const entities = data?.entities ?? [];
@@ -502,13 +505,34 @@ export function EntitiesPage({
       />
 
       <div className="px-4 lg:px-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 space-y-2">
             <h1 className="text-xl font-semibold tracking-normal">Entities</h1>
             <p className="text-muted-foreground text-sm">
-              Track brands, competitors, citations, mentions, and generated
-              prompt coverage.
+              Manage brands and competitors, then curate GEO/AEO prompts.
             </p>
+            <div className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-sm">
+              <SummaryStat
+                value={String(meta?.activeEntityCount ?? 0)}
+                label="active"
+              />
+              <SummaryStat
+                value={String(meta?.competitorCount ?? 0)}
+                label="competitors"
+              />
+              <SummaryStat
+                value={String(meta?.promptCount ?? 0)}
+                label="prompts"
+              />
+              <SummaryStat
+                value={String(meta?.mentionCount ?? 0)}
+                label="mentions"
+              />
+              <SummaryStat
+                value={String(meta?.citationCount ?? 0)}
+                label="citations"
+              />
+            </div>
           </div>
           <Button
             type="button"
@@ -521,32 +545,9 @@ export function EntitiesPage({
         </div>
       </div>
 
-      <div className="grid gap-4 px-4 sm:grid-cols-2 lg:grid-cols-4 lg:px-6">
-        <MetricCard
-          label="Active entities"
-          value={String(data?.meta.activeEntityCount ?? 0)}
-          detail={`${data?.meta.competitorCount ?? 0} competitors`}
-        />
-        <MetricCard
-          label="Prompt coverage"
-          value={String(data?.meta.promptCount ?? 0)}
-          detail={`${data?.meta.draftPromptCount ?? 0} drafts`}
-        />
-        <MetricCard
-          label="Mentions"
-          value={String(data?.meta.mentionCount ?? 0)}
-          detail="Tracked responses"
-        />
-        <MetricCard
-          label="Citations"
-          value={String(data?.meta.citationCount ?? 0)}
-          detail="Entity-linked sources"
-        />
-      </div>
-
       <div className="px-4 lg:px-6">
         {loading ? (
-          <DashboardTableCardSkeleton titleWidth="w-20" rows={6} columns={7} />
+          <DashboardTableCardSkeleton titleWidth="w-20" rows={6} columns={5} />
         ) : (
           <Card>
             <CardHeader className="border-b">
@@ -556,119 +557,15 @@ export function EntitiesPage({
               {filteredEntities.length === 0 ? (
                 <InlineEmpty text="No tracked entities match the current search." />
               ) : (
-                <Table className="min-w-[920px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Entity</TableHead>
-                      <TableHead>Library</TableHead>
-                      <TableHead className="text-right">Mentions</TableHead>
-                      <TableHead className="text-right">Citations</TableHead>
-                      <TableHead className="text-right">Scores</TableHead>
-                      <TableHead>Codex curation</TableHead>
-                      <TableHead className="w-10">
-                        <span className="sr-only">Actions</span>
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                <>
+                  <div className="space-y-4 md:hidden">
                     {filteredEntities.map((entity) => (
-                      <TableRow key={String(entity._id)}>
-                        <TableCell className="min-w-[260px]">
-                          <div className="flex min-w-0 flex-col gap-1.5">
-                            <div className="flex items-center gap-2">
-                              <span className="truncate font-medium">
-                                {entity.name}
-                              </span>
-                              <Badge
-                                variant={
-                                  entity.active ? "default" : "secondary"
-                                }
-                              >
-                                {entity.active ? "Active" : "Paused"}
-                              </Badge>
-                            </div>
-                            <div className="text-muted-foreground flex flex-wrap items-center gap-1.5 text-xs">
-                              <span>{titleCase(entity.kind)}</span>
-                              <span>{entity.slug}</span>
-                              {entity.ownedDomains.slice(0, 2).map((domain) => (
-                                <Badge key={domain} variant="outline">
-                                  {domain}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="min-w-[220px]">
-                          <div className="flex flex-col gap-2">
-                            <div className="text-sm">
-                              <span className="font-medium">
-                                {entity.promptGroupCount}
-                              </span>{" "}
-                              groups /{" "}
-                              <span className="font-medium">
-                                {entity.promptCount}
-                              </span>{" "}
-                              prompts
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Progress
-                                value={approvalPercent(entity)}
-                                className="max-w-28"
-                                aria-label={`${entity.name} prompt approval coverage`}
-                              />
-                              <span className="text-muted-foreground text-xs tabular-nums">
-                                {entity.approvedPromptCount} approved
-                              </span>
-                            </div>
-                            {entity.draftPromptCount > 0 ? (
-                              <Badge variant="secondary" className="w-fit">
-                                {entity.draftPromptCount} drafts
-                              </Badge>
-                            ) : null}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          <div className="font-medium">
-                            {entity.mentionCount}
-                          </div>
-                          <div className="text-muted-foreground text-xs">
-                            {entity.mentionedResponseCount} responses
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          <div className="font-medium">
-                            {entity.citationCount}
-                          </div>
-                          <div className="text-muted-foreground text-xs">
-                            {entity.ownedCitationCount} owned
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          <div className="font-medium">
-                            {formatScore(entity.averageVisibility)}
-                          </div>
-                          <div className="text-muted-foreground text-xs">
-                            CQ {formatScore(entity.averageCitationQuality)}
-                          </div>
-                        </TableCell>
-                        <TableCell className="min-w-[180px]">
-                          <div className="flex flex-col gap-1">
-                            <Badge
-                              variant={generationTone(entity.latestGeneration)}
-                              className={cn(
-                                "w-fit",
-                                entity.latestGeneration?.status === "success" &&
-                                  "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300"
-                              )}
-                            >
-                              {generationLabel(entity.latestGeneration)}
-                            </Badge>
-                            <span className="text-muted-foreground text-xs">
-                              Latest run {formatFreshness(entity.latestRunAt)}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
+                      <div
+                        key={String(entity._id)}
+                        className="border-b pb-4 last:border-b-0 last:pb-0"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <EntityMeta entity={entity} />
                           <EntityActions
                             entity={entity}
                             onOpenPrompts={() => onOpenPromptsForEntity(entity)}
@@ -678,6 +575,156 @@ export function EntitiesPage({
                             onToggle={() => void toggleEntity(entity)}
                             onDelete={() => void deleteEntity(entity)}
                           />
+                        </div>
+                        <div className="mt-4 grid gap-4 min-[420px]:grid-cols-2">
+                          <div className="min-w-0 space-y-2">
+                            <p className="text-muted-foreground text-[11px] font-medium tracking-[0.18em] uppercase">
+                              Prompts
+                            </p>
+                            <EntityPromptSummary entity={entity} />
+                          </div>
+                          <div className="min-w-0 space-y-2">
+                            <p className="text-muted-foreground text-[11px] font-medium tracking-[0.18em] uppercase">
+                              Curation
+                            </p>
+                            <EntityCurationSummary entity={entity} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <Table className="hidden md:table">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Entity</TableHead>
+                        <TableHead>Prompts</TableHead>
+                        <TableHead className="w-[124px]">Curation</TableHead>
+                        <TableHead className="w-8">
+                          <span className="sr-only">Actions</span>
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredEntities.map((entity) => (
+                        <TableRow key={String(entity._id)}>
+                          <TableCell className="min-w-[150px]">
+                            <EntityMeta entity={entity} />
+                          </TableCell>
+                          <TableCell className="min-w-[120px]">
+                            <EntityPromptSummary entity={entity} />
+                          </TableCell>
+                          <TableCell className="w-[124px]">
+                            <EntityCurationSummary entity={entity} />
+                          </TableCell>
+                          <TableCell className="w-8 text-right">
+                            <EntityActions
+                              entity={entity}
+                              onOpenPrompts={() =>
+                                onOpenPromptsForEntity(entity)
+                              }
+                              onGenerate={() => void createGeneration(entity)}
+                              onRun={() => void runEntity(entity)}
+                              onRename={() => void renameEntity(entity)}
+                              onToggle={() => void toggleEntity(entity)}
+                              onDelete={() => void deleteEntity(entity)}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {showRecentMentions ? (
+        <div className="px-4 lg:px-6">
+          <Card>
+            <CardHeader className="border-b">
+              <CardTitle>Recent mentions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {filteredMentions.length === 0 ? (
+                <InlineEmpty
+                  text={
+                    hasRecentMentionData
+                      ? "No mentions match the current search."
+                      : "No entity mentions captured yet."
+                  }
+                />
+              ) : (
+                <Table className="min-w-[760px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Entity</TableHead>
+                      <TableHead>Prompt</TableHead>
+                      <TableHead>Provider</TableHead>
+                      <TableHead className="text-right">
+                        Mention / citation
+                      </TableHead>
+                      <TableHead>Signal</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredMentions.map((mention) => (
+                      <TableRow
+                        key={`${String(mention.promptRunId)}-${mention.slug}`}
+                        className={clickableTableRowClassName}
+                        tabIndex={0}
+                        onClick={() => onOpenRun(mention.promptRunId)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            onOpenRun(mention.promptRunId);
+                          }
+                        }}
+                      >
+                        <TableCell>
+                          <div className="font-medium">{mention.name}</div>
+                          <div className="text-muted-foreground text-xs">
+                            {titleCase(mention.kind)}
+                          </div>
+                        </TableCell>
+                        <TableCell className="max-w-[420px] whitespace-normal">
+                          <div className="line-clamp-2 font-medium">
+                            {mention.promptExcerpt}
+                          </div>
+                          {mention.evidence ? (
+                            <div className="text-muted-foreground mt-1 line-clamp-1 text-xs">
+                              {mention.evidence}
+                            </div>
+                          ) : null}
+                        </TableCell>
+                        <TableCell>
+                          <div>{mention.providerName}</div>
+                          <div className="text-muted-foreground text-xs">
+                            {formatFreshness(mention.startedAt)}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {mention.mentionCount} / {mention.citationCount}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1.5">
+                            {mention.sentiment ? (
+                              <Badge variant="outline">
+                                {titleCase(mention.sentiment)}
+                              </Badge>
+                            ) : null}
+                            {mention.detectionSource ? (
+                              <Badge variant="secondary">
+                                {titleCase(mention.detectionSource)}
+                              </Badge>
+                            ) : null}
+                            {mention.confidence !== undefined ? (
+                              <Badge variant="outline">
+                                {formatPercent(mention.confidence * 100)}
+                              </Badge>
+                            ) : null}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -686,119 +733,100 @@ export function EntitiesPage({
               )}
             </CardContent>
           </Card>
-        )}
-      </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
-      <div className="px-4 lg:px-6">
-        <Card>
-          <CardHeader className="border-b">
-            <CardTitle>Recent mentions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {filteredMentions.length === 0 ? (
-              <InlineEmpty text="No entity mentions captured yet." />
-            ) : (
-              <Table className="min-w-[840px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Entity</TableHead>
-                    <TableHead>Prompt</TableHead>
-                    <TableHead>Provider</TableHead>
-                    <TableHead className="text-right">
-                      Mention / citation
-                    </TableHead>
-                    <TableHead>Signal</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredMentions.map((mention) => (
-                    <TableRow
-                      key={`${String(mention.promptRunId)}-${mention.slug}`}
-                      className={clickableTableRowClassName}
-                      tabIndex={0}
-                      onClick={() => onOpenRun(mention.promptRunId)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          onOpenRun(mention.promptRunId);
-                        }
-                      }}
-                    >
-                      <TableCell>
-                        <div className="font-medium">{mention.name}</div>
-                        <div className="text-muted-foreground text-xs">
-                          {titleCase(mention.kind)}
-                        </div>
-                      </TableCell>
-                      <TableCell className="max-w-[420px] whitespace-normal">
-                        <div className="line-clamp-2 font-medium">
-                          {mention.promptExcerpt}
-                        </div>
-                        {mention.evidence ? (
-                          <div className="text-muted-foreground mt-1 line-clamp-1 text-xs">
-                            {mention.evidence}
-                          </div>
-                        ) : null}
-                      </TableCell>
-                      <TableCell>
-                        <div>{mention.providerName}</div>
-                        <div className="text-muted-foreground text-xs">
-                          {formatFreshness(mention.startedAt)}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {mention.mentionCount} / {mention.citationCount}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1.5">
-                          {mention.sentiment ? (
-                            <Badge variant="outline">
-                              {titleCase(mention.sentiment)}
-                            </Badge>
-                          ) : null}
-                          {mention.detectionSource ? (
-                            <Badge variant="secondary">
-                              {titleCase(mention.detectionSource)}
-                            </Badge>
-                          ) : null}
-                          {mention.confidence !== undefined ? (
-                            <Badge variant="outline">
-                              {formatPercent(mention.confidence * 100)}
-                            </Badge>
-                          ) : null}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+function SummaryStat({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="text-foreground font-medium tabular-nums">{value}</span>
+      <span>{label}</span>
+    </span>
+  );
+}
+
+function EntityMeta({ entity }: { entity: EntityRow }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <div className="flex items-center gap-2">
+        <span className="truncate font-medium">{entity.name}</span>
+        <Badge variant={entity.active ? "default" : "secondary"}>
+          {entity.active ? "Active" : "Paused"}
+        </Badge>
+      </div>
+      <div className="text-muted-foreground flex flex-wrap items-center gap-1.5 text-xs">
+        <span>{titleCase(entity.kind)}</span>
+        <span>{entity.slug}</span>
+        {entity.ownedDomains.slice(0, 2).map((domain) => (
+          <Badge key={domain} variant="outline">
+            {domain}
+          </Badge>
+        ))}
+        {entity.mentionCount > 0 || entity.citationCount > 0 ? (
+          <span>
+            {entity.mentionCount} mentions · {entity.citationCount} citations
+          </span>
+        ) : null}
+        {typeof entity.averageVisibility === "number" ||
+        typeof entity.averageCitationQuality === "number" ? (
+          <span>
+            visibility {formatScore(entity.averageVisibility)} · CQ{" "}
+            {formatScore(entity.averageCitationQuality)}
+          </span>
+        ) : null}
       </div>
     </div>
   );
 }
 
-function MetricCard({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
+function EntityPromptSummary({ entity }: { entity: EntityRow }) {
   return (
-    <Card size="sm">
-      <CardContent>
-        <div className="text-muted-foreground text-[11px] font-medium tracking-[0.18em] uppercase">
-          {label}
-        </div>
-        <div className="mt-3 text-2xl font-semibold tabular-nums">{value}</div>
-        <div className="text-muted-foreground mt-1 text-xs">{detail}</div>
-      </CardContent>
-    </Card>
+    <div className="flex flex-col gap-2">
+      <div className="text-sm">
+        <span className="font-medium">{entity.promptGroupCount}</span> groups /{" "}
+        <span className="font-medium">{entity.promptCount}</span> prompts
+      </div>
+      <div className="flex items-center gap-2">
+        <Progress
+          value={approvalPercent(entity)}
+          className="max-w-28"
+          aria-label={`${entity.name} prompt approval coverage`}
+        />
+        <span className="text-muted-foreground text-xs tabular-nums">
+          {entity.approvedPromptCount} approved
+        </span>
+      </div>
+      {entity.draftPromptCount > 0 ? (
+        <Badge variant="secondary" className="w-fit">
+          {entity.draftPromptCount} drafts
+        </Badge>
+      ) : null}
+    </div>
+  );
+}
+
+function EntityCurationSummary({ entity }: { entity: EntityRow }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <Badge
+        variant={generationTone(entity.latestGeneration)}
+        className={cn(
+          "w-fit",
+          entity.latestGeneration?.status === "success" &&
+            "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300"
+        )}
+      >
+        {generationLabel(entity.latestGeneration)}
+      </Badge>
+      {entity.latestRunAt ? (
+        <span className="text-muted-foreground text-xs">
+          Ran {formatFreshness(entity.latestRunAt)}
+        </span>
+      ) : null}
+    </div>
   );
 }
 

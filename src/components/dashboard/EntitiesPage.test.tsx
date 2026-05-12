@@ -124,7 +124,9 @@ describe("EntitiesPage", () => {
 
     expect(screen.getByRole("heading", { name: "Entities" })).toBeTruthy();
     expect(screen.getAllByText("OpenPeec").length).toBeGreaterThan(1);
-    expect(screen.getByText("2 groups, 8 prompts")).toBeTruthy();
+    expect(screen.getAllByText("2 groups, 8 prompts").length).toBeGreaterThan(
+      0
+    );
     expect(screen.getByText("Best AI visibility tools")).toBeTruthy();
     expect(screen.getByText("OpenAI")).toBeTruthy();
   });
