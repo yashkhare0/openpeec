@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const useQueryMock = vi.hoisted(() => vi.fn());
 const useMutationMock = vi.hoisted(() => vi.fn());
 const promptsPageMock = vi.hoisted(() => vi.fn());
+const entitiesPageMock = vi.hoisted(() => vi.fn());
 const runsPageMock = vi.hoisted(() => vi.fn());
 const sourcesPageMock = vi.hoisted(() => vi.fn());
 const sourceDetailPageMock = vi.hoisted(() => vi.fn());
@@ -17,11 +18,13 @@ const mutationFns = vi.hoisted(() => ({
   deletePrompt: vi.fn(),
   triggerSelectedPromptsNow: vi.fn(),
   triggerPromptGroupNow: vi.fn(),
+  triggerEntityPromptsNow: vi.fn(),
   queueEntityPromptGeneration: vi.fn(),
   retryPromptRun: vi.fn(),
   cancelPromptRun: vi.fn(),
   deletePromptRun: vi.fn(),
   createTrackedEntity: vi.fn(),
+  createTrackedEntityWithPromptGeneration: vi.fn(),
   updateTrackedEntity: vi.fn(),
   deleteTrackedEntity: vi.fn(),
 }));
@@ -39,6 +42,7 @@ vi.mock("../../../convex/_generated/api", () => ({
       getOverview: "getOverview",
       listPromptResponseAnalytics: "listPromptResponseAnalytics",
       listPromptGroups: "listPromptGroups",
+      listEntityVisibility: "listEntityVisibility",
       getQueueStatus: "getQueueStatus",
       listPromptRuns: "listPromptRuns",
       listRunGroups: "listRunGroups",
@@ -52,11 +56,14 @@ vi.mock("../../../convex/_generated/api", () => ({
       deletePrompt: "deletePrompt",
       triggerSelectedPromptsNow: "triggerSelectedPromptsNow",
       triggerPromptGroupNow: "triggerPromptGroupNow",
+      triggerEntityPromptsNow: "triggerEntityPromptsNow",
       queueEntityPromptGeneration: "queueEntityPromptGeneration",
       retryPromptRun: "retryPromptRun",
       cancelPromptRun: "cancelPromptRun",
       deletePromptRun: "deletePromptRun",
       createTrackedEntity: "createTrackedEntity",
+      createTrackedEntityWithPromptGeneration:
+        "createTrackedEntityWithPromptGeneration",
       updateTrackedEntity: "updateTrackedEntity",
       deleteTrackedEntity: "deleteTrackedEntity",
     },
@@ -138,6 +145,18 @@ vi.mock("./PromptsPage", () => ({
       <div>
         Prompts Surface
         <div>{props.rows.map((row) => row.excerpt).join(",")}</div>
+      </div>
+    );
+  },
+}));
+
+vi.mock("./EntitiesPage", () => ({
+  EntitiesPage: (props: { data?: { entities: Array<{ name: string }> } }) => {
+    entitiesPageMock(props);
+    return (
+      <div>
+        Entities Surface
+        <div>{props.data?.entities.map((row) => row.name).join(",")}</div>
       </div>
     );
   },
@@ -293,11 +312,47 @@ const sourceRows = [
   },
 ];
 
+const entityVisibility = {
+  meta: {
+    entityCount: 1,
+    activeEntityCount: 1,
+    competitorCount: 0,
+    promptCount: 2,
+    draftPromptCount: 1,
+    mentionCount: 3,
+    citationCount: 2,
+  },
+  entities: [
+    {
+      _id: "entity_1",
+      name: "OpenPeec",
+      slug: "openpeec",
+      kind: "brand",
+      aliases: ["Open Peec"],
+      ownedDomains: ["openpeec.ai"],
+      active: true,
+      promptCount: 2,
+      approvedPromptCount: 1,
+      draftPromptCount: 1,
+      promptGroupCount: 1,
+      runCount: 1,
+      responseCount: 1,
+      mentionedResponseCount: 1,
+      mentionCount: 3,
+      citationCount: 2,
+      ownedCitationCount: 2,
+      latestRunAt: Date.now(),
+    },
+  ],
+  recentMentions: [],
+};
+
 describe("MonitoringDashboard", () => {
   beforeEach(() => {
     useQueryMock.mockReset();
     useMutationMock.mockReset();
     promptsPageMock.mockReset();
+    entitiesPageMock.mockReset();
     runsPageMock.mockReset();
     sourcesPageMock.mockReset();
     sourceDetailPageMock.mockReset();
@@ -318,6 +373,8 @@ describe("MonitoringDashboard", () => {
           return args === "skip" ? undefined : promptRows;
         case "listPromptGroups":
           return args === "skip" ? undefined : [];
+        case "listEntityVisibility":
+          return args === "skip" ? undefined : entityVisibility;
         case "getQueueStatus":
           return {
             queuedCount: 0,
@@ -419,6 +476,38 @@ describe("MonitoringDashboard", () => {
         searchValue: "openpeec",
       })
     );
+  });
+
+  it("routes entities through the dedicated entity surface", async () => {
+    const { MonitoringDashboard } = await import("./MonitoringDashboard");
+    window.history.replaceState({}, "", "/?page=entities&search=openpeec");
+
+    render(<MonitoringDashboard />);
+
+    expect(await screen.findByText("Entities Surface")).toBeTruthy();
+    expect(entitiesPageMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        searchValue: "openpeec",
+        data: expect.objectContaining({
+          entities: expect.arrayContaining([
+            expect.objectContaining({ name: "OpenPeec" }),
+          ]),
+        }),
+      })
+    );
+    expect(siteHeaderMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        searchPlaceholder: "Search entities...",
+        searchLabel: "Search entities",
+      })
+    );
+    expect(
+      useQueryMock.mock.calls.some(
+        ([name, args]) =>
+          name === "listEntityVisibility" &&
+          JSON.stringify(args) === JSON.stringify({ rangeDays: 7, limit: 80 })
+      )
+    ).toBe(true);
   });
 
   it("routes runs search and status filters through the header", async () => {

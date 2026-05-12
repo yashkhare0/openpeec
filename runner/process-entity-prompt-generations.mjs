@@ -124,6 +124,24 @@ async function resolveBridgeConfig() {
   };
 }
 
+async function isBridgeAvailable(bridge) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+  try {
+    const response = await fetch(`${bridge.baseUrl}/models`, {
+      headers: {
+        Authorization: `Bearer ${bridge.apiKey}`,
+      },
+      signal: controller.signal,
+    });
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function websiteUrlForClaim(claimed) {
   if (claimed.websiteUrl) {
     return claimed.websiteUrl;
@@ -235,6 +253,16 @@ async function main() {
   const runner = "local-codex-prompt-generation-worker";
 
   while (true) {
+    if (!(await isBridgeAvailable(bridge))) {
+      const message = `[prompt-generation] Codex bridge unavailable at ${bridge.baseUrl}; waiting before claiming jobs`;
+      if (args.once) {
+        throw new Error(message);
+      }
+      console.warn(message);
+      await sleep(args.pollIntervalMs);
+      continue;
+    }
+
     const claimed = await client.mutation(
       api.analytics.claimNextEntityPromptGeneration,
       {

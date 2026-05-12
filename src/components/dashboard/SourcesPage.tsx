@@ -172,7 +172,7 @@ export function TrackedEntitiesSheet({
       });
       onNewEntityName("");
       onNewEntityDomain("");
-      toast.success("Tracked entity created.");
+      toast.success("Tracked entity created. Codex curation queued.");
     } catch (error) {
       toast.error(errorMessage(error));
     }

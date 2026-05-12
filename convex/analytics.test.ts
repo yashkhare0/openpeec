@@ -240,6 +240,89 @@ test("entity prompt generation creates draft groups and deduplicates prompts", a
   });
 });
 
+test("entity visibility rolls up prompt curation, runs, mentions, and citations", async () => {
+  const t = convexTest(schema, modules);
+  await t.mutation(api.analytics.ensureProvidersSeeded, {});
+  const created = await t.mutation(
+    api.analytics.createTrackedEntityWithPromptGeneration,
+    {
+      name: "OpenPeec",
+      kind: "brand",
+      aliases: ["Open Peec"],
+      ownedDomains: ["openpeec.ai"],
+      websiteUrl: "https://openpeec.ai",
+      researchSummary: "OpenPeec tracks AI visibility.",
+    }
+  );
+  const promptId = await t.mutation(api.analytics.createPrompt, {
+    promptText: "What is OpenPeec best for?",
+    entityId: created.entityId,
+    reviewState: "approved",
+  });
+
+  await t.mutation(api.analytics.triggerEntityPromptsNow, {
+    entityId: created.entityId,
+    label: "entity-visibility-test",
+    browserEngine: "playwright",
+    providerSlugs: ["openai"],
+  });
+  const claimedRun = await t.mutation(
+    api.analytics.claimNextQueuedPromptRunGroup,
+    {
+      browserEngine: "playwright",
+      runner: "entity-visibility-test-runner",
+      maxConcurrent: 1,
+    }
+  );
+  expect(claimedRun).not.toBeNull();
+  await t.mutation(api.analytics.completePromptRun, {
+    runId: claimedRun!.runs[0].runId,
+    status: "success",
+    finishedAt: Date.now(),
+    responseText: "OpenPeec helps marketers monitor AI visibility.",
+    responseSummary: "OpenPeec was mentioned.",
+    citations: [
+      {
+        domain: "openpeec.ai",
+        url: "https://openpeec.ai/",
+        title: "OpenPeec",
+        type: "corporate",
+        position: 1,
+        qualityScore: 0.9,
+      },
+    ],
+    visibilityScore: 0.7,
+    citationQualityScore: 0.9,
+    runner: "entity-visibility-test-runner",
+    browserEngine: "playwright",
+  });
+
+  const visibility = await t.query(api.analytics.listEntityVisibility, {
+    rangeDays: 7,
+  });
+  expect(visibility.meta.entityCount).toBe(1);
+  expect(visibility.entities[0]).toMatchObject({
+    _id: created.entityId,
+    promptCount: 1,
+    approvedPromptCount: 1,
+    responseCount: 1,
+    mentionCount: 2,
+    citationCount: 1,
+    ownedCitationCount: 1,
+    latestGeneration: {
+      id: created.generationId,
+      status: "queued",
+    },
+  });
+  expect(visibility.entities[0].runCount).toBe(1);
+  expect(visibility.entities[0].averageCitationQuality).toBe(90);
+  expect(visibility.recentMentions[0]).toMatchObject({
+    promptId,
+    name: "OpenPeec",
+    providerName: "OpenAI",
+  });
+});
+
 test("queue workflow: enqueue single-provider run, claim group, complete success", async () => {
   const t = convexTest(schema, modules);
   await t.mutation(api.analytics.ensureProvidersSeeded, {});

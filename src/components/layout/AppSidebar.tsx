@@ -1,6 +1,7 @@
 import { startTransition } from "react";
 import {
   Activity,
+  Building2,
   FileStack,
   FileText,
   Globe2,
@@ -27,6 +28,7 @@ import {
 
 type PageKey =
   | "overview"
+  | "entities"
   | "prompts"
   | "providers"
   | "runs"
@@ -37,6 +39,7 @@ type PageItem = { key: PageKey; label: string; icon: typeof Activity };
 
 const pageItems: PageItem[] = [
   { key: "overview", label: "Overview", icon: Activity },
+  { key: "entities", label: "Entities", icon: Building2 },
   { key: "prompts", label: "Prompts", icon: FileText },
   { key: "providers", label: "Providers", icon: Globe2 },
   { key: "runs", label: "Runs", icon: FileStack },

@@ -4,6 +4,7 @@ import "driver.js/dist/driver.css";
 
 type PageKey =
   | "overview"
+  | "entities"
   | "prompts"
   | "providers"
   | "runs"
@@ -17,7 +18,7 @@ function buildSteps(onNavigate: (page: PageKey) => void): DriveStep[] {
       popover: {
         title: "Sidebar Navigation",
         description:
-          "Switch between pages here. Overview shows the dashboard, Prompts manages monitored questions, Runs and Responses drill into execution detail, and Sources tracks citation domains.",
+          "Switch between pages here. Overview shows the dashboard, Entities tracks brands and competitors, Prompts manages monitored questions, Runs and Responses drill into execution detail, and Sources tracks citation domains.",
         side: "right",
         align: "start",
       },

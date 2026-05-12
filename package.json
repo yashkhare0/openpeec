@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "predev": "node runner/install-camoufox.mjs && node runner/install-buster.mjs",
-    "dev": "npm-run-all --parallel dev:backend dev:frontend dev:runner",
+    "dev": "npm-run-all --parallel dev:backend dev:frontend dev:runner dev:prompt-generation",
     "kill": "node scripts/kill-dev.mjs",
     "dev:frontend": "vite --open",
     "dev:backend": "node scripts/dev-backend.mjs",
     "dev:runner": "node runner/process-queued-runs.mjs --config runner/example.monitor.json --poll-interval-ms 1000 --headed",
+    "dev:prompt-generation": "node runner/process-entity-prompt-generations.mjs --poll-interval-ms 1000",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p convex/tsconfig.json --noEmit && tsc -p tsconfig.e2e.json --noEmit",
     "build": "pnpm typecheck && vite build",
     "lint": "eslint . --ext ts,tsx,mts,cjs --report-unused-disable-directives --max-warnings 0",

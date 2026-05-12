@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildPromptGenerationPrompt,
   normalizePromptGenerationOutput,
   parseJsonContent,
 } from "./prompt-generation-core.mjs";
@@ -78,5 +79,30 @@ describe("prompt generation core", () => {
         ],
       })
     ).toThrow(/intentCategory/i);
+  });
+
+  it("builds a detailed GEO categorisation prompt for Codex", () => {
+    const prompt = buildPromptGenerationPrompt(
+      {
+        entity: {
+          name: "OpenPeec",
+          slug: "openpeec",
+          kind: "brand",
+          aliases: [],
+          ownedDomains: ["openpeec.ai"],
+        },
+        competitors: [],
+        websiteUrl: "https://openpeec.ai",
+        researchSummary: "OpenPeec tracks AI visibility.",
+        existingPromptGroups: [],
+        existingPrompts: [],
+      },
+      "OpenPeec monitors AI answer visibility."
+    );
+
+    expect(prompt).toContain("Categorisation is the core product output");
+    expect(prompt).toContain("risk_objection");
+    expect(prompt).toContain("The prompt intentionally probes objections");
+    expect(prompt).toContain("Citation/source audit");
   });
 });

@@ -120,6 +120,7 @@ type PromptRunDoc = Doc<"promptRuns">;
 type CitationDoc = Doc<"citations">;
 type TrackedEntityDoc = Doc<"trackedEntities">;
 type RunEntityMentionDoc = Doc<"runEntityMentions">;
+type EntityPromptGenerationRunDoc = Doc<"entityPromptGenerationRuns">;
 type PatchObject = Record<string, unknown>;
 type BrowserEngine = "playwright" | "camoufox" | "nodriver";
 type PromptIntentCategory = NonNullable<PromptDoc["intentCategory"]>;
@@ -3500,46 +3501,87 @@ export const completeRunMentionAnalysis = mutation({
   },
 });
 
-export const createTrackedEntity = mutation({
+const trackedEntityCreateArgs = {
+  name: v.string(),
+  slug: v.optional(v.string()),
+  kind: vEntityKind,
+  aliases: v.optional(v.array(v.string())),
+  ownedDomains: v.optional(v.array(v.string())),
+  color: v.optional(v.string()),
+  active: v.optional(v.boolean()),
+};
+
+async function insertTrackedEntity(
+  ctx: MutationCtx,
   args: {
-    name: v.string(),
-    slug: v.optional(v.string()),
-    kind: vEntityKind,
-    aliases: v.optional(v.array(v.string())),
-    ownedDomains: v.optional(v.array(v.string())),
-    color: v.optional(v.string()),
-    active: v.optional(v.boolean()),
+    name: string;
+    slug?: string;
+    kind: TrackedEntityDoc["kind"];
+    aliases?: string[];
+    ownedDomains?: string[];
+    color?: string;
+    active?: boolean;
+  }
+) {
+  const slug = sanitizeSlug(args.slug ?? args.name);
+  if (!slug) {
+    throw new Error("Tracked entity slug cannot be empty");
+  }
+
+  const existing = await ctx.db
+    .query("trackedEntities")
+    .withIndex("slug", (q) => q.eq("slug", slug))
+    .collect();
+  if (existing.length > 0) {
+    throw new Error("Tracked entity slug already exists");
+  }
+
+  const ownedDomains = await assertOwnedDomainsAreUnique(
+    ctx,
+    args.ownedDomains
+  );
+
+  return await ctx.db.insert("trackedEntities", {
+    name: args.name.trim(),
+    slug,
+    kind: args.kind,
+    aliases: args.aliases
+      ?.map((alias) => alias.trim())
+      .filter((alias) => alias.length > 0),
+    ownedDomains,
+    color: args.color?.trim(),
+    active: args.active ?? true,
+  });
+}
+
+export const createTrackedEntity = mutation({
+  args: trackedEntityCreateArgs,
+  handler: async (ctx, args) => {
+    return await insertTrackedEntity(ctx, args);
+  },
+});
+
+export const createTrackedEntityWithPromptGeneration = mutation({
+  args: {
+    ...trackedEntityCreateArgs,
+    websiteUrl: v.optional(v.string()),
+    researchSummary: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const slug = sanitizeSlug(args.slug ?? args.name);
-    if (!slug) {
-      throw new Error("Tracked entity slug cannot be empty");
-    }
-
-    const existing = await ctx.db
-      .query("trackedEntities")
-      .withIndex("slug", (q) => q.eq("slug", slug))
-      .collect();
-    if (existing.length > 0) {
-      throw new Error("Tracked entity slug already exists");
-    }
-
-    const ownedDomains = await assertOwnedDomainsAreUnique(
-      ctx,
-      args.ownedDomains
-    );
-
-    return await ctx.db.insert("trackedEntities", {
-      name: args.name.trim(),
-      slug,
-      kind: args.kind,
-      aliases: args.aliases
-        ?.map((alias) => alias.trim())
-        .filter((alias) => alias.length > 0),
-      ownedDomains,
-      color: args.color?.trim(),
-      active: args.active ?? true,
+    const entityId = await insertTrackedEntity(ctx, args);
+    const websiteUrl =
+      normalizeOptionalString(args.websiteUrl) ??
+      args.ownedDomains?.[0] ??
+      undefined;
+    const generationId = await ctx.db.insert("entityPromptGenerationRuns", {
+      entityId,
+      status: "queued",
+      queuedAt: Date.now(),
+      websiteUrl,
+      researchSummary:
+        normalizeOptionalString(args.researchSummary) ?? undefined,
     });
+    return { entityId, generationId };
   },
 });
 
@@ -3553,6 +3595,253 @@ export const listTrackedEntities = query({
       entities = entities.filter((entity) => entity.active === args.active);
     }
     return entities.sort((a, b) => a.name.localeCompare(b.name));
+  },
+});
+
+export const listEntityVisibility = query({
+  args: {
+    rangeDays: v.optional(v.float64()),
+    limit: v.optional(v.float64()),
+  },
+  handler: async (ctx, args) => {
+    const limit = clamp(Math.floor(args.limit ?? 80), 1, 200);
+    const rangeStart =
+      args.rangeDays !== undefined
+        ? Date.now() - args.rangeDays * 24 * 60 * 60 * 1000
+        : undefined;
+
+    const [entities, prompts, promptGroups, generations] = await Promise.all([
+      ctx.db.query("trackedEntities").collect(),
+      ctx.db.query("prompts").collect(),
+      ctx.db.query("promptGroups").collect(),
+      ctx.db.query("entityPromptGenerationRuns").collect(),
+    ]);
+    const runs = (
+      await ctx.db
+        .query("promptRuns")
+        .withIndex("startedAt")
+        .order("desc")
+        .collect()
+    ).filter((run) => rangeStart === undefined || run.startedAt >= rangeStart);
+    const successfulRuns = runs.filter((run) =>
+      isSuccessfulRunStatus(run.status)
+    );
+    const runById = new Map(runs.map((run) => [run._id, run]));
+    const promptById = new Map(prompts.map((prompt) => [prompt._id, prompt]));
+    const successfulRunIds = successfulRuns.map((run) => run._id);
+    const [mentions, citations] = await Promise.all([
+      collectRunEntityMentionsForRuns(ctx, successfulRunIds),
+      collectCitationsForRuns(ctx, successfulRunIds),
+    ]);
+
+    const stats = new Map<
+      Id<"trackedEntities">,
+      {
+        promptCount: number;
+        approvedPromptCount: number;
+        draftPromptCount: number;
+        promptGroupCount: number;
+        runGroupIds: Set<string>;
+        responseCount: number;
+        mentionedResponseIds: Set<Id<"promptRuns">>;
+        mentionCount: number;
+        citationCount: number;
+        ownedCitationCount: number;
+        latestRunAt?: number;
+        visibilityScores: number[];
+        citationQualityScores: number[];
+      }
+    >();
+
+    for (const entity of entities) {
+      stats.set(entity._id, {
+        promptCount: 0,
+        approvedPromptCount: 0,
+        draftPromptCount: 0,
+        promptGroupCount: 0,
+        runGroupIds: new Set(),
+        responseCount: 0,
+        mentionedResponseIds: new Set(),
+        mentionCount: 0,
+        citationCount: 0,
+        ownedCitationCount: 0,
+        visibilityScores: [],
+        citationQualityScores: [],
+      });
+    }
+
+    for (const prompt of prompts) {
+      if (!prompt.entityId) continue;
+      const stat = stats.get(prompt.entityId);
+      if (!stat) continue;
+      stat.promptCount += 1;
+      const reviewState = promptReviewStateFor(prompt);
+      if (reviewState === "approved") {
+        stat.approvedPromptCount += 1;
+      } else if (reviewState === "draft") {
+        stat.draftPromptCount += 1;
+      }
+    }
+
+    for (const group of promptGroups) {
+      if (!group.entityId || !group.active) continue;
+      const stat = stats.get(group.entityId);
+      if (stat) {
+        stat.promptGroupCount += 1;
+      }
+    }
+
+    for (const run of runs) {
+      if (!run.entityId) continue;
+      const stat = stats.get(run.entityId);
+      if (!stat) continue;
+      stat.runGroupIds.add(runGroupKey(run));
+      stat.latestRunAt = Math.max(stat.latestRunAt ?? 0, run.startedAt);
+      if (isSuccessfulRunStatus(run.status)) {
+        stat.responseCount += 1;
+        if (typeof run.visibilityScore === "number") {
+          stat.visibilityScores.push(run.visibilityScore);
+        }
+        if (typeof run.citationQualityScore === "number") {
+          stat.citationQualityScores.push(
+            normalizeCitationQualityScore(run.citationQualityScore) ??
+              run.citationQualityScore
+          );
+        }
+      }
+    }
+
+    for (const citation of citations) {
+      if (!citation.trackedEntityId) continue;
+      const stat = stats.get(citation.trackedEntityId);
+      if (!stat) continue;
+      stat.citationCount += 1;
+      if (citation.isOwned) {
+        stat.ownedCitationCount += 1;
+      }
+    }
+
+    for (const mention of mentions) {
+      if (!mention.trackedEntityId) continue;
+      const stat = stats.get(mention.trackedEntityId);
+      if (!stat) continue;
+      stat.mentionCount += mention.mentionCount;
+      stat.mentionedResponseIds.add(mention.promptRunId);
+    }
+
+    const latestGenerationByEntity = new Map<
+      Id<"trackedEntities">,
+      EntityPromptGenerationRunDoc
+    >();
+    for (const generation of generations) {
+      const existing = latestGenerationByEntity.get(generation.entityId);
+      if (!existing || generation.queuedAt > existing.queuedAt) {
+        latestGenerationByEntity.set(generation.entityId, generation);
+      }
+    }
+
+    const recentMentions = mentions
+      .map((mention) => {
+        const run = runById.get(mention.promptRunId);
+        if (!run) return null;
+        const prompt = promptById.get(run.promptId);
+        return {
+          promptRunId: mention.promptRunId,
+          entityId: mention.trackedEntityId,
+          name: mention.name,
+          slug: mention.slug,
+          kind: mention.kind,
+          mentionCount: mention.mentionCount,
+          citationCount: mention.citationCount,
+          ownedCitationCount: mention.ownedCitationCount,
+          sentiment: mention.sentiment,
+          detectionSource: mention.detectionSource,
+          confidence: mention.confidence,
+          evidence: mention.evidence,
+          matchedTerms: mention.matchedTerms,
+          promptId: run.promptId,
+          promptExcerpt: promptExcerptForRun(run, prompt),
+          providerName: providerNameForRun(run),
+          startedAt: run.startedAt,
+        };
+      })
+      .filter(
+        (mention): mention is NonNullable<typeof mention> => mention !== null
+      )
+      .sort((left, right) => right.startedAt - left.startedAt)
+      .slice(0, limit);
+
+    const rows = entities
+      .map((entity) => {
+        const stat = stats.get(entity._id);
+        const latestGeneration = latestGenerationByEntity.get(entity._id);
+        return {
+          _id: entity._id,
+          name: entity.name,
+          slug: entity.slug,
+          kind: entity.kind,
+          aliases: entity.aliases ?? [],
+          ownedDomains: entity.ownedDomains ?? [],
+          color: entity.color,
+          active: entity.active,
+          promptCount: stat?.promptCount ?? 0,
+          approvedPromptCount: stat?.approvedPromptCount ?? 0,
+          draftPromptCount: stat?.draftPromptCount ?? 0,
+          promptGroupCount: stat?.promptGroupCount ?? 0,
+          runCount: stat?.runGroupIds.size ?? 0,
+          responseCount: stat?.responseCount ?? 0,
+          mentionedResponseCount: stat?.mentionedResponseIds.size ?? 0,
+          mentionCount: stat?.mentionCount ?? 0,
+          citationCount: stat?.citationCount ?? 0,
+          ownedCitationCount: stat?.ownedCitationCount ?? 0,
+          latestRunAt: stat?.latestRunAt,
+          averageVisibility: average(stat?.visibilityScores ?? []),
+          averageCitationQuality: average(stat?.citationQualityScores ?? []),
+          latestGeneration: latestGeneration
+            ? {
+                id: latestGeneration._id,
+                status: latestGeneration.status,
+                queuedAt: latestGeneration.queuedAt,
+                startedAt: latestGeneration.startedAt,
+                finishedAt: latestGeneration.finishedAt,
+                model: latestGeneration.model,
+                error: latestGeneration.error,
+                generatedPromptCount: latestGeneration.generatedPromptCount,
+                generatedGroupCount: latestGeneration.generatedGroupCount,
+              }
+            : undefined,
+        };
+      })
+      .sort(
+        (left, right) =>
+          Number(right.active) - Number(left.active) ||
+          right.mentionCount - left.mentionCount ||
+          left.name.localeCompare(right.name)
+      );
+
+    return {
+      entities: rows,
+      recentMentions,
+      meta: {
+        entityCount: rows.length,
+        activeEntityCount: rows.filter((entity) => entity.active).length,
+        competitorCount: rows.filter((entity) => entity.kind === "competitor")
+          .length,
+        promptCount: rows.reduce((sum, entity) => sum + entity.promptCount, 0),
+        draftPromptCount: rows.reduce(
+          (sum, entity) => sum + entity.draftPromptCount,
+          0
+        ),
+        mentionCount: rows.reduce(
+          (sum, entity) => sum + entity.mentionCount,
+          0
+        ),
+        citationCount: rows.reduce(
+          (sum, entity) => sum + entity.citationCount,
+          0
+        ),
+      },
+    };
   },
 });
 

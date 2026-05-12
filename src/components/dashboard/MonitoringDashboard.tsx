@@ -56,6 +56,7 @@ import type {
   PromptSentimentLens,
 } from "@/lib/prompt-categorisation";
 import { StatusBanner } from "./components/StatusBanner";
+import { EntitiesPage } from "./EntitiesPage";
 import { OverviewPage } from "./OverviewPage";
 import { PromptDetailPage } from "./PromptDetailPage";
 import { PromptsPage } from "./PromptsPage";
@@ -69,6 +70,7 @@ import { SourcesPage, TrackedEntitiesSheet } from "./SourcesPage";
 
 type PageKey =
   | "overview"
+  | "entities"
   | "prompts"
   | "providers"
   | "runs"
@@ -83,6 +85,7 @@ type ProviderSessionFilterValue = "stored" | "guest";
 
 const DASHBOARD_PAGES: PageKey[] = [
   "overview",
+  "entities",
   "prompts",
   "providers",
   "runs",
@@ -519,6 +522,7 @@ export function MonitoringDashboard() {
           : "list"
       : "list";
   const isOverviewPage = page === "overview";
+  const isEntitiesPage = page === "entities";
   const isPromptsPage = page === "prompts";
   const isProvidersPage = page === "providers";
   const isRunsPage = page === "runs";
@@ -540,7 +544,9 @@ export function MonitoringDashboard() {
   const showingResponsesList = isResponsesPage && !showingRunDetailForResponses;
   const showingSourceDetail = isSourcesPage && selectedSourceDomain !== null;
   const showingSourcesList = isSourcesPage && !showingSourceDetail;
+  const showingEntitiesList = isEntitiesPage;
   const showingListScreen =
+    showingEntitiesList ||
     showingPromptsList ||
     showingRunsList ||
     showingResponsesList ||
@@ -562,13 +568,18 @@ export function MonitoringDashboard() {
   const triggerPromptGroupNow = useMutation(
     api.analytics.triggerPromptGroupNow
   );
+  const triggerEntityPromptsNow = useMutation(
+    api.analytics.triggerEntityPromptsNow
+  );
   const queueEntityPromptGeneration = useMutation(
     api.analytics.queueEntityPromptGeneration
   );
   const retryPromptRun = useMutation(api.analytics.retryPromptRun);
   const cancelPromptRun = useMutation(api.analytics.cancelPromptRun);
   const deletePromptRun = useMutation(api.analytics.deletePromptRun);
-  const createTrackedEntity = useMutation(api.analytics.createTrackedEntity);
+  const createTrackedEntityWithPromptGeneration = useMutation(
+    api.analytics.createTrackedEntityWithPromptGeneration
+  );
   const updateTrackedEntity = useMutation(api.analytics.updateTrackedEntity);
   const deleteTrackedEntity = useMutation(api.analytics.deleteTrackedEntity);
 
@@ -590,6 +601,10 @@ export function MonitoringDashboard() {
   const promptGroups = useQuery(
     api.analytics.listPromptGroups,
     isPromptsPage ? { active: true } : "skip"
+  );
+  const entityVisibility = useQuery(
+    api.analytics.listEntityVisibility,
+    isEntitiesPage ? { rangeDays: DEFAULT_RANGE_DAYS, limit: 80 } : "skip"
   );
   const queueStatus = useQuery(api.analytics.getQueueStatus, {});
   const runs = useQuery(
@@ -639,6 +654,7 @@ export function MonitoringDashboard() {
   const overviewLoading =
     isOverviewPage &&
     (overview === undefined || sources === undefined || runs === undefined);
+  const entitiesPageLoading = isEntitiesPage && entityVisibility === undefined;
   const promptsPageLoading =
     isPromptsPage &&
     promptView === "list" &&
@@ -665,6 +681,7 @@ export function MonitoringDashboard() {
     selectedRunGroupId !== null && runGroupDetail === undefined;
   const pageLoading =
     overviewLoading ||
+    entitiesPageLoading ||
     promptsPageLoading ||
     providersPageLoading ||
     runsPageLoading ||
@@ -1073,6 +1090,33 @@ export function MonitoringDashboard() {
     setSourcePromptFilter(null);
   };
 
+  const openPromptsForEntity = (entity: {
+    name: string;
+    _id?: Id<"trackedEntities">;
+  }) => {
+    setPage("prompts");
+    setPromptSearch(entity.name);
+    setPromptCreateOpen(false);
+    setPromptEditOpen(false);
+    setSelectedPromptId(null);
+    setSelectedRunId(null);
+    setSelectedRunGroupId(null);
+    setSelectedSourceDomain(null);
+    setRunDetailContext(null);
+    setSourcePromptFilter(null);
+  };
+
+  const handleCreateTrackedEntityWithPromptGeneration = async (args: {
+    name: string;
+    kind: TrackedKind;
+    aliases?: string[];
+    ownedDomains?: string[];
+    websiteUrl?: string;
+    researchSummary?: string;
+  }) => {
+    return await createTrackedEntityWithPromptGeneration(args);
+  };
+
   const handleRetryRun = async (runId: Id<"promptRuns">) => {
     const result = await retryPromptRun({ runId });
     toast.success("Run requeued.", {
@@ -1272,7 +1316,9 @@ export function MonitoringDashboard() {
         ? "Search providers..."
         : showingSourcesList
           ? "Search sources..."
-          : "Search prompts...";
+          : showingEntitiesList
+            ? "Search entities..."
+            : "Search prompts...";
   const headerSearchLabel = showingRunsList
     ? "Search runs"
     : showingResponsesList
@@ -1281,7 +1327,9 @@ export function MonitoringDashboard() {
         ? "Search providers"
         : showingSourcesList
           ? "Search sources"
-          : "Search prompts";
+          : showingEntitiesList
+            ? "Search entities"
+            : "Search prompts";
 
   const headerAction = (() => {
     if (showingPromptsList) {
@@ -1518,7 +1566,14 @@ export function MonitoringDashboard() {
               onNewEntityKind={setNewEntityKind}
               newEntityDomain={newEntityDomain}
               onNewEntityDomain={setNewEntityDomain}
-              onCreateEntity={createTrackedEntity}
+              onCreateEntity={async (args) => {
+                const result =
+                  await handleCreateTrackedEntityWithPromptGeneration({
+                    ...args,
+                    websiteUrl: args.ownedDomains?.[0],
+                  });
+                return result.entityId;
+              }}
               onUpdateEntity={updateTrackedEntity}
               onDeleteEntity={deleteTrackedEntity}
             />
@@ -1546,6 +1601,21 @@ export function MonitoringDashboard() {
                 onOpenPrompt={(promptId) =>
                   openPrompt(promptId as Id<"prompts">)
                 }
+              />
+            ) : null}
+
+            {page === "entities" ? (
+              <EntitiesPage
+                loading={entitiesPageLoading}
+                data={entityVisibility}
+                searchValue={promptSearch}
+                onCreateEntity={handleCreateTrackedEntityWithPromptGeneration}
+                onUpdateEntity={updateTrackedEntity}
+                onDeleteEntity={deleteTrackedEntity}
+                onQueueEntityPromptGeneration={queueEntityPromptGeneration}
+                onTriggerEntityPromptsNow={triggerEntityPromptsNow}
+                onOpenPromptsForEntity={openPromptsForEntity}
+                onOpenRun={(runId) => openGlobalRunDetail("responses", runId)}
               />
             ) : null}
 
