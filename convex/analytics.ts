@@ -141,8 +141,35 @@ function promptExcerptFor(prompt: Pick<PromptDoc, "promptText">): string {
   return derivePromptExcerpt(prompt.promptText);
 }
 
-function defaultProviderDefinitionFor(slug: string) {
+function defaultProviderDefinitionFor(slug: string | undefined) {
+  if (!slug) {
+    return undefined;
+  }
   return DEFAULT_PROVIDER_DEFINITIONS.find((item) => item.slug === slug);
+}
+
+function excerptForPromptRun(run: PromptRunDoc, prompt: PromptDoc): string {
+  return run.promptExcerpt ?? promptExcerptFor(prompt);
+}
+
+async function getProviderDocForRun(
+  ctx: MutationCtx,
+  run: PromptRunDoc
+): Promise<ProviderDoc | null> {
+  if (run.providerId) {
+    const byId = await ctx.db.get(run.providerId);
+    if (byId) {
+      return byId;
+    }
+  }
+  const providers = await ensureDefaultProviders(ctx);
+  if (run.providerSlug) {
+    const matched = providers.find((p) => p.slug === run.providerSlug);
+    if (matched) {
+      return matched;
+    }
+  }
+  return providers.find((p) => p.slug === "openai") ?? providers[0] ?? null;
 }
 
 function providerSnapshot(provider: ProviderDoc) {
@@ -194,6 +221,44 @@ function runQueuedAt(
   run: Pick<PromptRunDoc, "queuedAt" | "runGroupQueuedAt" | "startedAt">
 ): number {
   return run.runGroupQueuedAt ?? run.queuedAt ?? run.startedAt;
+}
+
+function promptExcerptForRun(
+  run: Pick<PromptRunDoc, "promptExcerpt" | "runLabel">,
+  prompt?: Pick<PromptDoc, "promptText"> | null
+): string {
+  return (
+    run.promptExcerpt?.trim() ||
+    (prompt ? promptExcerptFor(prompt) : undefined) ||
+    run.runLabel?.trim() ||
+    "(deleted prompt)"
+  );
+}
+
+function providerSlugForRun(
+  run: Pick<PromptRunDoc, "providerSlug" | "channelSlug" | "providerName">
+): string {
+  return (
+    run.providerSlug?.trim() ||
+    run.channelSlug?.trim() ||
+    (run.providerName ? sanitizeSlug(run.providerName) : undefined) ||
+    "unknown-provider"
+  );
+}
+
+function providerNameForRun(
+  run: Pick<PromptRunDoc, "providerName" | "providerSlug" | "channelName">
+): string {
+  return (
+    run.providerName?.trim() ||
+    run.channelName?.trim() ||
+    run.providerSlug?.trim() ||
+    "Unknown provider"
+  );
+}
+
+function providerUrlForRun(run: Pick<PromptRunDoc, "providerUrl">): string {
+  return run.providerUrl?.trim() || "";
 }
 
 function summarizeRunGroupStatus(runs: PromptRunDoc[]): PromptRunDoc["status"] {
@@ -1284,7 +1349,7 @@ export const retryPromptRun = mutation({
       browserEngine: run.browserEngine,
       promptQueryParam: run.promptQueryParam,
       submitStrategy: run.submitStrategy,
-      promptExcerpt: run.promptExcerpt,
+      promptExcerpt: run.promptExcerpt ?? promptExcerptFor(prompt),
       status: "queued",
       attempt: nextAttempt,
       retryOfRunId: run.retryOfRunId ?? run._id,
@@ -1397,6 +1462,24 @@ export const triggerPromptJob = internalMutation({
   },
 });
 
+/** Docker Compose: schedule legacy promptRuns excerpt backfill (anonymous local Convex only). */
+export const requestKickPromptRunExcerptBackfill = mutation({
+  args: {},
+  handler: async (ctx) => {
+    if (process.env.CONVEX_AGENT_MODE !== "anonymous") {
+      throw new Error(
+        "requestKickPromptRunExcerptBackfill runs only when CONVEX_AGENT_MODE=anonymous (local Convex)."
+      );
+    }
+    await ctx.scheduler.runAfter(
+      0,
+      internal.migrations.kickPromptRunExcerptBackfill,
+      {}
+    );
+    return { ok: true };
+  },
+});
+
 export const getQueueStatus = query({
   handler: async (ctx) => {
     const [queuedRuns, runningRuns, recentRuns] = await Promise.all([
@@ -1437,7 +1520,10 @@ export const getQueueStatus = query({
             id: latestQueuedRun._id,
             queuedAt: latestQueuedRun.queuedAt ?? latestQueuedRun.startedAt,
             runLabel: latestQueuedRun.runLabel,
-            providerName: latestQueuedRun.providerName,
+            providerName:
+              latestQueuedRun.providerName ??
+              latestQueuedRun.providerSlug ??
+              "Unknown provider",
           }
         : null,
     };
@@ -1452,29 +1538,40 @@ async function buildClaimedPromptRunPayload(
     browserEngine?: BrowserEngine;
   }
 ) {
-  const provider = await ctx.db.get(run.providerId);
-  const providerDefaults = defaultProviderDefinitionFor(run.providerSlug);
-  const queuedProviderSnapshot = provider
-    ? providerSnapshot(provider)
-    : {
-        channelSlug:
-          run.channelSlug ??
-          providerDefaults?.channelSlug ??
-          `${run.providerSlug}-web`,
-        channelName:
-          run.channelName ??
-          providerDefaults?.channelName ??
-          `${run.providerName} web`,
-        transport: run.transport ?? "browser",
-        sessionMode:
-          run.sessionMode ?? providerDefaults?.sessionMode ?? "guest",
-        sessionProfileDir:
-          run.sessionProfileDir ?? providerDefaults?.sessionProfileDir,
-        promptQueryParam:
-          run.promptQueryParam ?? providerDefaults?.promptQueryParam,
-        submitStrategy:
-          run.submitStrategy ?? providerDefaults?.submitStrategy ?? "type",
-      };
+  const excerpt = excerptForPromptRun(run, prompt);
+  const resolvedProvider = await getProviderDocForRun(ctx, run);
+  if (resolvedProvider == null) {
+    throw new Error("No providers configured.");
+  }
+
+  const base = providerSnapshot(resolvedProvider);
+  const queuedProviderSnapshot = {
+    providerId: run.providerId ?? base.providerId,
+    providerSlug: run.providerSlug ?? base.providerSlug,
+    providerName: run.providerName ?? base.providerName,
+    providerUrl: run.providerUrl ?? base.providerUrl,
+    channelSlug: run.channelSlug ?? base.channelSlug,
+    channelName: run.channelName ?? base.channelName,
+    transport: run.transport ?? base.transport,
+    sessionMode: run.sessionMode ?? base.sessionMode,
+    sessionProfileDir: run.sessionProfileDir ?? base.sessionProfileDir,
+    promptQueryParam: run.promptQueryParam ?? base.promptQueryParam,
+    submitStrategy: run.submitStrategy ?? base.submitStrategy,
+  };
+
+  const providerDefaults = defaultProviderDefinitionFor(
+    queuedProviderSnapshot.providerSlug
+  );
+  const effectiveSlug =
+    queuedProviderSnapshot.providerSlug ?? resolvedProvider.slug;
+  const channelSlug =
+    queuedProviderSnapshot.channelSlug ??
+    providerDefaults?.channelSlug ??
+    `${effectiveSlug}-web`;
+  const channelName =
+    queuedProviderSnapshot.channelName ??
+    providerDefaults?.channelName ??
+    `${queuedProviderSnapshot.providerName} web`;
 
   return {
     runId: run._id,
@@ -1483,26 +1580,23 @@ async function buildClaimedPromptRunPayload(
     startedAt: run.startedAt,
     prompt: {
       id: prompt._id,
-      excerpt: run.promptExcerpt,
+      excerpt,
       promptText: prompt.promptText,
-      providerId: run.providerId,
-      providerSlug: run.providerSlug,
-      providerName: run.providerName,
-      providerUrl: run.providerUrl,
-      channelSlug: run.channelSlug ?? queuedProviderSnapshot.channelSlug,
-      channelName: run.channelName ?? queuedProviderSnapshot.channelName,
-      transport: run.transport ?? queuedProviderSnapshot.transport,
-      sessionMode: run.sessionMode ?? queuedProviderSnapshot.sessionMode,
-      sessionProfileDir:
-        run.sessionProfileDir ?? queuedProviderSnapshot.sessionProfileDir,
+      providerId: queuedProviderSnapshot.providerId,
+      providerSlug: queuedProviderSnapshot.providerSlug,
+      providerName: queuedProviderSnapshot.providerName,
+      providerUrl: queuedProviderSnapshot.providerUrl,
+      channelSlug,
+      channelName,
+      transport: queuedProviderSnapshot.transport,
+      sessionMode: queuedProviderSnapshot.sessionMode,
+      sessionProfileDir: queuedProviderSnapshot.sessionProfileDir,
       browserEngine: run.browserEngine ?? args.browserEngine,
-      promptQueryParam:
-        run.promptQueryParam ?? queuedProviderSnapshot.promptQueryParam,
-      submitStrategy:
-        run.submitStrategy ?? queuedProviderSnapshot.submitStrategy,
-      providerSessionJson: provider?.sessionJson,
+      promptQueryParam: queuedProviderSnapshot.promptQueryParam,
+      submitStrategy: queuedProviderSnapshot.submitStrategy,
+      providerSessionJson: resolvedProvider.sessionJson,
     },
-    runLabel: run.runLabel ?? run.promptExcerpt,
+    runLabel: run.runLabel ?? excerpt,
     attempt: run.attempt ?? 1,
     retryOfRunId: run.retryOfRunId,
   };
@@ -1552,34 +1646,6 @@ export const claimNextQueuedPromptRun = mutation({
       });
       return null;
     }
-    const provider = await ctx.db.get(queuedRun.providerId);
-    const providerDefaults = defaultProviderDefinitionFor(
-      queuedRun.providerSlug
-    );
-    const queuedProviderSnapshot = provider
-      ? providerSnapshot(provider)
-      : {
-          channelSlug:
-            queuedRun.channelSlug ??
-            providerDefaults?.channelSlug ??
-            `${queuedRun.providerSlug}-web`,
-          channelName:
-            queuedRun.channelName ??
-            providerDefaults?.channelName ??
-            `${queuedRun.providerName} web`,
-          transport: queuedRun.transport ?? "browser",
-          sessionMode:
-            queuedRun.sessionMode ?? providerDefaults?.sessionMode ?? "guest",
-          sessionProfileDir:
-            queuedRun.sessionProfileDir ?? providerDefaults?.sessionProfileDir,
-          promptQueryParam:
-            queuedRun.promptQueryParam ?? providerDefaults?.promptQueryParam,
-          submitStrategy:
-            queuedRun.submitStrategy ??
-            providerDefaults?.submitStrategy ??
-            "type",
-        };
-
     const startedAt = Date.now();
     await ctx.db.patch(queuedRun._id, {
       status: "running",
@@ -1589,40 +1655,19 @@ export const claimNextQueuedPromptRun = mutation({
       browserEngine: args.browserEngine ?? queuedRun.browserEngine,
     });
 
-    return {
-      runId: queuedRun._id,
-      runGroupId: runGroupKey(queuedRun),
-      queuedAt: queuedRun.queuedAt ?? queuedRun.startedAt,
-      startedAt,
-      prompt: {
-        id: prompt._id,
-        excerpt: queuedRun.promptExcerpt,
-        promptText: prompt.promptText,
-        providerId: queuedRun.providerId,
-        providerSlug: queuedRun.providerSlug,
-        providerName: queuedRun.providerName,
-        providerUrl: queuedRun.providerUrl,
-        channelSlug:
-          queuedRun.channelSlug ?? queuedProviderSnapshot.channelSlug,
-        channelName:
-          queuedRun.channelName ?? queuedProviderSnapshot.channelName,
-        transport: queuedRun.transport ?? queuedProviderSnapshot.transport,
-        sessionMode:
-          queuedRun.sessionMode ?? queuedProviderSnapshot.sessionMode,
-        sessionProfileDir:
-          queuedRun.sessionProfileDir ??
-          queuedProviderSnapshot.sessionProfileDir,
-        browserEngine: queuedRun.browserEngine ?? args.browserEngine,
-        promptQueryParam:
-          queuedRun.promptQueryParam ?? queuedProviderSnapshot.promptQueryParam,
-        submitStrategy:
-          queuedRun.submitStrategy ?? queuedProviderSnapshot.submitStrategy,
-        providerSessionJson: provider?.sessionJson,
+    return await buildClaimedPromptRunPayload(
+      ctx,
+      {
+        ...queuedRun,
+        status: "running",
+        startedAt,
+        warnings: [],
+        runner: args.runner?.trim() || "local-playwright-worker",
+        browserEngine: args.browserEngine ?? queuedRun.browserEngine,
       },
-      runLabel: queuedRun.runLabel ?? queuedRun.promptExcerpt,
-      attempt: queuedRun.attempt ?? 1,
-      retryOfRunId: queuedRun.retryOfRunId,
-    };
+      prompt,
+      args
+    );
   },
 });
 
@@ -1676,7 +1721,7 @@ export const claimNextQueuedPromptRunGroup = mutation({
           runMatchesWorkerEngine(run, args.browserEngine)
       )
       .sort((left, right) =>
-        left.providerName.localeCompare(right.providerName)
+        (left.providerName ?? "").localeCompare(right.providerName ?? "")
       );
 
     if (!queuedGroupRuns.length) {
@@ -1806,6 +1851,7 @@ export const completePromptRun = mutation({
     deeplinkUsed: v.optional(v.string()),
     evidencePath: v.optional(v.string()),
     output: v.optional(v.string()),
+    model: v.optional(v.string()),
     warnings: v.optional(v.array(v.string())),
     runner: v.optional(v.string()),
     browserEngine: v.optional(vBrowserEngine),
@@ -1894,6 +1940,7 @@ export const completePromptRun = mutation({
         deeplinkUsed: args.deeplinkUsed,
         evidencePath: args.evidencePath,
         output: args.output,
+        model: args.model,
         warnings: mergedWarnings.length ? mergedWarnings : undefined,
         runner: args.runner ?? run.runner,
         browserEngine: args.browserEngine ?? run.browserEngine,
@@ -2084,6 +2131,7 @@ export const ingestPromptRun = mutation({
     deeplinkUsed: v.optional(v.string()),
     evidencePath: v.optional(v.string()),
     output: v.optional(v.string()),
+    model: v.optional(v.string()),
     warnings: v.optional(v.array(v.string())),
     browserEngine: v.optional(vBrowserEngine),
     ingestKey: v.optional(v.string()),
@@ -2178,6 +2226,7 @@ export const ingestPromptRun = mutation({
       deeplinkUsed: args.deeplinkUsed,
       evidencePath: args.evidencePath,
       output: args.output,
+      model: args.model,
       warnings: args.warnings,
       browserEngine: args.browserEngine,
       ingestId: args.ingestId?.trim(),
@@ -2267,10 +2316,10 @@ export const listPromptRuns = query({
       runGroupId: runGroupKey(run),
       runGroupQueuedAt: runQueuedAt(run),
       promptId: run.promptId,
-      promptExcerpt: run.promptExcerpt,
-      providerSlug: run.providerSlug,
-      providerName: run.providerName,
-      providerUrl: run.providerUrl,
+      promptExcerpt: promptExcerptForRun(run),
+      providerSlug: providerSlugForRun(run),
+      providerName: providerNameForRun(run),
+      providerUrl: providerUrlForRun(run),
       channelSlug: run.channelSlug,
       channelName: run.channelName,
       transport: run.transport,
@@ -2370,7 +2419,7 @@ export const listRunGroups = query({
         const sortedRuns = runs
           .slice()
           .sort((left, right) =>
-            left.providerName.localeCompare(right.providerName)
+            (left.providerName ?? "").localeCompare(right.providerName ?? "")
           );
         const latestRun = sortedRuns
           .slice()
@@ -2381,7 +2430,7 @@ export const listRunGroups = query({
         return {
           id: runGroupKey(latestRun),
           promptId: latestRun.promptId,
-          promptExcerpt: latestRun.promptExcerpt,
+          promptExcerpt: promptExcerptForRun(latestRun),
           runLabel: latestRun.runLabel,
           queuedAt: runQueuedAt(latestRun),
           startedAt: latestRunStartedAt(sortedRuns),
@@ -2397,9 +2446,9 @@ export const listRunGroups = query({
           citationCount: citations.length,
           providers: sortedRuns.map((run) => ({
             runId: run._id,
-            providerSlug: run.providerSlug,
-            providerName: run.providerName,
-            providerUrl: run.providerUrl,
+            providerSlug: providerSlugForRun(run),
+            providerName: providerNameForRun(run),
+            providerUrl: providerUrlForRun(run),
             channelName: run.channelName,
             sessionMode: run.sessionMode,
             browserEngine: run.browserEngine,
@@ -2442,7 +2491,7 @@ export const getRunGroup = query({
     runs = runs
       .slice()
       .sort((left, right) =>
-        left.providerName.localeCompare(right.providerName)
+        (left.providerName ?? "").localeCompare(right.providerName ?? "")
       );
     const prompt = await ctx.db.get(runs[0].promptId);
     const successfulRunIds = runs
@@ -2465,7 +2514,7 @@ export const getRunGroup = query({
       group: {
         id: runGroupKey(latestRun),
         promptId: latestRun.promptId,
-        promptExcerpt: latestRun.promptExcerpt,
+        promptExcerpt: promptExcerptForRun(latestRun, prompt),
         runLabel: latestRun.runLabel,
         queuedAt: runQueuedAt(latestRun),
         startedAt: latestRunStartedAt(runs),
@@ -2491,6 +2540,10 @@ export const getRunGroup = query({
         ...run,
         runGroupId: runGroupKey(run),
         runGroupQueuedAt: runQueuedAt(run),
+        promptExcerpt: promptExcerptForRun(run, prompt),
+        providerSlug: providerSlugForRun(run),
+        providerName: providerNameForRun(run),
+        providerUrl: providerUrlForRun(run),
         sourceCount: isSuccessfulRunStatus(run.status)
           ? run.sourceCount
           : undefined,
@@ -2729,9 +2782,9 @@ export const getPromptAnalysis = query({
         status: run.status,
         startedAt: run.startedAt,
         finishedAt: run.finishedAt,
-        providerSlug: run.providerSlug,
-        providerName: run.providerName,
-        providerUrl: run.providerUrl,
+        providerSlug: providerSlugForRun(run),
+        providerName: providerNameForRun(run),
+        providerUrl: providerUrlForRun(run),
         browserEngine: run.browserEngine,
         attempt: run.attempt ?? 1,
         visibilityScore: isSuccessfulRunStatus(run.status)
@@ -2934,6 +2987,10 @@ export const getPromptRun = query({
         ...run,
         runGroupId: runGroupKey(run),
         runGroupQueuedAt: runQueuedAt(run),
+        promptExcerpt: promptExcerptForRun(run, prompt),
+        providerSlug: providerSlugForRun(run),
+        providerName: providerNameForRun(run),
+        providerUrl: providerUrlForRun(run),
         sourceCount: isSuccessfulRunStatus(run.status)
           ? run.sourceCount
           : undefined,
@@ -3085,11 +3142,8 @@ export const listSources = query({
               return {
                 runId: run._id,
                 promptId: run.promptId,
-                promptExcerpt:
-                  prompt?.promptText != null
-                    ? promptExcerptFor(prompt)
-                    : run.promptExcerpt,
-                providerName: run.providerName,
+                promptExcerpt: promptExcerptForRun(run, prompt),
+                providerName: providerNameForRun(run),
                 startedAt: run.startedAt,
                 responseSummary: run.responseSummary ?? run.responseText ?? "",
                 position: citation.position,
@@ -3183,6 +3237,7 @@ export const getOverview = query({
     const currentCitations = await collectCitationsForRuns(ctx, currentRunIds);
     const totalCitations = currentCitations.length;
     const prompts = await ctx.db.query("prompts").collect();
+    const promptById = new Map(prompts.map((prompt) => [prompt._id, prompt]));
     const currentCitationsByRun = buildCitationMap(currentCitations);
     const mentionsByRun = buildRunEntityMentionMap(
       await collectRunEntityMentionsForRuns(ctx, currentRunIds)
@@ -3218,17 +3273,19 @@ export const getOverview = query({
       })
       .sort((a, b) => a.day.localeCompare(b.day));
 
-    const providerSet = new Set<string>([
-      ...currentSuccessfulRuns.map((run) => run.providerName),
-      ...previousSuccessfulRuns.map((run) => run.providerName),
-    ]);
+    const providerSet = new Set<string>(
+      [
+        ...currentSuccessfulRuns.map((run) => providerNameForRun(run)),
+        ...previousSuccessfulRuns.map((run) => providerNameForRun(run)),
+      ].filter((name): name is string => Boolean(name?.trim()))
+    );
     const providerComparison = [...providerSet]
       .map((providerName) => {
         const providerCurrent = currentSuccessfulRuns.filter(
-          (run) => run.providerName === providerName
+          (run) => providerNameForRun(run) === providerName
         );
         const providerPrevious = previousSuccessfulRuns.filter(
-          (run) => run.providerName === providerName
+          (run) => providerNameForRun(run) === providerName
         );
         const providerCurrentMetrics = summarizeRunMetrics(providerCurrent);
         const providerPreviousMetrics = summarizeRunMetrics(providerPrevious);
@@ -3320,7 +3377,7 @@ export const getOverview = query({
         return {
           promptId: prompt._id,
           excerpt: promptExcerptFor(prompt),
-          providerName: latestRun.providerName,
+          providerName: providerNameForRun(latestRun),
           responseCount: promptRuns.length,
           latestStatus: latestRun.status,
           latestResponseSummary:
@@ -3420,8 +3477,8 @@ export const getOverview = query({
       recentRuns: currentRuns.slice(0, 8).map((run) => ({
         _id: run._id,
         startedAt: run.startedAt,
-        promptExcerpt: run.promptExcerpt,
-        providerName: run.providerName,
+        promptExcerpt: promptExcerptForRun(run, promptById.get(run.promptId)),
+        providerName: providerNameForRun(run),
         status: run.status,
         finishedAt: run.finishedAt,
         latencyMs: run.latencyMs,

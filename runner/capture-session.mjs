@@ -10,6 +10,7 @@ import {
   normalizeBrowserEngine,
 } from "./browser-engine.mjs";
 import { warmUpSession } from "./session-warmup.mjs";
+import { dismissInterstitials } from "./interstitial-handler.mjs";
 
 const DEFAULT_PLAYWRIGHT_STORAGE_STATE_PATH =
   "runner/chatgpt.storage-state.json";
@@ -68,35 +69,7 @@ export function resolvePathIfRelative(inputPath) {
 }
 
 async function dismissCookieBanner(page) {
-  const selectors = [
-    "button:has-text('Reject non-essential')",
-    "button:has-text('Reject all')",
-    "button:has-text('Accept all')",
-    "button:has-text('Accept all cookies')",
-    "button:has-text('I agree')",
-    "button[aria-label='Close']",
-    "button[aria-label='Dismiss']",
-  ];
-
-  for (const selector of selectors) {
-    const button = page.locator(selector).first();
-    const exists = await button.count().catch(() => 0);
-    if (!exists) {
-      continue;
-    }
-    const visible = await button.isVisible().catch(() => false);
-    if (!visible) {
-      continue;
-    }
-    try {
-      await button.click({ timeout: 2500 });
-      return true;
-    } catch {
-      continue;
-    }
-  }
-
-  return false;
+  return (await dismissInterstitials(page)) > 0;
 }
 
 export async function openCaptureSession(options = {}) {

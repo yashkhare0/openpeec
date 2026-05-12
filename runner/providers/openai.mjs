@@ -4,6 +4,7 @@ import {
   detectAntiBotBlock,
   detectAntiBotNetworkBlock,
 } from "../anti-bot-detector.mjs";
+import { dismissInterstitials } from "../interstitial-handler.mjs";
 
 export const OPENAI_PROVIDER = "openai";
 
@@ -209,38 +210,7 @@ export function classifyChatGptPageState({
 }
 
 async function dismissCookieBanner(page) {
-  const selectors = [
-    "button:has-text('Reject non-essential')",
-    "button:has-text('Reject all')",
-    "button:has-text('Accept all')",
-    "button:has-text('Accept all cookies')",
-    "button:has-text('I agree')",
-    "button[aria-label='Close']",
-    "button[aria-label='Dismiss']",
-  ];
-
-  for (const selector of selectors) {
-    const button = page.locator(selector).first();
-    const exists = await button.count().catch(() => 0);
-    if (!exists) {
-      continue;
-    }
-
-    const visible = await button.isVisible().catch(() => false);
-    if (!visible) {
-      continue;
-    }
-
-    try {
-      await button.click({ timeout: 2500 });
-      await page.waitForTimeout(250);
-      return true;
-    } catch {
-      continue;
-    }
-  }
-
-  return false;
+  return (await dismissInterstitials(page)) > 0;
 }
 
 const CHATGPT_LOGGED_OUT_UPSELL_SELECTORS = [

@@ -15,6 +15,14 @@ export default defineSchema({
     cronId: v.optional(v.string()),
   }),
 
+  /** One row per bootstrap / schema data backfill tracked in Convex. */
+  schemaMigrations: defineTable({
+    name: v.string(),
+    startedAt: v.optional(v.float64()),
+    completedAt: v.optional(v.float64()),
+    patchedRuns: v.optional(v.float64()),
+  }).index("name", ["name"]),
+
   // Web logs from outgoing requests.
   weblogs: defineTable({
     url: v.string(),
@@ -159,12 +167,14 @@ export default defineSchema({
     runGroupId: v.optional(v.string()),
     runGroupQueuedAt: v.optional(v.float64()),
     promptId: v.id("prompts"),
-    providerId: v.id("providers"),
-    providerSlug: v.string(),
-    providerName: v.string(),
-    providerUrl: v.string(),
+    /** Optional for legacy runs ingested before provider snapshot fields existed */
+    providerId: v.optional(v.id("providers")),
+    providerSlug: v.optional(v.string()),
+    providerName: v.optional(v.string()),
+    providerUrl: v.optional(v.string()),
     channelSlug: v.optional(v.string()),
     channelName: v.optional(v.string()),
+    model: v.optional(v.string()),
     transport: v.optional(v.literal("browser")),
     sessionMode: v.optional(v.union(v.literal("guest"), v.literal("stored"))),
     sessionProfileDir: v.optional(v.string()),
@@ -179,7 +189,7 @@ export default defineSchema({
     submitStrategy: v.optional(
       v.union(v.literal("type"), v.literal("deeplink"))
     ),
-    promptExcerpt: v.string(),
+    promptExcerpt: v.optional(v.string()),
     status: v.union(
       v.literal("queued"),
       v.literal("running"),

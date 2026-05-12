@@ -1,3 +1,5 @@
+import { dismissInterstitials } from "../interstitial-handler.mjs";
+
 export const GOOGLE_AI_MODE_PROVIDER = "google-ai-mode";
 
 function clamp(value, min, max) {
@@ -77,6 +79,8 @@ export async function waitForGoogleAiModeResponse({ page, config }) {
   const timeoutMs = resolveResponseStartTimeoutMs(config);
   const deadline = Date.now() + timeoutMs;
   let lastState = null;
+  let cookieDismissAttempts = 0;
+  const MAX_COOKIE_DISMISS_ATTEMPTS = 2;
 
   while (Date.now() < deadline) {
     lastState = await snapshotGoogleAiModeState(page, config);
@@ -86,6 +90,23 @@ export async function waitForGoogleAiModeResponse({ page, config }) {
       { html: lastState.html, url: lastState.url }
     );
     if (blockerReason) {
+      const looksLikeCookieConsent =
+        blockerReason.toLowerCase().includes("cookie") &&
+        cookieDismissAttempts < MAX_COOKIE_DISMISS_ATTEMPTS;
+      if (looksLikeCookieConsent) {
+        cookieDismissAttempts += 1;
+        const clicked = await dismissInterstitials(page).catch(() => 0);
+        if (clicked > 0) {
+          // Consent form usually navigates back to the original URL; give it
+          // time to settle before re-snapshotting.
+          await page
+            .waitForLoadState("domcontentloaded", { timeout: 10_000 })
+            .catch(() => {});
+          await page.waitForTimeout(750);
+          continue;
+        }
+        // Fall through to "blocked" if we couldn't find a button to click.
+      }
       return {
         status: "blocked",
         summary: blockerReason,
@@ -103,6 +124,9 @@ export async function waitForGoogleAiModeResponse({ page, config }) {
         responseStarted: true,
       };
     }
+    // Late-appearing banners can show up during the wait — dismiss
+    // best-effort each tick. Cheap (no-op if nothing matches).
+    await dismissInterstitials(page).catch(() => 0);
     await page.waitForTimeout(750);
   }
 
