@@ -174,6 +174,11 @@ function localProviderSessionApi(): Plugin {
   };
 }
 
+/** Docker Desktop bind mounts + Convex codegen bursts can restart Vite during dep-scan; poll and debounce file events there */
+const inDocker = fs.existsSync("/.dockerenv");
+
+const dockerWatchIgnored = inDocker ? (["**/.env.local", "**/.env.*.local"] as const) : [];
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
@@ -190,7 +195,18 @@ export default defineConfig({
   server: {
     port: 5999,
     watch: {
+      ...(inDocker
+        ? {
+            usePolling: true,
+            interval: 1000,
+            awaitWriteFinish: {
+              stabilityThreshold: 500,
+              pollInterval: 100,
+            },
+          }
+        : {}),
       ignored: [
+        ...dockerWatchIgnored,
         "**/e2e/**",
         "**/test-results/**",
         "**/playwright-report/**",

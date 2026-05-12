@@ -11,6 +11,7 @@
 import type * as analytics from "../analytics.js";
 import type * as cronvex from "../cronvex.js";
 import type * as http from "../http.js";
+import type * as migrations from "../migrations.js";
 import type * as monitoring from "../monitoring.js";
 
 import type {
@@ -23,6 +24,7 @@ declare const fullApi: ApiFromModules<{
   analytics: typeof analytics;
   cronvex: typeof cronvex;
   http: typeof http;
+  migrations: typeof migrations;
   monitoring: typeof monitoring;
 }>;
 

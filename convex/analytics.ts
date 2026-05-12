@@ -43,7 +43,78 @@ const vCitationType = v.union(
   v.literal("other")
 );
 
+const vMentionSentiment = v.union(
+  v.literal("positive"),
+  v.literal("neutral"),
+  v.literal("negative"),
+  v.literal("mixed")
+);
+
+const vMentionAnalysisStatus = v.union(
+  v.literal("queued"),
+  v.literal("running"),
+  v.literal("success"),
+  v.literal("failed")
+);
+
+const vPromptIntentCategory = v.union(
+  v.literal("category_discovery"),
+  v.literal("brand_factual"),
+  v.literal("recommendation"),
+  v.literal("comparison"),
+  v.literal("alternative"),
+  v.literal("problem_solution"),
+  v.literal("how_to"),
+  v.literal("pricing_buying"),
+  v.literal("review_reputation"),
+  v.literal("risk_objection"),
+  v.literal("citation_source"),
+  v.literal("content_gap"),
+  v.literal("uncategorized")
+);
+
+const vPromptSentimentLens = v.union(
+  v.literal("positive"),
+  v.literal("neutral"),
+  v.literal("negative"),
+  v.literal("comparative"),
+  v.literal("mixed")
+);
+
+const vPromptFunnelStage = v.union(
+  v.literal("awareness"),
+  v.literal("consideration"),
+  v.literal("decision"),
+  v.literal("retention")
+);
+
+const vPromptPriority = v.union(
+  v.literal("high"),
+  v.literal("medium"),
+  v.literal("low")
+);
+
+const vPromptReviewState = v.union(
+  v.literal("draft"),
+  v.literal("approved"),
+  v.literal("archived")
+);
+
+const vPromptGeneratedBy = v.union(
+  v.literal("manual"),
+  v.literal("codex"),
+  v.literal("import")
+);
+
+const vPromptGenerationStatus = v.union(
+  v.literal("queued"),
+  v.literal("running"),
+  v.literal("success"),
+  v.literal("failed")
+);
+
 type PromptDoc = Doc<"prompts">;
+type PromptGroupDoc = Doc<"promptGroups">;
 type ProviderDoc = Doc<"providers">;
 type PromptRunDoc = Doc<"promptRuns">;
 type CitationDoc = Doc<"citations">;
@@ -51,6 +122,10 @@ type TrackedEntityDoc = Doc<"trackedEntities">;
 type RunEntityMentionDoc = Doc<"runEntityMentions">;
 type PatchObject = Record<string, unknown>;
 type BrowserEngine = "playwright" | "camoufox" | "nodriver";
+type PromptIntentCategory = NonNullable<PromptDoc["intentCategory"]>;
+type PromptSentimentLens = NonNullable<PromptDoc["sentimentLens"]>;
+type PromptReviewState = NonNullable<PromptDoc["reviewState"]>;
+type PromptGeneratedBy = NonNullable<PromptDoc["generatedBy"]>;
 
 const crons = new Crons(components.crons);
 const RUNNABLE_PROVIDER_SLUGS = new Set([
@@ -127,6 +202,11 @@ const DEFAULT_PROVIDER_DEFINITIONS = [
   },
 ] as const;
 
+const DEFAULT_PROMPT_INTENT_CATEGORY: PromptIntentCategory = "uncategorized";
+const DEFAULT_PROMPT_SENTIMENT_LENS: PromptSentimentLens = "neutral";
+const DEFAULT_PROMPT_REVIEW_STATE: PromptReviewState = "approved";
+const DEFAULT_PROMPT_GENERATED_BY: PromptGeneratedBy = "manual";
+
 function compactPatch<T extends PatchObject>(patch: T): PatchObject {
   return Object.fromEntries(
     Object.entries(patch).filter(([, value]) => value !== undefined)
@@ -141,8 +221,169 @@ function promptExcerptFor(prompt: Pick<PromptDoc, "promptText">): string {
   return derivePromptExcerpt(prompt.promptText);
 }
 
-function defaultProviderDefinitionFor(slug: string) {
+function defaultProviderDefinitionFor(slug: string | undefined) {
+  if (!slug) {
+    return undefined;
+  }
   return DEFAULT_PROVIDER_DEFINITIONS.find((item) => item.slug === slug);
+}
+
+function normalizeOptionalString(input: string | null | undefined) {
+  if (input === undefined) {
+    return undefined;
+  }
+  if (input === null) {
+    return null;
+  }
+  const trimmed = input.trim();
+  return trimmed || null;
+}
+
+function normalizeSourceUrls(input: string[] | null | undefined) {
+  if (input === undefined) {
+    return undefined;
+  }
+  if (input === null) {
+    return null;
+  }
+  const urls = uniqueStrings(input).slice(0, 20);
+  return urls.length ? urls : null;
+}
+
+function setOptionalPatchValue(
+  patch: PatchObject,
+  key: string,
+  value: unknown
+) {
+  if (value === undefined) {
+    return;
+  }
+  patch[key] = value === null ? undefined : value;
+}
+
+function promptIntentCategoryFor(prompt: PromptDoc): PromptIntentCategory {
+  return prompt.intentCategory ?? DEFAULT_PROMPT_INTENT_CATEGORY;
+}
+
+function promptSentimentLensFor(prompt: PromptDoc): PromptSentimentLens {
+  return prompt.sentimentLens ?? DEFAULT_PROMPT_SENTIMENT_LENS;
+}
+
+function promptReviewStateFor(prompt: PromptDoc): PromptReviewState {
+  return prompt.reviewState ?? DEFAULT_PROMPT_REVIEW_STATE;
+}
+
+function promptGeneratedByFor(prompt: PromptDoc): PromptGeneratedBy {
+  return prompt.generatedBy ?? DEFAULT_PROMPT_GENERATED_BY;
+}
+
+function promptMetadataFor(
+  prompt: PromptDoc,
+  promptGroup?: PromptGroupDoc | null,
+  entity?: TrackedEntityDoc | null
+) {
+  return {
+    entityId: prompt.entityId,
+    entityName: entity?.name,
+    entitySlug: entity?.slug,
+    promptGroupId: prompt.promptGroupId,
+    promptGroupName: promptGroup?.name,
+    promptGroupSlug: promptGroup?.slug,
+    intentCategory: promptIntentCategoryFor(prompt),
+    sentimentLens: promptSentimentLensFor(prompt),
+    funnelStage: prompt.funnelStage,
+    audience: prompt.audience,
+    topic: prompt.topic,
+    priority: prompt.priority,
+    reviewState: promptReviewStateFor(prompt),
+    generatedBy: promptGeneratedByFor(prompt),
+    generationRationale: prompt.generationRationale,
+    sourceUrls: prompt.sourceUrls ?? [],
+  };
+}
+
+function promptRunSnapshotFor(
+  prompt: PromptDoc,
+  promptGroup?: PromptGroupDoc | null
+) {
+  return {
+    entityId: prompt.entityId,
+    promptGroupId: prompt.promptGroupId,
+    promptGroupName: promptGroup?.name,
+    intentCategory: promptIntentCategoryFor(prompt),
+    sentimentLens: promptSentimentLensFor(prompt),
+    funnelStage: prompt.funnelStage,
+    audience: prompt.audience,
+    topic: prompt.topic,
+    priority: prompt.priority,
+    reviewState: promptReviewStateFor(prompt),
+  };
+}
+
+function normalizePromptTextForDedup(input: string): string {
+  return input.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function promptReplacementWithPatch(prompt: PromptDoc, patch: PatchObject) {
+  const replacement: PatchObject = {
+    promptText: prompt.promptText,
+    active: prompt.active,
+  };
+  const optionalKeys: Array<keyof PromptDoc> = [
+    "entityId",
+    "promptGroupId",
+    "intentCategory",
+    "sentimentLens",
+    "funnelStage",
+    "audience",
+    "topic",
+    "priority",
+    "reviewState",
+    "generatedBy",
+    "generationRationale",
+    "sourceUrls",
+    "sourceGenerationId",
+    "createdAt",
+    "updatedAt",
+  ];
+  for (const key of optionalKeys) {
+    const value = prompt[key];
+    if (value !== undefined) {
+      replacement[key] = value;
+    }
+  }
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) {
+      delete replacement[key];
+    } else {
+      replacement[key] = value;
+    }
+  }
+  return replacement as Omit<PromptDoc, "_id" | "_creationTime">;
+}
+
+function excerptForPromptRun(run: PromptRunDoc, prompt: PromptDoc): string {
+  return run.promptExcerpt ?? promptExcerptFor(prompt);
+}
+
+async function getProviderDocForRun(
+  ctx: MutationCtx,
+  run: PromptRunDoc
+): Promise<ProviderDoc | null> {
+  if (run.providerId) {
+    const byId = await ctx.db.get(run.providerId);
+    if (byId) {
+      return byId;
+    }
+  }
+  const providers = await ensureDefaultProviders(ctx);
+  if (run.providerSlug) {
+    const matched = providers.find((p) => p.slug === run.providerSlug);
+    if (matched) {
+      return matched;
+    }
+  }
+  return providers.find((p) => p.slug === "openai") ?? providers[0] ?? null;
 }
 
 function providerSnapshot(provider: ProviderDoc) {
@@ -194,6 +435,44 @@ function runQueuedAt(
   run: Pick<PromptRunDoc, "queuedAt" | "runGroupQueuedAt" | "startedAt">
 ): number {
   return run.runGroupQueuedAt ?? run.queuedAt ?? run.startedAt;
+}
+
+function promptExcerptForRun(
+  run: Pick<PromptRunDoc, "promptExcerpt" | "runLabel">,
+  prompt?: Pick<PromptDoc, "promptText"> | null
+): string {
+  return (
+    run.promptExcerpt?.trim() ||
+    (prompt ? promptExcerptFor(prompt) : undefined) ||
+    run.runLabel?.trim() ||
+    "(deleted prompt)"
+  );
+}
+
+function providerSlugForRun(
+  run: Pick<PromptRunDoc, "providerSlug" | "channelSlug" | "providerName">
+): string {
+  return (
+    run.providerSlug?.trim() ||
+    run.channelSlug?.trim() ||
+    (run.providerName ? sanitizeSlug(run.providerName) : undefined) ||
+    "unknown-provider"
+  );
+}
+
+function providerNameForRun(
+  run: Pick<PromptRunDoc, "providerName" | "providerSlug" | "channelName">
+): string {
+  return (
+    run.providerName?.trim() ||
+    run.channelName?.trim() ||
+    run.providerSlug?.trim() ||
+    "Unknown provider"
+  );
+}
+
+function providerUrlForRun(run: Pick<PromptRunDoc, "providerUrl">): string {
+  return run.providerUrl?.trim() || "";
 }
 
 function summarizeRunGroupStatus(runs: PromptRunDoc[]): PromptRunDoc["status"] {
@@ -400,8 +679,15 @@ async function deletePromptRunWithArtifacts(
     .query("runEntityMentions")
     .withIndex("promptRunId", (q) => q.eq("promptRunId", runId))
     .collect();
+  const mentionAnalyses = await ctx.db
+    .query("runMentionAnalyses")
+    .withIndex("promptRunId", (q) => q.eq("promptRunId", runId))
+    .collect();
   await Promise.all(citations.map((citation) => ctx.db.delete(citation._id)));
   await Promise.all(mentions.map((mention) => ctx.db.delete(mention._id)));
+  await Promise.all(
+    mentionAnalyses.map((analysis) => ctx.db.delete(analysis._id))
+  );
   await ctx.db.delete(runId);
 }
 
@@ -505,6 +791,141 @@ async function assertPromptIdsOwned(
   return prompts;
 }
 
+async function assertTrackedEntity(
+  ctx: MutationCtx | QueryCtx,
+  entityId: Id<"trackedEntities">
+): Promise<TrackedEntityDoc> {
+  const entity = await ctx.db.get(entityId);
+  if (entity == null) {
+    throw new Error("Tracked entity not found");
+  }
+  return entity;
+}
+
+async function assertPromptGroup(
+  ctx: MutationCtx | QueryCtx,
+  promptGroupId: Id<"promptGroups">
+): Promise<PromptGroupDoc> {
+  const promptGroup = await ctx.db.get(promptGroupId);
+  if (promptGroup == null) {
+    throw new Error("Prompt group not found");
+  }
+  if (!promptGroup.active) {
+    throw new Error("Prompt group is archived");
+  }
+  return promptGroup;
+}
+
+async function resolvePromptCreateScope(
+  ctx: MutationCtx,
+  entityId: Id<"trackedEntities"> | undefined,
+  promptGroupId: Id<"promptGroups"> | undefined
+) {
+  const promptGroup = promptGroupId
+    ? await assertPromptGroup(ctx, promptGroupId)
+    : undefined;
+  let nextEntityId = entityId;
+
+  if (nextEntityId) {
+    await assertTrackedEntity(ctx, nextEntityId);
+  }
+
+  if (promptGroup?.entityId) {
+    if (nextEntityId && nextEntityId !== promptGroup.entityId) {
+      throw new Error("Prompt group belongs to a different entity");
+    }
+    nextEntityId = promptGroup.entityId;
+  }
+
+  return { entityId: nextEntityId, promptGroup };
+}
+
+async function resolvePromptUpdateScope(
+  ctx: MutationCtx,
+  prompt: PromptDoc,
+  entityId: Id<"trackedEntities"> | null | undefined,
+  promptGroupId: Id<"promptGroups"> | null | undefined
+) {
+  const shouldUpdateEntity = entityId !== undefined;
+  const shouldUpdateGroup = promptGroupId !== undefined;
+  const nextPromptGroupId = shouldUpdateGroup
+    ? promptGroupId === null
+      ? undefined
+      : promptGroupId
+    : prompt.promptGroupId;
+  const promptGroup = nextPromptGroupId
+    ? await assertPromptGroup(ctx, nextPromptGroupId)
+    : undefined;
+  let nextEntityId = shouldUpdateEntity
+    ? entityId === null
+      ? undefined
+      : entityId
+    : prompt.entityId;
+
+  if (nextEntityId) {
+    await assertTrackedEntity(ctx, nextEntityId);
+  }
+
+  if (promptGroup?.entityId) {
+    if (nextEntityId && nextEntityId !== promptGroup.entityId) {
+      throw new Error("Prompt group belongs to a different entity");
+    }
+    nextEntityId = promptGroup.entityId;
+  }
+
+  return { entityId: nextEntityId, promptGroupId: nextPromptGroupId };
+}
+
+async function findPromptGroupByEntitySlug(
+  ctx: MutationCtx | QueryCtx,
+  entityId: Id<"trackedEntities"> | undefined,
+  slug: string
+): Promise<PromptGroupDoc | null> {
+  const matches = await ctx.db
+    .query("promptGroups")
+    .withIndex("slug", (q) => q.eq("slug", slug))
+    .collect();
+  return (
+    matches.find((group) => group.entityId === entityId && group.active) ?? null
+  );
+}
+
+async function promptGroupByIdMap(
+  ctx: QueryCtx,
+  groupIds: Array<Id<"promptGroups"> | undefined>
+) {
+  const uniqueGroupIds = [
+    ...new Set(groupIds.filter((id): id is Id<"promptGroups"> => Boolean(id))),
+  ];
+  const groups = await Promise.all(
+    uniqueGroupIds.map((groupId) => ctx.db.get(groupId))
+  );
+  return new Map(
+    groups
+      .filter((group): group is PromptGroupDoc => group !== null)
+      .map((group) => [group._id, group])
+  );
+}
+
+async function trackedEntityByIdMap(
+  ctx: QueryCtx,
+  entityIds: Array<Id<"trackedEntities"> | undefined>
+) {
+  const uniqueEntityIds = [
+    ...new Set(
+      entityIds.filter((id): id is Id<"trackedEntities"> => Boolean(id))
+    ),
+  ];
+  const entities = await Promise.all(
+    uniqueEntityIds.map((entityId) => ctx.db.get(entityId))
+  );
+  return new Map(
+    entities
+      .filter((entity): entity is TrackedEntityDoc => entity !== null)
+      .map((entity) => [entity._id, entity])
+  );
+}
+
 async function registerPromptJobCron(
   ctx: MutationCtx,
   jobId: Id<"promptJobs">,
@@ -569,6 +990,10 @@ async function enqueuePromptRunDocs(
 
   for (const prompt of prompts) {
     const promptExcerpt = promptExcerptFor(prompt);
+    const promptGroup = prompt.promptGroupId
+      ? await ctx.db.get(prompt.promptGroupId)
+      : null;
+    const promptSnapshot = promptRunSnapshotFor(prompt, promptGroup);
     let runGroupId: string | undefined;
 
     for (const provider of queuedProviders) {
@@ -576,6 +1001,7 @@ async function enqueuePromptRunDocs(
         runGroupId,
         runGroupQueuedAt: queuedAt,
         promptId: prompt._id,
+        ...promptSnapshot,
         ...providerSnapshot(provider),
         browserEngine: options?.browserEngine,
         promptExcerpt,
@@ -726,11 +1152,81 @@ async function replaceRunEntityMentions(
         citationCount: mention.citationCount,
         ownedCitationCount: mention.ownedCitationCount,
         matchedTerms: mention.matchedTerms,
+        detectionSource: "deterministic",
       })
     )
   );
 
   return mentions;
+}
+
+async function queueRunMentionAnalysis(
+  ctx: MutationCtx,
+  runId: Id<"promptRuns">,
+  deterministicMentionCount: number
+) {
+  const existing = await ctx.db
+    .query("runMentionAnalyses")
+    .withIndex("promptRunId", (q) => q.eq("promptRunId", runId))
+    .collect();
+  const reusable = existing.find((analysis) =>
+    ["queued", "running", "success"].includes(analysis.status)
+  );
+  if (reusable) {
+    await ctx.db.patch(reusable._id, { deterministicMentionCount });
+    return reusable._id;
+  }
+
+  return await ctx.db.insert("runMentionAnalyses", {
+    promptRunId: runId,
+    status: "queued",
+    queuedAt: Date.now(),
+    deterministicMentionCount,
+  });
+}
+
+function normalizeMentionConfidence(value: number | undefined) {
+  if (value === undefined) {
+    return undefined;
+  }
+  const normalized = value > 1 ? value / 100 : value;
+  return Math.round(clamp(normalized, 0, 1) * 1000) / 1000;
+}
+
+function mentionKeyFor(
+  mention: Pick<RunEntityMentionDoc, "trackedEntityId" | "slug">
+): string {
+  return mention.trackedEntityId
+    ? `entity:${String(mention.trackedEntityId)}`
+    : `candidate:${mention.slug}`;
+}
+
+function findTrackedEntityForMention(
+  trackedEntities: TrackedEntityDoc[],
+  mention: {
+    trackedEntityId?: Id<"trackedEntities">;
+    name: string;
+    slug?: string;
+  }
+) {
+  if (mention.trackedEntityId) {
+    const byId = trackedEntities.find(
+      (entity) => entity._id === mention.trackedEntityId
+    );
+    if (byId) {
+      return byId;
+    }
+  }
+
+  const normalizedSlug = sanitizeSlug(mention.slug ?? mention.name);
+  const normalizedName = normalizeAnalysisText(mention.name);
+  return trackedEntities.find((entity) => {
+    if (entity.slug === normalizedSlug) {
+      return true;
+    }
+    const terms = getEntityTerms(entity).map(normalizeAnalysisText);
+    return terms.includes(normalizedName);
+  });
 }
 
 function normalizeAnalysisText(input: string | undefined): string {
@@ -1015,6 +1511,19 @@ export const updateProvider = mutation({
 export const createPrompt = mutation({
   args: {
     promptText: v.string(),
+    entityId: v.optional(v.id("trackedEntities")),
+    promptGroupId: v.optional(v.id("promptGroups")),
+    intentCategory: v.optional(vPromptIntentCategory),
+    sentimentLens: v.optional(vPromptSentimentLens),
+    funnelStage: v.optional(vPromptFunnelStage),
+    audience: v.optional(v.string()),
+    topic: v.optional(v.string()),
+    priority: v.optional(vPromptPriority),
+    reviewState: v.optional(vPromptReviewState),
+    generatedBy: v.optional(vPromptGeneratedBy),
+    generationRationale: v.optional(v.string()),
+    sourceUrls: v.optional(v.array(v.string())),
+    sourceGenerationId: v.optional(v.id("entityPromptGenerationRuns")),
     active: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
@@ -1022,17 +1531,591 @@ export const createPrompt = mutation({
     if (!promptText) {
       throw new Error("Prompt text is required");
     }
+    const scope = await resolvePromptCreateScope(
+      ctx,
+      args.entityId,
+      args.promptGroupId
+    );
+    const now = Date.now();
 
     return await ctx.db.insert("prompts", {
       promptText,
+      entityId: scope.entityId,
+      promptGroupId: args.promptGroupId,
+      intentCategory: args.intentCategory ?? DEFAULT_PROMPT_INTENT_CATEGORY,
+      sentimentLens: args.sentimentLens ?? DEFAULT_PROMPT_SENTIMENT_LENS,
+      funnelStage: args.funnelStage,
+      audience: normalizeOptionalString(args.audience) ?? undefined,
+      topic: normalizeOptionalString(args.topic) ?? undefined,
+      priority: args.priority,
+      reviewState: args.reviewState ?? DEFAULT_PROMPT_REVIEW_STATE,
+      generatedBy: args.generatedBy ?? DEFAULT_PROMPT_GENERATED_BY,
+      generationRationale:
+        normalizeOptionalString(args.generationRationale) ?? undefined,
+      sourceUrls: normalizeSourceUrls(args.sourceUrls) ?? undefined,
+      sourceGenerationId: args.sourceGenerationId,
+      createdAt: now,
+      updatedAt: now,
       active: args.active ?? true,
     });
+  },
+});
+
+export const createPromptGroup = mutation({
+  args: {
+    entityId: v.optional(v.id("trackedEntities")),
+    name: v.string(),
+    slug: v.optional(v.string()),
+    description: v.optional(v.string()),
+    intentCategory: v.optional(vPromptIntentCategory),
+    sentimentLens: v.optional(vPromptSentimentLens),
+    systemManaged: v.optional(v.boolean()),
+    sortOrder: v.optional(v.float64()),
+    sourceGenerationId: v.optional(v.id("entityPromptGenerationRuns")),
+  },
+  handler: async (ctx, args) => {
+    const name = args.name.trim();
+    if (!name) {
+      throw new Error("Prompt group name is required");
+    }
+    if (args.entityId) {
+      await assertTrackedEntity(ctx, args.entityId);
+    }
+    const slug = sanitizeSlug(args.slug ?? name);
+    if (!slug) {
+      throw new Error("Prompt group slug cannot be empty");
+    }
+    const existing = await findPromptGroupByEntitySlug(
+      ctx,
+      args.entityId,
+      slug
+    );
+    if (existing) {
+      throw new Error("Prompt group already exists for this entity");
+    }
+    const now = Date.now();
+    return await ctx.db.insert("promptGroups", {
+      entityId: args.entityId,
+      name,
+      slug,
+      description: normalizeOptionalString(args.description) ?? undefined,
+      intentCategory: args.intentCategory ?? DEFAULT_PROMPT_INTENT_CATEGORY,
+      sentimentLens: args.sentimentLens ?? DEFAULT_PROMPT_SENTIMENT_LENS,
+      active: true,
+      systemManaged: args.systemManaged ?? false,
+      sortOrder: args.sortOrder,
+      sourceGenerationId: args.sourceGenerationId,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+export const updatePromptGroup = mutation({
+  args: {
+    id: v.id("promptGroups"),
+    entityId: v.optional(v.union(v.id("trackedEntities"), v.null())),
+    name: v.optional(v.string()),
+    slug: v.optional(v.string()),
+    description: v.optional(v.union(v.string(), v.null())),
+    intentCategory: v.optional(vPromptIntentCategory),
+    sentimentLens: v.optional(vPromptSentimentLens),
+    systemManaged: v.optional(v.boolean()),
+    sortOrder: v.optional(v.union(v.float64(), v.null())),
+  },
+  handler: async (ctx, args) => {
+    const promptGroup = await ctx.db.get(args.id);
+    if (promptGroup == null) {
+      throw new Error("Prompt group not found");
+    }
+    const name = args.name !== undefined ? args.name.trim() : undefined;
+    if (name !== undefined && !name) {
+      throw new Error("Prompt group name is required");
+    }
+    const entityId =
+      args.entityId === undefined
+        ? promptGroup.entityId
+        : args.entityId === null
+          ? undefined
+          : args.entityId;
+    if (entityId) {
+      await assertTrackedEntity(ctx, entityId);
+    }
+    const slug =
+      args.slug !== undefined || name !== undefined
+        ? sanitizeSlug(args.slug ?? name ?? promptGroup.slug)
+        : undefined;
+    if (slug !== undefined && !slug) {
+      throw new Error("Prompt group slug cannot be empty");
+    }
+    if (slug !== undefined || args.entityId !== undefined) {
+      const existing = await findPromptGroupByEntitySlug(
+        ctx,
+        entityId,
+        slug ?? promptGroup.slug
+      );
+      if (existing && existing._id !== args.id) {
+        throw new Error("Prompt group already exists for this entity");
+      }
+    }
+
+    const patch: PatchObject = { updatedAt: Date.now() };
+    setOptionalPatchValue(patch, "entityId", args.entityId);
+    setOptionalPatchValue(patch, "name", name);
+    setOptionalPatchValue(patch, "slug", slug);
+    setOptionalPatchValue(
+      patch,
+      "description",
+      normalizeOptionalString(args.description)
+    );
+    setOptionalPatchValue(patch, "intentCategory", args.intentCategory);
+    setOptionalPatchValue(patch, "sentimentLens", args.sentimentLens);
+    setOptionalPatchValue(patch, "systemManaged", args.systemManaged);
+    setOptionalPatchValue(patch, "sortOrder", args.sortOrder);
+    await ctx.db.patch(args.id, patch);
+    return args.id;
+  },
+});
+
+export const archivePromptGroup = mutation({
+  args: { id: v.id("promptGroups") },
+  handler: async (ctx, args) => {
+    const promptGroup = await ctx.db.get(args.id);
+    if (promptGroup == null) {
+      throw new Error("Prompt group not found");
+    }
+    const now = Date.now();
+    const prompts = await ctx.db
+      .query("prompts")
+      .withIndex("promptGroupId", (q) => q.eq("promptGroupId", args.id))
+      .collect();
+    await Promise.all(
+      prompts.map((prompt) =>
+        ctx.db.patch(prompt._id, {
+          promptGroupId: undefined,
+          updatedAt: now,
+        })
+      )
+    );
+    await ctx.db.patch(args.id, {
+      active: false,
+      archivedAt: now,
+      updatedAt: now,
+    });
+    return args.id;
+  },
+});
+
+export const listPromptGroups = query({
+  args: {
+    entityId: v.optional(v.id("trackedEntities")),
+    active: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    let groups = args.entityId
+      ? await ctx.db
+          .query("promptGroups")
+          .withIndex("entityId", (q) => q.eq("entityId", args.entityId!))
+          .collect()
+      : await ctx.db.query("promptGroups").collect();
+    if (args.active !== undefined) {
+      groups = groups.filter((group) => group.active === args.active);
+    }
+    const prompts = await ctx.db.query("prompts").collect();
+    const runs = await ctx.db.query("promptRuns").collect();
+    const promptByGroup = new Map<Id<"promptGroups">, PromptDoc[]>();
+    const runsByGroup = new Map<Id<"promptGroups">, PromptRunDoc[]>();
+    for (const prompt of prompts) {
+      if (prompt.promptGroupId) {
+        const current = promptByGroup.get(prompt.promptGroupId) ?? [];
+        current.push(prompt);
+        promptByGroup.set(prompt.promptGroupId, current);
+      }
+    }
+    for (const run of runs) {
+      if (run.promptGroupId) {
+        const current = runsByGroup.get(run.promptGroupId) ?? [];
+        current.push(run);
+        runsByGroup.set(run.promptGroupId, current);
+      }
+    }
+    const entityMap = await trackedEntityByIdMap(
+      ctx,
+      groups.map((group) => group.entityId)
+    );
+    return groups
+      .map((group) => {
+        const groupPrompts = promptByGroup.get(group._id) ?? [];
+        const groupRuns = runsByGroup.get(group._id) ?? [];
+        const latestRun = groupRuns.sort(
+          (left, right) => right.startedAt - left.startedAt
+        )[0];
+        const entity = group.entityId
+          ? entityMap.get(group.entityId)
+          : undefined;
+        return {
+          ...group,
+          entityName: entity?.name,
+          entitySlug: entity?.slug,
+          promptCount: groupPrompts.length,
+          approvedPromptCount: groupPrompts.filter(
+            (prompt) =>
+              prompt.active && promptReviewStateFor(prompt) === "approved"
+          ).length,
+          latestRunAt: latestRun?.startedAt,
+          latestRunGroupId: latestRun ? runGroupKey(latestRun) : undefined,
+        };
+      })
+      .sort(
+        (left, right) =>
+          (left.sortOrder ?? 999) - (right.sortOrder ?? 999) ||
+          left.name.localeCompare(right.name)
+      );
+  },
+});
+
+export const queueEntityPromptGeneration = mutation({
+  args: {
+    entityId: v.id("trackedEntities"),
+    websiteUrl: v.optional(v.string()),
+    researchSummary: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await assertTrackedEntity(ctx, args.entityId);
+    return await ctx.db.insert("entityPromptGenerationRuns", {
+      entityId: args.entityId,
+      status: "queued",
+      queuedAt: Date.now(),
+      websiteUrl: normalizeOptionalString(args.websiteUrl) ?? undefined,
+      researchSummary:
+        normalizeOptionalString(args.researchSummary) ?? undefined,
+    });
+  },
+});
+
+export const claimNextEntityPromptGeneration = mutation({
+  args: {
+    runner: v.string(),
+    maxConcurrent: v.optional(v.float64()),
+  },
+  handler: async (ctx, args) => {
+    const maxConcurrent = clamp(Math.floor(args.maxConcurrent ?? 1), 1, 10);
+    const running = await ctx.db
+      .query("entityPromptGenerationRuns")
+      .withIndex("status_queuedAt", (q) => q.eq("status", "running"))
+      .collect();
+    if (running.length >= maxConcurrent) {
+      return null;
+    }
+
+    const generation = await ctx.db
+      .query("entityPromptGenerationRuns")
+      .withIndex("status_queuedAt", (q) => q.eq("status", "queued"))
+      .order("asc")
+      .first();
+    if (!generation) {
+      return null;
+    }
+
+    const entity = await ctx.db.get(generation.entityId);
+    if (!entity) {
+      await ctx.db.patch(generation._id, {
+        status: "failed",
+        startedAt: Date.now(),
+        finishedAt: Date.now(),
+        runner: args.runner.trim(),
+        error: "Tracked entity not found",
+      });
+      return null;
+    }
+
+    await ctx.db.patch(generation._id, {
+      status: "running",
+      startedAt: Date.now(),
+      runner: args.runner.trim(),
+    });
+
+    const [promptGroups, prompts, competitors] = await Promise.all([
+      ctx.db
+        .query("promptGroups")
+        .withIndex("entityId", (q) => q.eq("entityId", generation.entityId))
+        .collect(),
+      ctx.db
+        .query("prompts")
+        .withIndex("entityId", (q) => q.eq("entityId", generation.entityId))
+        .collect(),
+      ctx.db
+        .query("trackedEntities")
+        .withIndex("active", (q) => q.eq("active", true))
+        .collect(),
+    ]);
+
+    return {
+      generationId: generation._id,
+      websiteUrl: generation.websiteUrl,
+      researchSummary: generation.researchSummary,
+      entity: {
+        id: entity._id,
+        name: entity.name,
+        slug: entity.slug,
+        kind: entity.kind,
+        aliases: entity.aliases ?? [],
+        ownedDomains: entity.ownedDomains ?? [],
+      },
+      competitors: competitors
+        .filter(
+          (candidate) =>
+            candidate.kind === "competitor" && candidate._id !== entity._id
+        )
+        .map((candidate) => ({
+          id: candidate._id,
+          name: candidate.name,
+          slug: candidate.slug,
+          aliases: candidate.aliases ?? [],
+          ownedDomains: candidate.ownedDomains ?? [],
+        })),
+      existingPromptGroups: promptGroups
+        .filter((group) => group.active)
+        .map((group) => ({
+          id: group._id,
+          name: group.name,
+          slug: group.slug,
+          intentCategory: group.intentCategory,
+          sentimentLens: group.sentimentLens,
+          promptCount: prompts.filter(
+            (prompt) => prompt.promptGroupId === group._id
+          ).length,
+        })),
+      existingPrompts: prompts.map((prompt) => ({
+        id: prompt._id,
+        promptText: prompt.promptText,
+        promptGroupId: prompt.promptGroupId,
+        intentCategory: promptIntentCategoryFor(prompt),
+        sentimentLens: promptSentimentLensFor(prompt),
+        reviewState: promptReviewStateFor(prompt),
+      })),
+    };
+  },
+});
+
+export const completeEntityPromptGeneration = mutation({
+  args: {
+    generationId: v.id("entityPromptGenerationRuns"),
+    status: vPromptGenerationStatus,
+    model: v.optional(v.string()),
+    entitySummary: v.optional(v.string()),
+    competitorNotes: v.optional(v.string()),
+    error: v.optional(v.string()),
+    warnings: v.optional(v.array(v.string())),
+    groups: v.optional(
+      v.array(
+        v.object({
+          name: v.string(),
+          slug: v.optional(v.string()),
+          description: v.optional(v.string()),
+          intentCategory: vPromptIntentCategory,
+          sentimentLens: vPromptSentimentLens,
+          sortOrder: v.optional(v.float64()),
+          prompts: v.array(
+            v.object({
+              promptText: v.string(),
+              intentCategory: v.optional(vPromptIntentCategory),
+              sentimentLens: v.optional(vPromptSentimentLens),
+              funnelStage: v.optional(vPromptFunnelStage),
+              audience: v.optional(v.string()),
+              topic: v.optional(v.string()),
+              priority: v.optional(vPromptPriority),
+              rationale: v.optional(v.string()),
+              sourceUrls: v.optional(v.array(v.string())),
+            })
+          ),
+        })
+      )
+    ),
+  },
+  handler: async (ctx, args) => {
+    const generation = await ctx.db.get(args.generationId);
+    if (!generation) {
+      throw new Error("Prompt generation run not found");
+    }
+    if (generation.status !== "running" && generation.status !== "queued") {
+      throw new Error("Prompt generation run is already completed");
+    }
+
+    if (args.status !== "success") {
+      await ctx.db.patch(args.generationId, {
+        status: args.status,
+        finishedAt: Date.now(),
+        model: args.model?.trim(),
+        error: normalizeOptionalString(args.error) ?? undefined,
+        warnings: args.warnings,
+      });
+      return { generatedGroupCount: 0, generatedPromptCount: 0 };
+    }
+
+    const entity = await assertTrackedEntity(ctx, generation.entityId);
+    const now = Date.now();
+    const warnings = [...(args.warnings ?? [])];
+    const existingPrompts = await ctx.db
+      .query("prompts")
+      .withIndex("entityId", (q) => q.eq("entityId", entity._id))
+      .collect();
+    const promptByNormalizedText = new Map(
+      existingPrompts.map((prompt) => [
+        normalizePromptTextForDedup(prompt.promptText),
+        prompt,
+      ])
+    );
+    const seenBatchPrompts = new Set<string>();
+    let generatedGroupCount = 0;
+    let generatedPromptCount = 0;
+
+    for (const [groupIndex, rawGroup] of (args.groups ?? []).entries()) {
+      const groupName = rawGroup.name.trim();
+      if (!groupName) {
+        warnings.push("Skipped a prompt group with an empty name.");
+        continue;
+      }
+      const groupSlug = sanitizeSlug(rawGroup.slug ?? groupName);
+      if (!groupSlug) {
+        warnings.push(`Skipped "${groupName}" because its slug is empty.`);
+        continue;
+      }
+      const existingGroup = await findPromptGroupByEntitySlug(
+        ctx,
+        entity._id,
+        groupSlug
+      );
+      const groupPatch = {
+        entityId: entity._id,
+        name: groupName,
+        slug: groupSlug,
+        description: normalizeOptionalString(rawGroup.description) ?? undefined,
+        intentCategory: rawGroup.intentCategory,
+        sentimentLens: rawGroup.sentimentLens,
+        active: true,
+        systemManaged: true,
+        sortOrder: rawGroup.sortOrder ?? groupIndex,
+        sourceGenerationId: args.generationId,
+        updatedAt: now,
+      };
+      const promptGroupId = existingGroup
+        ? existingGroup._id
+        : await ctx.db.insert("promptGroups", {
+            ...groupPatch,
+            createdAt: now,
+          });
+      if (existingGroup) {
+        await ctx.db.patch(existingGroup._id, groupPatch);
+      } else {
+        generatedGroupCount += 1;
+      }
+
+      for (const rawPrompt of rawGroup.prompts) {
+        const promptText = rawPrompt.promptText.trim();
+        if (!promptText) {
+          warnings.push(`Skipped an empty prompt in "${groupName}".`);
+          continue;
+        }
+        const normalizedPrompt = normalizePromptTextForDedup(promptText);
+        if (seenBatchPrompts.has(normalizedPrompt)) {
+          continue;
+        }
+        seenBatchPrompts.add(normalizedPrompt);
+
+        const existingPrompt = promptByNormalizedText.get(normalizedPrompt);
+        const sourceUrls = normalizeSourceUrls(rawPrompt.sourceUrls);
+        const patch: PatchObject = {
+          entityId: entity._id,
+          promptGroupId,
+          intentCategory: rawPrompt.intentCategory ?? rawGroup.intentCategory,
+          sentimentLens: rawPrompt.sentimentLens ?? rawGroup.sentimentLens,
+          funnelStage: rawPrompt.funnelStage,
+          audience: normalizeOptionalString(rawPrompt.audience) ?? undefined,
+          topic: normalizeOptionalString(rawPrompt.topic) ?? undefined,
+          priority: rawPrompt.priority,
+          generationRationale:
+            normalizeOptionalString(rawPrompt.rationale) ?? undefined,
+          sourceGenerationId: args.generationId,
+          updatedAt: now,
+        };
+        if (sourceUrls !== undefined && sourceUrls !== null) {
+          patch.sourceUrls = sourceUrls;
+        }
+
+        if (existingPrompt) {
+          if (existingPrompt.reviewState === undefined) {
+            patch.reviewState = "draft";
+          }
+          if (existingPrompt.generatedBy === undefined) {
+            patch.generatedBy = "codex";
+          }
+          await ctx.db.patch(existingPrompt._id, patch);
+          continue;
+        }
+
+        const promptId = await ctx.db.insert("prompts", {
+          promptText,
+          ...patch,
+          active: true,
+          reviewState: "draft",
+          generatedBy: "codex",
+          createdAt: now,
+        });
+        promptByNormalizedText.set(normalizedPrompt, {
+          _id: promptId,
+          _creationTime: now,
+          promptText,
+          active: true,
+          entityId: entity._id,
+          promptGroupId,
+          intentCategory: rawPrompt.intentCategory ?? rawGroup.intentCategory,
+          sentimentLens: rawPrompt.sentimentLens ?? rawGroup.sentimentLens,
+          funnelStage: rawPrompt.funnelStage,
+          audience: normalizeOptionalString(rawPrompt.audience) ?? undefined,
+          topic: normalizeOptionalString(rawPrompt.topic) ?? undefined,
+          priority: rawPrompt.priority,
+          reviewState: "draft",
+          generatedBy: "codex",
+          generationRationale:
+            normalizeOptionalString(rawPrompt.rationale) ?? undefined,
+          sourceUrls:
+            sourceUrls !== undefined && sourceUrls !== null
+              ? sourceUrls
+              : undefined,
+          sourceGenerationId: args.generationId,
+          createdAt: now,
+          updatedAt: now,
+        });
+        generatedPromptCount += 1;
+      }
+    }
+
+    await ctx.db.patch(args.generationId, {
+      status: "success",
+      finishedAt: now,
+      model: args.model?.trim(),
+      entitySummary: normalizeOptionalString(args.entitySummary) ?? undefined,
+      competitorNotes:
+        normalizeOptionalString(args.competitorNotes) ?? undefined,
+      warnings: uniqueStrings(warnings),
+      generatedPromptCount,
+      generatedGroupCount,
+    });
+
+    return { generatedGroupCount, generatedPromptCount };
   },
 });
 
 export const listPrompts = query({
   args: {
     active: v.optional(v.boolean()),
+    entityId: v.optional(v.id("trackedEntities")),
+    promptGroupId: v.optional(v.id("promptGroups")),
+    intentCategory: v.optional(vPromptIntentCategory),
+    sentimentLens: v.optional(vPromptSentimentLens),
+    reviewState: v.optional(vPromptReviewState),
+    generatedBy: v.optional(vPromptGeneratedBy),
   },
   handler: async (ctx, args) => {
     let prompts = await ctx.db.query("prompts").collect();
@@ -1040,12 +2123,58 @@ export const listPrompts = query({
     if (args.active !== undefined) {
       prompts = prompts.filter((prompt) => prompt.active === args.active);
     }
+    if (args.entityId) {
+      prompts = prompts.filter((prompt) => prompt.entityId === args.entityId);
+    }
+    if (args.promptGroupId) {
+      prompts = prompts.filter(
+        (prompt) => prompt.promptGroupId === args.promptGroupId
+      );
+    }
+    if (args.intentCategory) {
+      prompts = prompts.filter(
+        (prompt) => promptIntentCategoryFor(prompt) === args.intentCategory
+      );
+    }
+    if (args.sentimentLens) {
+      prompts = prompts.filter(
+        (prompt) => promptSentimentLensFor(prompt) === args.sentimentLens
+      );
+    }
+    if (args.reviewState) {
+      prompts = prompts.filter(
+        (prompt) => promptReviewStateFor(prompt) === args.reviewState
+      );
+    }
+    if (args.generatedBy) {
+      prompts = prompts.filter(
+        (prompt) => promptGeneratedByFor(prompt) === args.generatedBy
+      );
+    }
+
+    const groupMap = await promptGroupByIdMap(
+      ctx,
+      prompts.map((prompt) => prompt.promptGroupId)
+    );
+    const entityMap = await trackedEntityByIdMap(
+      ctx,
+      prompts.map((prompt) => prompt.entityId)
+    );
 
     return prompts
-      .map((prompt) => ({
-        ...prompt,
-        excerpt: promptExcerptFor(prompt),
-      }))
+      .map((prompt) => {
+        const promptGroup = prompt.promptGroupId
+          ? groupMap.get(prompt.promptGroupId)
+          : undefined;
+        const entity = prompt.entityId
+          ? entityMap.get(prompt.entityId)
+          : undefined;
+        return {
+          ...prompt,
+          ...promptMetadataFor(prompt, promptGroup, entity),
+          excerpt: promptExcerptFor(prompt),
+        };
+      })
       .sort(
         (left, right) =>
           left.excerpt.localeCompare(right.excerpt) ||
@@ -1058,6 +2187,18 @@ export const updatePrompt = mutation({
   args: {
     id: v.id("prompts"),
     promptText: v.optional(v.string()),
+    entityId: v.optional(v.union(v.id("trackedEntities"), v.null())),
+    promptGroupId: v.optional(v.union(v.id("promptGroups"), v.null())),
+    intentCategory: v.optional(vPromptIntentCategory),
+    sentimentLens: v.optional(vPromptSentimentLens),
+    funnelStage: v.optional(v.union(vPromptFunnelStage, v.null())),
+    audience: v.optional(v.union(v.string(), v.null())),
+    topic: v.optional(v.union(v.string(), v.null())),
+    priority: v.optional(v.union(vPromptPriority, v.null())),
+    reviewState: v.optional(vPromptReviewState),
+    generatedBy: v.optional(vPromptGeneratedBy),
+    generationRationale: v.optional(v.union(v.string(), v.null())),
+    sourceUrls: v.optional(v.union(v.array(v.string()), v.null())),
     active: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
@@ -1072,13 +2213,59 @@ export const updatePrompt = mutation({
       throw new Error("Prompt text is required");
     }
 
-    await ctx.db.patch(
-      args.id,
-      compactPatch({
-        promptText,
-        active: args.active,
-      })
+    const scope = await resolvePromptUpdateScope(
+      ctx,
+      prompt,
+      args.entityId,
+      args.promptGroupId
     );
+    const patch: PatchObject = { updatedAt: Date.now() };
+    setOptionalPatchValue(patch, "promptText", promptText);
+    setOptionalPatchValue(
+      patch,
+      "entityId",
+      args.entityId !== undefined ||
+        (args.promptGroupId !== undefined &&
+          scope.promptGroupId !== undefined &&
+          scope.entityId !== prompt.entityId)
+        ? (scope.entityId ?? null)
+        : undefined
+    );
+    setOptionalPatchValue(
+      patch,
+      "promptGroupId",
+      args.promptGroupId === undefined
+        ? undefined
+        : (scope.promptGroupId ?? null)
+    );
+    setOptionalPatchValue(patch, "intentCategory", args.intentCategory);
+    setOptionalPatchValue(patch, "sentimentLens", args.sentimentLens);
+    setOptionalPatchValue(patch, "funnelStage", args.funnelStage);
+    setOptionalPatchValue(
+      patch,
+      "audience",
+      normalizeOptionalString(args.audience)
+    );
+    setOptionalPatchValue(patch, "topic", normalizeOptionalString(args.topic));
+    setOptionalPatchValue(patch, "priority", args.priority);
+    setOptionalPatchValue(patch, "reviewState", args.reviewState);
+    setOptionalPatchValue(patch, "generatedBy", args.generatedBy);
+    setOptionalPatchValue(
+      patch,
+      "generationRationale",
+      normalizeOptionalString(args.generationRationale)
+    );
+    setOptionalPatchValue(
+      patch,
+      "sourceUrls",
+      normalizeSourceUrls(args.sourceUrls)
+    );
+    setOptionalPatchValue(patch, "active", args.active);
+    if (Object.values(patch).some((value) => value === undefined)) {
+      await ctx.db.replace(args.id, promptReplacementWithPatch(prompt, patch));
+    } else {
+      await ctx.db.patch(args.id, patch);
+    }
     return args.id;
   },
 });
@@ -1253,6 +2440,82 @@ export const triggerSelectedPromptsNow = mutation({
   },
 });
 
+export const triggerPromptGroupNow = mutation({
+  args: {
+    promptGroupId: v.id("promptGroups"),
+    label: v.optional(v.string()),
+    browserEngine: v.optional(vBrowserEngine),
+    providerSlugs: v.optional(v.array(v.string())),
+    includeDrafts: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const promptGroup = await assertPromptGroup(ctx, args.promptGroupId);
+    const prompts = (
+      await ctx.db
+        .query("prompts")
+        .withIndex("promptGroupId", (q) =>
+          q.eq("promptGroupId", args.promptGroupId)
+        )
+        .collect()
+    ).filter(
+      (prompt) =>
+        prompt.active &&
+        promptReviewStateFor(prompt) !== "archived" &&
+        (args.includeDrafts || promptReviewStateFor(prompt) === "approved")
+    );
+    if (!prompts.length) {
+      throw new Error("Prompt group has no approved active prompts");
+    }
+    const queuedCount = await enqueuePromptRunDocs(
+      ctx,
+      prompts,
+      args.label?.trim() || promptGroup.name,
+      {
+        browserEngine: args.browserEngine,
+        providerSlugs: args.providerSlugs,
+      }
+    );
+    return { queuedCount };
+  },
+});
+
+export const triggerEntityPromptsNow = mutation({
+  args: {
+    entityId: v.id("trackedEntities"),
+    label: v.optional(v.string()),
+    browserEngine: v.optional(vBrowserEngine),
+    providerSlugs: v.optional(v.array(v.string())),
+    includeDrafts: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const entity = await assertTrackedEntity(ctx, args.entityId);
+    const prompts = (
+      await ctx.db
+        .query("prompts")
+        .withIndex("entityId", (q) => q.eq("entityId", args.entityId))
+        .collect()
+    ).filter(
+      (prompt) =>
+        prompt.active &&
+        promptReviewStateFor(prompt) !== "archived" &&
+        (args.includeDrafts || promptReviewStateFor(prompt) === "approved")
+    );
+    if (!prompts.length) {
+      throw new Error("Entity has no approved active prompts");
+    }
+    const queuedCount = await enqueuePromptRunDocs(
+      ctx,
+      prompts,
+      args.label?.trim() || entity.name,
+      {
+        browserEngine: args.browserEngine,
+        providerSlugs: args.providerSlugs,
+      }
+    );
+    return { queuedCount };
+  },
+});
+
 export const retryPromptRun = mutation({
   args: {
     runId: v.id("promptRuns"),
@@ -1272,6 +2535,16 @@ export const retryPromptRun = mutation({
     const retryRunId = await ctx.db.insert("promptRuns", {
       runGroupQueuedAt: queuedAt,
       promptId: run.promptId,
+      entityId: run.entityId,
+      promptGroupId: run.promptGroupId,
+      promptGroupName: run.promptGroupName,
+      intentCategory: run.intentCategory,
+      sentimentLens: run.sentimentLens,
+      funnelStage: run.funnelStage,
+      audience: run.audience,
+      topic: run.topic,
+      priority: run.priority,
+      reviewState: run.reviewState,
       providerId: run.providerId,
       providerSlug: run.providerSlug,
       providerName: run.providerName,
@@ -1284,7 +2557,7 @@ export const retryPromptRun = mutation({
       browserEngine: run.browserEngine,
       promptQueryParam: run.promptQueryParam,
       submitStrategy: run.submitStrategy,
-      promptExcerpt: run.promptExcerpt,
+      promptExcerpt: run.promptExcerpt ?? promptExcerptFor(prompt),
       status: "queued",
       attempt: nextAttempt,
       retryOfRunId: run.retryOfRunId ?? run._id,
@@ -1397,6 +2670,24 @@ export const triggerPromptJob = internalMutation({
   },
 });
 
+/** Docker Compose: schedule legacy promptRuns excerpt backfill (anonymous local Convex only). */
+export const requestKickPromptRunExcerptBackfill = mutation({
+  args: {},
+  handler: async (ctx) => {
+    if (process.env.CONVEX_AGENT_MODE !== "anonymous") {
+      throw new Error(
+        "requestKickPromptRunExcerptBackfill runs only when CONVEX_AGENT_MODE=anonymous (local Convex)."
+      );
+    }
+    await ctx.scheduler.runAfter(
+      0,
+      internal.migrations.kickPromptRunExcerptBackfill,
+      {}
+    );
+    return { ok: true };
+  },
+});
+
 export const getQueueStatus = query({
   handler: async (ctx) => {
     const [queuedRuns, runningRuns, recentRuns] = await Promise.all([
@@ -1437,7 +2728,10 @@ export const getQueueStatus = query({
             id: latestQueuedRun._id,
             queuedAt: latestQueuedRun.queuedAt ?? latestQueuedRun.startedAt,
             runLabel: latestQueuedRun.runLabel,
-            providerName: latestQueuedRun.providerName,
+            providerName:
+              latestQueuedRun.providerName ??
+              latestQueuedRun.providerSlug ??
+              "Unknown provider",
           }
         : null,
     };
@@ -1452,29 +2746,40 @@ async function buildClaimedPromptRunPayload(
     browserEngine?: BrowserEngine;
   }
 ) {
-  const provider = await ctx.db.get(run.providerId);
-  const providerDefaults = defaultProviderDefinitionFor(run.providerSlug);
-  const queuedProviderSnapshot = provider
-    ? providerSnapshot(provider)
-    : {
-        channelSlug:
-          run.channelSlug ??
-          providerDefaults?.channelSlug ??
-          `${run.providerSlug}-web`,
-        channelName:
-          run.channelName ??
-          providerDefaults?.channelName ??
-          `${run.providerName} web`,
-        transport: run.transport ?? "browser",
-        sessionMode:
-          run.sessionMode ?? providerDefaults?.sessionMode ?? "guest",
-        sessionProfileDir:
-          run.sessionProfileDir ?? providerDefaults?.sessionProfileDir,
-        promptQueryParam:
-          run.promptQueryParam ?? providerDefaults?.promptQueryParam,
-        submitStrategy:
-          run.submitStrategy ?? providerDefaults?.submitStrategy ?? "type",
-      };
+  const excerpt = excerptForPromptRun(run, prompt);
+  const resolvedProvider = await getProviderDocForRun(ctx, run);
+  if (resolvedProvider == null) {
+    throw new Error("No providers configured.");
+  }
+
+  const base = providerSnapshot(resolvedProvider);
+  const queuedProviderSnapshot = {
+    providerId: run.providerId ?? base.providerId,
+    providerSlug: run.providerSlug ?? base.providerSlug,
+    providerName: run.providerName ?? base.providerName,
+    providerUrl: run.providerUrl ?? base.providerUrl,
+    channelSlug: run.channelSlug ?? base.channelSlug,
+    channelName: run.channelName ?? base.channelName,
+    transport: run.transport ?? base.transport,
+    sessionMode: run.sessionMode ?? base.sessionMode,
+    sessionProfileDir: run.sessionProfileDir ?? base.sessionProfileDir,
+    promptQueryParam: run.promptQueryParam ?? base.promptQueryParam,
+    submitStrategy: run.submitStrategy ?? base.submitStrategy,
+  };
+
+  const providerDefaults = defaultProviderDefinitionFor(
+    queuedProviderSnapshot.providerSlug
+  );
+  const effectiveSlug =
+    queuedProviderSnapshot.providerSlug ?? resolvedProvider.slug;
+  const channelSlug =
+    queuedProviderSnapshot.channelSlug ??
+    providerDefaults?.channelSlug ??
+    `${effectiveSlug}-web`;
+  const channelName =
+    queuedProviderSnapshot.channelName ??
+    providerDefaults?.channelName ??
+    `${queuedProviderSnapshot.providerName} web`;
 
   return {
     runId: run._id,
@@ -1483,26 +2788,23 @@ async function buildClaimedPromptRunPayload(
     startedAt: run.startedAt,
     prompt: {
       id: prompt._id,
-      excerpt: run.promptExcerpt,
+      excerpt,
       promptText: prompt.promptText,
-      providerId: run.providerId,
-      providerSlug: run.providerSlug,
-      providerName: run.providerName,
-      providerUrl: run.providerUrl,
-      channelSlug: run.channelSlug ?? queuedProviderSnapshot.channelSlug,
-      channelName: run.channelName ?? queuedProviderSnapshot.channelName,
-      transport: run.transport ?? queuedProviderSnapshot.transport,
-      sessionMode: run.sessionMode ?? queuedProviderSnapshot.sessionMode,
-      sessionProfileDir:
-        run.sessionProfileDir ?? queuedProviderSnapshot.sessionProfileDir,
+      providerId: queuedProviderSnapshot.providerId,
+      providerSlug: queuedProviderSnapshot.providerSlug,
+      providerName: queuedProviderSnapshot.providerName,
+      providerUrl: queuedProviderSnapshot.providerUrl,
+      channelSlug,
+      channelName,
+      transport: queuedProviderSnapshot.transport,
+      sessionMode: queuedProviderSnapshot.sessionMode,
+      sessionProfileDir: queuedProviderSnapshot.sessionProfileDir,
       browserEngine: run.browserEngine ?? args.browserEngine,
-      promptQueryParam:
-        run.promptQueryParam ?? queuedProviderSnapshot.promptQueryParam,
-      submitStrategy:
-        run.submitStrategy ?? queuedProviderSnapshot.submitStrategy,
-      providerSessionJson: provider?.sessionJson,
+      promptQueryParam: queuedProviderSnapshot.promptQueryParam,
+      submitStrategy: queuedProviderSnapshot.submitStrategy,
+      providerSessionJson: resolvedProvider.sessionJson,
     },
-    runLabel: run.runLabel ?? run.promptExcerpt,
+    runLabel: run.runLabel ?? excerpt,
     attempt: run.attempt ?? 1,
     retryOfRunId: run.retryOfRunId,
   };
@@ -1552,34 +2854,6 @@ export const claimNextQueuedPromptRun = mutation({
       });
       return null;
     }
-    const provider = await ctx.db.get(queuedRun.providerId);
-    const providerDefaults = defaultProviderDefinitionFor(
-      queuedRun.providerSlug
-    );
-    const queuedProviderSnapshot = provider
-      ? providerSnapshot(provider)
-      : {
-          channelSlug:
-            queuedRun.channelSlug ??
-            providerDefaults?.channelSlug ??
-            `${queuedRun.providerSlug}-web`,
-          channelName:
-            queuedRun.channelName ??
-            providerDefaults?.channelName ??
-            `${queuedRun.providerName} web`,
-          transport: queuedRun.transport ?? "browser",
-          sessionMode:
-            queuedRun.sessionMode ?? providerDefaults?.sessionMode ?? "guest",
-          sessionProfileDir:
-            queuedRun.sessionProfileDir ?? providerDefaults?.sessionProfileDir,
-          promptQueryParam:
-            queuedRun.promptQueryParam ?? providerDefaults?.promptQueryParam,
-          submitStrategy:
-            queuedRun.submitStrategy ??
-            providerDefaults?.submitStrategy ??
-            "type",
-        };
-
     const startedAt = Date.now();
     await ctx.db.patch(queuedRun._id, {
       status: "running",
@@ -1589,40 +2863,19 @@ export const claimNextQueuedPromptRun = mutation({
       browserEngine: args.browserEngine ?? queuedRun.browserEngine,
     });
 
-    return {
-      runId: queuedRun._id,
-      runGroupId: runGroupKey(queuedRun),
-      queuedAt: queuedRun.queuedAt ?? queuedRun.startedAt,
-      startedAt,
-      prompt: {
-        id: prompt._id,
-        excerpt: queuedRun.promptExcerpt,
-        promptText: prompt.promptText,
-        providerId: queuedRun.providerId,
-        providerSlug: queuedRun.providerSlug,
-        providerName: queuedRun.providerName,
-        providerUrl: queuedRun.providerUrl,
-        channelSlug:
-          queuedRun.channelSlug ?? queuedProviderSnapshot.channelSlug,
-        channelName:
-          queuedRun.channelName ?? queuedProviderSnapshot.channelName,
-        transport: queuedRun.transport ?? queuedProviderSnapshot.transport,
-        sessionMode:
-          queuedRun.sessionMode ?? queuedProviderSnapshot.sessionMode,
-        sessionProfileDir:
-          queuedRun.sessionProfileDir ??
-          queuedProviderSnapshot.sessionProfileDir,
-        browserEngine: queuedRun.browserEngine ?? args.browserEngine,
-        promptQueryParam:
-          queuedRun.promptQueryParam ?? queuedProviderSnapshot.promptQueryParam,
-        submitStrategy:
-          queuedRun.submitStrategy ?? queuedProviderSnapshot.submitStrategy,
-        providerSessionJson: provider?.sessionJson,
+    return await buildClaimedPromptRunPayload(
+      ctx,
+      {
+        ...queuedRun,
+        status: "running",
+        startedAt,
+        warnings: [],
+        runner: args.runner?.trim() || "local-playwright-worker",
+        browserEngine: args.browserEngine ?? queuedRun.browserEngine,
       },
-      runLabel: queuedRun.runLabel ?? queuedRun.promptExcerpt,
-      attempt: queuedRun.attempt ?? 1,
-      retryOfRunId: queuedRun.retryOfRunId,
-    };
+      prompt,
+      args
+    );
   },
 });
 
@@ -1676,7 +2929,7 @@ export const claimNextQueuedPromptRunGroup = mutation({
           runMatchesWorkerEngine(run, args.browserEngine)
       )
       .sort((left, right) =>
-        left.providerName.localeCompare(right.providerName)
+        (left.providerName ?? "").localeCompare(right.providerName ?? "")
       );
 
     if (!queuedGroupRuns.length) {
@@ -1806,6 +3059,7 @@ export const completePromptRun = mutation({
     deeplinkUsed: v.optional(v.string()),
     evidencePath: v.optional(v.string()),
     output: v.optional(v.string()),
+    model: v.optional(v.string()),
     warnings: v.optional(v.array(v.string())),
     runner: v.optional(v.string()),
     browserEngine: v.optional(vBrowserEngine),
@@ -1894,6 +3148,7 @@ export const completePromptRun = mutation({
         deeplinkUsed: args.deeplinkUsed,
         evidencePath: args.evidencePath,
         output: args.output,
+        model: args.model,
         warnings: mergedWarnings.length ? mergedWarnings : undefined,
         runner: args.runner ?? run.runner,
         browserEngine: args.browserEngine ?? run.browserEngine,
@@ -1907,7 +3162,7 @@ export const completePromptRun = mutation({
         .query("citations")
         .withIndex("promptRunId", (q) => q.eq("promptRunId", args.runId))
         .collect();
-      await replaceRunEntityMentions(
+      const mentions = await replaceRunEntityMentions(
         ctx,
         args.runId,
         args.responseText ??
@@ -1916,6 +3171,7 @@ export const completePromptRun = mutation({
           run.responseSummary,
         persistedCitations
       );
+      await queueRunMentionAnalysis(ctx, args.runId, mentions.length);
     } else {
       const existingMentions = await ctx.db
         .query("runEntityMentions")
@@ -1924,9 +3180,323 @@ export const completePromptRun = mutation({
       await Promise.all(
         existingMentions.map((mention) => ctx.db.delete(mention._id))
       );
+      const existingAnalyses = await ctx.db
+        .query("runMentionAnalyses")
+        .withIndex("promptRunId", (q) => q.eq("promptRunId", args.runId))
+        .collect();
+      await Promise.all(
+        existingAnalyses
+          .filter((analysis) => analysis.status === "queued")
+          .map((analysis) => ctx.db.delete(analysis._id))
+      );
     }
 
     return { runId: args.runId, citationCount: citationInputs.length };
+  },
+});
+
+export const claimNextRunMentionAnalysis = mutation({
+  args: {
+    runner: v.optional(v.string()),
+    maxConcurrent: v.optional(v.float64()),
+  },
+  handler: async (ctx, args) => {
+    const maxConcurrent = Math.max(1, Math.floor(args.maxConcurrent ?? 1));
+    const running = await ctx.db
+      .query("runMentionAnalyses")
+      .withIndex("status_queuedAt", (q) => q.eq("status", "running"))
+      .collect();
+    if (running.length >= maxConcurrent) {
+      return null;
+    }
+
+    const queued = await ctx.db
+      .query("runMentionAnalyses")
+      .withIndex("status_queuedAt", (q) => q.eq("status", "queued"))
+      .order("asc")
+      .first();
+    if (!queued) {
+      return null;
+    }
+
+    const run = await ctx.db.get(queued.promptRunId);
+    if (run == null || !isSuccessfulRunStatus(run.status)) {
+      await ctx.db.patch(
+        queued._id,
+        compactPatch({
+          status: "failed",
+          finishedAt: Date.now(),
+          runner: args.runner?.trim() || "mention-analysis-worker",
+          error:
+            run == null
+              ? "Prompt run was deleted before mention analysis."
+              : "Only successful prompt runs can be analyzed for mentions.",
+        })
+      );
+      return null;
+    }
+
+    const prompt = await ctx.db.get(run.promptId);
+    if (prompt == null) {
+      await ctx.db.patch(
+        queued._id,
+        compactPatch({
+          status: "failed",
+          finishedAt: Date.now(),
+          runner: args.runner?.trim() || "mention-analysis-worker",
+          error: "Prompt was deleted before mention analysis.",
+        })
+      );
+      return null;
+    }
+
+    const [citations, deterministicMentions, trackedEntities] =
+      await Promise.all([
+        ctx.db
+          .query("citations")
+          .withIndex("promptRunId", (q) => q.eq("promptRunId", run._id))
+          .collect(),
+        ctx.db
+          .query("runEntityMentions")
+          .withIndex("promptRunId", (q) => q.eq("promptRunId", run._id))
+          .collect(),
+        ctx.db.query("trackedEntities").collect(),
+      ]);
+
+    const startedAt = Date.now();
+    const runner = args.runner?.trim() || "mention-analysis-worker";
+    await ctx.db.patch(queued._id, {
+      status: "running",
+      startedAt,
+      runner,
+    });
+
+    return {
+      analysisId: queued._id,
+      run: {
+        id: run._id,
+        promptId: run.promptId,
+        promptExcerpt: run.promptExcerpt,
+        providerName: run.providerName,
+        providerSlug: run.providerSlug,
+        responseText: run.responseText,
+        responseSummary: run.responseSummary,
+      },
+      prompt: {
+        id: prompt._id,
+        promptText: prompt.promptText,
+        excerpt: promptExcerptFor(prompt),
+      },
+      citations: citations.map((citation) => ({
+        id: citation._id,
+        domain: citation.domain,
+        url: citation.url,
+        title: citation.title,
+        snippet: citation.snippet,
+        type: citation.type,
+        position: citation.position,
+        trackedEntityId: citation.trackedEntityId,
+        trackedEntityName: citation.trackedEntityName,
+        trackedEntitySlug: citation.trackedEntitySlug,
+      })),
+      deterministicMentions: deterministicMentions.map((mention) => ({
+        id: mention._id,
+        trackedEntityId: mention.trackedEntityId,
+        name: mention.name,
+        slug: mention.slug,
+        kind: mention.kind,
+        mentionCount: mention.mentionCount,
+        citationCount: mention.citationCount,
+        matchedTerms: mention.matchedTerms,
+      })),
+      trackedEntities: trackedEntities
+        .filter((entity) => entity.active)
+        .map((entity) => ({
+          id: entity._id,
+          name: entity.name,
+          slug: entity.slug,
+          kind: entity.kind,
+          aliases: entity.aliases,
+          ownedDomains: entity.ownedDomains,
+        })),
+    };
+  },
+});
+
+export const completeRunMentionAnalysis = mutation({
+  args: {
+    analysisId: v.id("runMentionAnalyses"),
+    status: vMentionAnalysisStatus,
+    model: v.optional(v.string()),
+    error: v.optional(v.string()),
+    warnings: v.optional(v.array(v.string())),
+    mentions: v.optional(
+      v.array(
+        v.object({
+          trackedEntityId: v.optional(v.id("trackedEntities")),
+          name: v.string(),
+          slug: v.optional(v.string()),
+          kind: v.optional(vEntityKind),
+          mentionCount: v.optional(v.float64()),
+          sentiment: v.optional(vMentionSentiment),
+          confidence: v.optional(v.float64()),
+          evidence: v.optional(v.string()),
+          matchedTerms: v.optional(v.array(v.string())),
+        })
+      )
+    ),
+  },
+  handler: async (ctx, args) => {
+    const analysis = await ctx.db.get(args.analysisId);
+    if (analysis == null) {
+      throw new Error("Run mention analysis not found");
+    }
+
+    if (args.status !== "success") {
+      await ctx.db.patch(
+        args.analysisId,
+        compactPatch({
+          status: "failed",
+          finishedAt: Date.now(),
+          model: args.model?.trim(),
+          error: args.error?.trim() || "Mention analysis failed.",
+          warnings: args.warnings,
+        })
+      );
+      return { analysisId: args.analysisId, codexMentionCount: 0 };
+    }
+
+    const run = await ctx.db.get(analysis.promptRunId);
+    if (run == null || !isSuccessfulRunStatus(run.status)) {
+      await ctx.db.patch(
+        args.analysisId,
+        compactPatch({
+          status: "failed",
+          finishedAt: Date.now(),
+          model: args.model?.trim(),
+          error:
+            run == null
+              ? "Prompt run was deleted before mention analysis completed."
+              : "Only successful prompt runs can receive mention analysis.",
+          warnings: args.warnings,
+        })
+      );
+      return { analysisId: args.analysisId, codexMentionCount: 0 };
+    }
+
+    const [existingMentions, trackedEntities, citations] = await Promise.all([
+      ctx.db
+        .query("runEntityMentions")
+        .withIndex("promptRunId", (q) => q.eq("promptRunId", run._id))
+        .collect(),
+      ctx.db.query("trackedEntities").collect(),
+      ctx.db
+        .query("citations")
+        .withIndex("promptRunId", (q) => q.eq("promptRunId", run._id))
+        .collect(),
+    ]);
+    const existingByKey = new Map(
+      existingMentions.map((mention) => [mentionKeyFor(mention), mention])
+    );
+
+    let codexMentionCount = 0;
+    let candidateMentionCount = 0;
+    for (const rawMention of args.mentions ?? []) {
+      const name = rawMention.name.trim();
+      if (!name) {
+        continue;
+      }
+
+      const trackedEntity = findTrackedEntityForMention(
+        trackedEntities,
+        rawMention
+      );
+      const slug = trackedEntity?.slug ?? sanitizeSlug(rawMention.slug ?? name);
+      if (!slug) {
+        continue;
+      }
+
+      const kind = trackedEntity?.kind ?? rawMention.kind ?? "other";
+      const cited = trackedEntity
+        ? citationsForEntity(citations, trackedEntity)
+        : [];
+      const key = trackedEntity
+        ? `entity:${String(trackedEntity._id)}`
+        : `candidate:${slug}`;
+      const existing = existingByKey.get(key);
+      const mentionCount = Math.max(
+        1,
+        Math.floor(rawMention.mentionCount ?? existing?.mentionCount ?? 1)
+      );
+      const matchedTerms = uniqueStrings([
+        ...(existing?.matchedTerms ?? []),
+        ...(rawMention.matchedTerms ?? []),
+        name,
+      ]);
+      const patch = compactPatch({
+        analysisId: args.analysisId,
+        trackedEntityId: trackedEntity?._id,
+        name: trackedEntity?.name ?? name,
+        slug,
+        kind,
+        mentionCount: Math.max(existing?.mentionCount ?? 0, mentionCount),
+        citationCount: Math.max(existing?.citationCount ?? 0, cited.length),
+        ownedCitationCount: Math.max(
+          existing?.ownedCitationCount ?? 0,
+          cited.filter((citation) => citation.isOwned).length
+        ),
+        matchedTerms,
+        detectionSource: existing?.detectionSource ?? "codex",
+        sentiment: rawMention.sentiment,
+        confidence: normalizeMentionConfidence(rawMention.confidence),
+        evidence: rawMention.evidence?.trim(),
+      });
+
+      if (existing) {
+        await ctx.db.patch(existing._id, patch);
+      } else {
+        await ctx.db.insert("runEntityMentions", {
+          promptRunId: run._id,
+          analysisId: args.analysisId,
+          trackedEntityId: trackedEntity?._id,
+          name: trackedEntity?.name ?? name,
+          slug,
+          kind,
+          mentionCount,
+          citationCount: cited.length,
+          ownedCitationCount: cited.filter((citation) => citation.isOwned)
+            .length,
+          matchedTerms,
+          detectionSource: "codex",
+          sentiment: rawMention.sentiment,
+          confidence: normalizeMentionConfidence(rawMention.confidence),
+          evidence: rawMention.evidence?.trim(),
+        });
+      }
+
+      codexMentionCount += 1;
+      if (!trackedEntity) {
+        candidateMentionCount += 1;
+      }
+    }
+
+    await ctx.db.patch(
+      args.analysisId,
+      compactPatch({
+        status: "success",
+        finishedAt: Date.now(),
+        model: args.model?.trim(),
+        warnings: args.warnings,
+        codexMentionCount,
+        candidateMentionCount,
+      })
+    );
+
+    return {
+      analysisId: args.analysisId,
+      codexMentionCount,
+      candidateMentionCount,
+    };
   },
 });
 
@@ -2051,6 +3621,14 @@ export const deleteTrackedEntity = mutation({
       throw new Error("Tracked entity not found");
     }
     const citations = await ctx.db.query("citations").collect();
+    const prompts = await ctx.db
+      .query("prompts")
+      .withIndex("entityId", (q) => q.eq("entityId", args.id))
+      .collect();
+    const promptGroups = await ctx.db
+      .query("promptGroups")
+      .withIndex("entityId", (q) => q.eq("entityId", args.id))
+      .collect();
     await Promise.all(
       citations
         .filter((citation) => citation.trackedEntityId === args.id)
@@ -2059,6 +3637,22 @@ export const deleteTrackedEntity = mutation({
             trackedEntityId: undefined,
           })
         )
+    );
+    await Promise.all(
+      prompts.map((prompt) =>
+        ctx.db.patch(prompt._id, {
+          entityId: undefined,
+          updatedAt: Date.now(),
+        })
+      )
+    );
+    await Promise.all(
+      promptGroups.map((promptGroup) =>
+        ctx.db.patch(promptGroup._id, {
+          entityId: undefined,
+          updatedAt: Date.now(),
+        })
+      )
     );
     await ctx.db.delete(args.id);
     return args.id;
@@ -2084,6 +3678,7 @@ export const ingestPromptRun = mutation({
     deeplinkUsed: v.optional(v.string()),
     evidencePath: v.optional(v.string()),
     output: v.optional(v.string()),
+    model: v.optional(v.string()),
     warnings: v.optional(v.array(v.string())),
     browserEngine: v.optional(vBrowserEngine),
     ingestKey: v.optional(v.string()),
@@ -2109,6 +3704,9 @@ export const ingestPromptRun = mutation({
       throw new Error("Prompt not found");
     }
     const provider = await providerBySlugOrDefault(ctx, args.provider);
+    const promptGroup = prompt.promptGroupId
+      ? await ctx.db.get(prompt.promptGroupId)
+      : null;
 
     const requiredIngestKey = process.env.PEEC_RUN_INGEST_KEY;
     if (requiredIngestKey && args.ingestKey !== requiredIngestKey) {
@@ -2150,6 +3748,7 @@ export const ingestPromptRun = mutation({
     const runId = await ctx.db.insert("promptRuns", {
       runGroupQueuedAt: args.startedAt,
       promptId: args.promptId,
+      ...promptRunSnapshotFor(prompt, promptGroup),
       ...providerSnapshot(provider),
       promptExcerpt: promptExcerptFor(prompt),
       status: args.status,
@@ -2178,6 +3777,7 @@ export const ingestPromptRun = mutation({
       deeplinkUsed: args.deeplinkUsed,
       evidencePath: args.evidencePath,
       output: args.output,
+      model: args.model,
       warnings: args.warnings,
       browserEngine: args.browserEngine,
       ingestId: args.ingestId?.trim(),
@@ -2190,12 +3790,13 @@ export const ingestPromptRun = mutation({
         .query("citations")
         .withIndex("promptRunId", (q) => q.eq("promptRunId", runId))
         .collect();
-      await replaceRunEntityMentions(
+      const mentions = await replaceRunEntityMentions(
         ctx,
         runId,
         args.responseText ?? args.responseSummary,
         persistedCitations
       );
+      await queueRunMentionAnalysis(ctx, runId, mentions.length);
     }
 
     return { runId, citationCount: citationInputs.length };
@@ -2267,10 +3868,20 @@ export const listPromptRuns = query({
       runGroupId: runGroupKey(run),
       runGroupQueuedAt: runQueuedAt(run),
       promptId: run.promptId,
-      promptExcerpt: run.promptExcerpt,
-      providerSlug: run.providerSlug,
-      providerName: run.providerName,
-      providerUrl: run.providerUrl,
+      promptExcerpt: promptExcerptForRun(run),
+      entityId: run.entityId,
+      promptGroupId: run.promptGroupId,
+      promptGroupName: run.promptGroupName,
+      intentCategory: run.intentCategory,
+      sentimentLens: run.sentimentLens,
+      funnelStage: run.funnelStage,
+      audience: run.audience,
+      topic: run.topic,
+      priority: run.priority,
+      reviewState: run.reviewState,
+      providerSlug: providerSlugForRun(run),
+      providerName: providerNameForRun(run),
+      providerUrl: providerUrlForRun(run),
       channelSlug: run.channelSlug,
       channelName: run.channelName,
       transport: run.transport,
@@ -2370,7 +3981,7 @@ export const listRunGroups = query({
         const sortedRuns = runs
           .slice()
           .sort((left, right) =>
-            left.providerName.localeCompare(right.providerName)
+            (left.providerName ?? "").localeCompare(right.providerName ?? "")
           );
         const latestRun = sortedRuns
           .slice()
@@ -2381,7 +3992,13 @@ export const listRunGroups = query({
         return {
           id: runGroupKey(latestRun),
           promptId: latestRun.promptId,
-          promptExcerpt: latestRun.promptExcerpt,
+          promptExcerpt: promptExcerptForRun(latestRun),
+          entityId: latestRun.entityId,
+          promptGroupId: latestRun.promptGroupId,
+          promptGroupName: latestRun.promptGroupName,
+          intentCategory: latestRun.intentCategory,
+          sentimentLens: latestRun.sentimentLens,
+          reviewState: latestRun.reviewState,
           runLabel: latestRun.runLabel,
           queuedAt: runQueuedAt(latestRun),
           startedAt: latestRunStartedAt(sortedRuns),
@@ -2397,9 +4014,9 @@ export const listRunGroups = query({
           citationCount: citations.length,
           providers: sortedRuns.map((run) => ({
             runId: run._id,
-            providerSlug: run.providerSlug,
-            providerName: run.providerName,
-            providerUrl: run.providerUrl,
+            providerSlug: providerSlugForRun(run),
+            providerName: providerNameForRun(run),
+            providerUrl: providerUrlForRun(run),
             channelName: run.channelName,
             sessionMode: run.sessionMode,
             browserEngine: run.browserEngine,
@@ -2442,9 +4059,13 @@ export const getRunGroup = query({
     runs = runs
       .slice()
       .sort((left, right) =>
-        left.providerName.localeCompare(right.providerName)
+        (left.providerName ?? "").localeCompare(right.providerName ?? "")
       );
     const prompt = await ctx.db.get(runs[0].promptId);
+    const [promptGroup, entity] = await Promise.all([
+      prompt?.promptGroupId ? ctx.db.get(prompt.promptGroupId) : null,
+      prompt?.entityId ? ctx.db.get(prompt.entityId) : null,
+    ]);
     const successfulRunIds = runs
       .filter((run) => isSuccessfulRunStatus(run.status))
       .map((run) => run._id);
@@ -2465,7 +4086,13 @@ export const getRunGroup = query({
       group: {
         id: runGroupKey(latestRun),
         promptId: latestRun.promptId,
-        promptExcerpt: latestRun.promptExcerpt,
+        promptExcerpt: promptExcerptForRun(latestRun, prompt),
+        entityId: latestRun.entityId,
+        promptGroupId: latestRun.promptGroupId,
+        promptGroupName: latestRun.promptGroupName,
+        intentCategory: latestRun.intentCategory,
+        sentimentLens: latestRun.sentimentLens,
+        reviewState: latestRun.reviewState,
         runLabel: latestRun.runLabel,
         queuedAt: runQueuedAt(latestRun),
         startedAt: latestRunStartedAt(runs),
@@ -2485,12 +4112,17 @@ export const getRunGroup = query({
             _id: prompt._id,
             excerpt: promptExcerptFor(prompt),
             promptText: prompt.promptText,
+            ...promptMetadataFor(prompt, promptGroup, entity),
           }
         : null,
       runs: runs.map((run) => ({
         ...run,
         runGroupId: runGroupKey(run),
         runGroupQueuedAt: runQueuedAt(run),
+        promptExcerpt: promptExcerptForRun(run, prompt),
+        providerSlug: providerSlugForRun(run),
+        providerName: providerNameForRun(run),
+        providerUrl: providerUrlForRun(run),
         sourceCount: isSuccessfulRunStatus(run.status)
           ? run.sourceCount
           : undefined,
@@ -2514,6 +4146,12 @@ export const listPromptResponseAnalytics = query({
   args: {
     active: v.optional(v.boolean()),
     rangeDays: v.optional(v.float64()),
+    entityId: v.optional(v.id("trackedEntities")),
+    promptGroupId: v.optional(v.id("promptGroups")),
+    intentCategory: v.optional(vPromptIntentCategory),
+    sentimentLens: v.optional(vPromptSentimentLens),
+    reviewState: v.optional(vPromptReviewState),
+    generatedBy: v.optional(vPromptGeneratedBy),
   },
   handler: async (ctx, args) => {
     let prompts = await ctx.db.query("prompts").collect();
@@ -2521,6 +4159,42 @@ export const listPromptResponseAnalytics = query({
     if (args.active !== undefined) {
       prompts = prompts.filter((prompt) => prompt.active === args.active);
     }
+    if (args.entityId) {
+      prompts = prompts.filter((prompt) => prompt.entityId === args.entityId);
+    }
+    if (args.promptGroupId) {
+      prompts = prompts.filter(
+        (prompt) => prompt.promptGroupId === args.promptGroupId
+      );
+    }
+    if (args.intentCategory) {
+      prompts = prompts.filter(
+        (prompt) => promptIntentCategoryFor(prompt) === args.intentCategory
+      );
+    }
+    if (args.sentimentLens) {
+      prompts = prompts.filter(
+        (prompt) => promptSentimentLensFor(prompt) === args.sentimentLens
+      );
+    }
+    if (args.reviewState) {
+      prompts = prompts.filter(
+        (prompt) => promptReviewStateFor(prompt) === args.reviewState
+      );
+    }
+    if (args.generatedBy) {
+      prompts = prompts.filter(
+        (prompt) => promptGeneratedByFor(prompt) === args.generatedBy
+      );
+    }
+    const groupMap = await promptGroupByIdMap(
+      ctx,
+      prompts.map((prompt) => prompt.promptGroupId)
+    );
+    const entityMap = await trackedEntityByIdMap(
+      ctx,
+      prompts.map((prompt) => prompt.entityId)
+    );
     const rangeStart =
       args.rangeDays !== undefined
         ? Date.now() - args.rangeDays * 24 * 60 * 60 * 1000
@@ -2637,6 +4311,11 @@ export const listPromptResponseAnalytics = query({
         return {
           id: prompt._id,
           excerpt: promptExcerptFor(prompt),
+          ...promptMetadataFor(
+            prompt,
+            prompt.promptGroupId ? groupMap.get(prompt.promptGroupId) : null,
+            prompt.entityId ? entityMap.get(prompt.entityId) : null
+          ),
           active: prompt.active,
           responseCount: successfulRuns.length,
           latestRunAt: latestSuccessfulRun?.startedAt,
@@ -2683,6 +4362,10 @@ export const getPromptAnalysis = query({
     if (prompt == null) {
       return null;
     }
+    const [promptGroup, entity] = await Promise.all([
+      prompt.promptGroupId ? ctx.db.get(prompt.promptGroupId) : null,
+      prompt.entityId ? ctx.db.get(prompt.entityId) : null,
+    ]);
 
     const promptRuns = await ctx.db
       .query("promptRuns")
@@ -2729,9 +4412,9 @@ export const getPromptAnalysis = query({
         status: run.status,
         startedAt: run.startedAt,
         finishedAt: run.finishedAt,
-        providerSlug: run.providerSlug,
-        providerName: run.providerName,
-        providerUrl: run.providerUrl,
+        providerSlug: providerSlugForRun(run),
+        providerName: providerNameForRun(run),
+        providerUrl: providerUrlForRun(run),
         browserEngine: run.browserEngine,
         attempt: run.attempt ?? 1,
         visibilityScore: isSuccessfulRunStatus(run.status)
@@ -2876,6 +4559,8 @@ export const getPromptAnalysis = query({
         _id: prompt._id,
         excerpt: promptExcerptFor(prompt),
         promptText: prompt.promptText,
+        active: prompt.active,
+        ...promptMetadataFor(prompt, promptGroup, entity),
       },
       summary: {
         responseCount: completedRuns.length,
@@ -2934,6 +4619,10 @@ export const getPromptRun = query({
         ...run,
         runGroupId: runGroupKey(run),
         runGroupQueuedAt: runQueuedAt(run),
+        promptExcerpt: promptExcerptForRun(run, prompt),
+        providerSlug: providerSlugForRun(run),
+        providerName: providerNameForRun(run),
+        providerUrl: providerUrlForRun(run),
         sourceCount: isSuccessfulRunStatus(run.status)
           ? run.sourceCount
           : undefined,
@@ -2957,6 +4646,7 @@ export const getPromptRun = query({
       output,
       mentions: mentionSnapshots.map((mention) => ({
         entityId: mention.trackedEntityId,
+        analysisId: mention.analysisId,
         name: mention.name,
         slug: mention.slug,
         kind: mention.kind,
@@ -2964,6 +4654,10 @@ export const getPromptRun = query({
         citationCount: mention.citationCount,
         ownedCitationCount: mention.ownedCitationCount,
         matchedTerms: mention.matchedTerms,
+        detectionSource: mention.detectionSource,
+        sentiment: mention.sentiment,
+        confidence: mention.confidence,
+        evidence: mention.evidence,
       })),
       citations: citations.map((citation) => ({
         ...citation,
@@ -3085,11 +4779,8 @@ export const listSources = query({
               return {
                 runId: run._id,
                 promptId: run.promptId,
-                promptExcerpt:
-                  prompt?.promptText != null
-                    ? promptExcerptFor(prompt)
-                    : run.promptExcerpt,
-                providerName: run.providerName,
+                promptExcerpt: promptExcerptForRun(run, prompt),
+                providerName: providerNameForRun(run),
                 startedAt: run.startedAt,
                 responseSummary: run.responseSummary ?? run.responseText ?? "",
                 position: citation.position,
@@ -3183,6 +4874,7 @@ export const getOverview = query({
     const currentCitations = await collectCitationsForRuns(ctx, currentRunIds);
     const totalCitations = currentCitations.length;
     const prompts = await ctx.db.query("prompts").collect();
+    const promptById = new Map(prompts.map((prompt) => [prompt._id, prompt]));
     const currentCitationsByRun = buildCitationMap(currentCitations);
     const mentionsByRun = buildRunEntityMentionMap(
       await collectRunEntityMentionsForRuns(ctx, currentRunIds)
@@ -3218,17 +4910,19 @@ export const getOverview = query({
       })
       .sort((a, b) => a.day.localeCompare(b.day));
 
-    const providerSet = new Set<string>([
-      ...currentSuccessfulRuns.map((run) => run.providerName),
-      ...previousSuccessfulRuns.map((run) => run.providerName),
-    ]);
+    const providerSet = new Set<string>(
+      [
+        ...currentSuccessfulRuns.map((run) => providerNameForRun(run)),
+        ...previousSuccessfulRuns.map((run) => providerNameForRun(run)),
+      ].filter((name): name is string => Boolean(name?.trim()))
+    );
     const providerComparison = [...providerSet]
       .map((providerName) => {
         const providerCurrent = currentSuccessfulRuns.filter(
-          (run) => run.providerName === providerName
+          (run) => providerNameForRun(run) === providerName
         );
         const providerPrevious = previousSuccessfulRuns.filter(
-          (run) => run.providerName === providerName
+          (run) => providerNameForRun(run) === providerName
         );
         const providerCurrentMetrics = summarizeRunMetrics(providerCurrent);
         const providerPreviousMetrics = summarizeRunMetrics(providerPrevious);
@@ -3320,7 +5014,7 @@ export const getOverview = query({
         return {
           promptId: prompt._id,
           excerpt: promptExcerptFor(prompt),
-          providerName: latestRun.providerName,
+          providerName: providerNameForRun(latestRun),
           responseCount: promptRuns.length,
           latestStatus: latestRun.status,
           latestResponseSummary:
@@ -3420,8 +5114,8 @@ export const getOverview = query({
       recentRuns: currentRuns.slice(0, 8).map((run) => ({
         _id: run._id,
         startedAt: run.startedAt,
-        promptExcerpt: run.promptExcerpt,
-        providerName: run.providerName,
+        promptExcerpt: promptExcerptForRun(run, promptById.get(run.promptId)),
+        providerName: providerNameForRun(run),
         status: run.status,
         finishedAt: run.finishedAt,
         latencyMs: run.latencyMs,

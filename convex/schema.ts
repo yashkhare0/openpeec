@@ -1,6 +1,62 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+const vPromptIntentCategory = v.union(
+  v.literal("category_discovery"),
+  v.literal("brand_factual"),
+  v.literal("recommendation"),
+  v.literal("comparison"),
+  v.literal("alternative"),
+  v.literal("problem_solution"),
+  v.literal("how_to"),
+  v.literal("pricing_buying"),
+  v.literal("review_reputation"),
+  v.literal("risk_objection"),
+  v.literal("citation_source"),
+  v.literal("content_gap"),
+  v.literal("uncategorized")
+);
+
+const vPromptSentimentLens = v.union(
+  v.literal("positive"),
+  v.literal("neutral"),
+  v.literal("negative"),
+  v.literal("comparative"),
+  v.literal("mixed")
+);
+
+const vPromptFunnelStage = v.union(
+  v.literal("awareness"),
+  v.literal("consideration"),
+  v.literal("decision"),
+  v.literal("retention")
+);
+
+const vPromptPriority = v.union(
+  v.literal("high"),
+  v.literal("medium"),
+  v.literal("low")
+);
+
+const vPromptReviewState = v.union(
+  v.literal("draft"),
+  v.literal("approved"),
+  v.literal("archived")
+);
+
+const vPromptGeneratedBy = v.union(
+  v.literal("manual"),
+  v.literal("codex"),
+  v.literal("import")
+);
+
+const vPromptGenerationStatus = v.union(
+  v.literal("queued"),
+  v.literal("running"),
+  v.literal("success"),
+  v.literal("failed")
+);
+
 export default defineSchema({
   // Registered http request-sending jobs.
   jobs: defineTable({
@@ -14,6 +70,14 @@ export default defineSchema({
     body: v.optional(v.string()),
     cronId: v.optional(v.string()),
   }),
+
+  /** One row per bootstrap / schema data backfill tracked in Convex. */
+  schemaMigrations: defineTable({
+    name: v.string(),
+    startedAt: v.optional(v.float64()),
+    completedAt: v.optional(v.float64()),
+    patchedRuns: v.optional(v.float64()),
+  }).index("name", ["name"]),
 
   // Web logs from outgoing requests.
   weblogs: defineTable({
@@ -122,8 +186,47 @@ export default defineSchema({
 
   prompts: defineTable({
     promptText: v.string(),
+    entityId: v.optional(v.id("trackedEntities")),
+    promptGroupId: v.optional(v.id("promptGroups")),
+    intentCategory: v.optional(vPromptIntentCategory),
+    sentimentLens: v.optional(vPromptSentimentLens),
+    funnelStage: v.optional(vPromptFunnelStage),
+    audience: v.optional(v.string()),
+    topic: v.optional(v.string()),
+    priority: v.optional(vPromptPriority),
+    reviewState: v.optional(vPromptReviewState),
+    generatedBy: v.optional(vPromptGeneratedBy),
+    generationRationale: v.optional(v.string()),
+    sourceUrls: v.optional(v.array(v.string())),
+    sourceGenerationId: v.optional(v.id("entityPromptGenerationRuns")),
+    createdAt: v.optional(v.float64()),
+    updatedAt: v.optional(v.float64()),
     active: v.boolean(),
-  }).index("active", ["active"]),
+  })
+    .index("active", ["active"])
+    .index("entityId", ["entityId"])
+    .index("promptGroupId", ["promptGroupId"])
+    .index("reviewState", ["reviewState"])
+    .index("entityId_promptGroupId", ["entityId", "promptGroupId"]),
+
+  promptGroups: defineTable({
+    entityId: v.optional(v.id("trackedEntities")),
+    name: v.string(),
+    slug: v.string(),
+    description: v.optional(v.string()),
+    intentCategory: vPromptIntentCategory,
+    sentimentLens: vPromptSentimentLens,
+    active: v.boolean(),
+    archivedAt: v.optional(v.float64()),
+    systemManaged: v.boolean(),
+    sortOrder: v.optional(v.float64()),
+    sourceGenerationId: v.optional(v.id("entityPromptGenerationRuns")),
+    createdAt: v.float64(),
+    updatedAt: v.float64(),
+  })
+    .index("slug", ["slug"])
+    .index("entityId", ["entityId"])
+    .index("entityId_active", ["entityId", "active"]),
 
   promptJobs: defineTable({
     name: v.string(),
@@ -159,12 +262,24 @@ export default defineSchema({
     runGroupId: v.optional(v.string()),
     runGroupQueuedAt: v.optional(v.float64()),
     promptId: v.id("prompts"),
-    providerId: v.id("providers"),
-    providerSlug: v.string(),
-    providerName: v.string(),
-    providerUrl: v.string(),
+    entityId: v.optional(v.id("trackedEntities")),
+    promptGroupId: v.optional(v.id("promptGroups")),
+    promptGroupName: v.optional(v.string()),
+    intentCategory: v.optional(vPromptIntentCategory),
+    sentimentLens: v.optional(vPromptSentimentLens),
+    funnelStage: v.optional(vPromptFunnelStage),
+    audience: v.optional(v.string()),
+    topic: v.optional(v.string()),
+    priority: v.optional(vPromptPriority),
+    reviewState: v.optional(vPromptReviewState),
+    /** Optional for legacy runs ingested before provider snapshot fields existed */
+    providerId: v.optional(v.id("providers")),
+    providerSlug: v.optional(v.string()),
+    providerName: v.optional(v.string()),
+    providerUrl: v.optional(v.string()),
     channelSlug: v.optional(v.string()),
     channelName: v.optional(v.string()),
+    model: v.optional(v.string()),
     transport: v.optional(v.literal("browser")),
     sessionMode: v.optional(v.union(v.literal("guest"), v.literal("stored"))),
     sessionProfileDir: v.optional(v.string()),
@@ -179,7 +294,7 @@ export default defineSchema({
     submitStrategy: v.optional(
       v.union(v.literal("type"), v.literal("deeplink"))
     ),
-    promptExcerpt: v.string(),
+    promptExcerpt: v.optional(v.string()),
     status: v.union(
       v.literal("queued"),
       v.literal("running"),
@@ -212,6 +327,8 @@ export default defineSchema({
     .index("runGroupId", ["runGroupId"])
     .index("runGroupId_startedAt", ["runGroupId", "startedAt"])
     .index("promptId_startedAt", ["promptId", "startedAt"])
+    .index("entityId_startedAt", ["entityId", "startedAt"])
+    .index("promptGroupId_startedAt", ["promptGroupId", "startedAt"])
     .index("providerSlug_startedAt", ["providerSlug", "startedAt"])
     .index("ingestId", ["ingestId"]),
 
@@ -249,8 +366,51 @@ export default defineSchema({
     .index("domain", ["domain"])
     .index("type", ["type"]),
 
+  runMentionAnalyses: defineTable({
+    promptRunId: v.id("promptRuns"),
+    status: v.union(
+      v.literal("queued"),
+      v.literal("running"),
+      v.literal("success"),
+      v.literal("failed")
+    ),
+    queuedAt: v.float64(),
+    startedAt: v.optional(v.float64()),
+    finishedAt: v.optional(v.float64()),
+    runner: v.optional(v.string()),
+    model: v.optional(v.string()),
+    error: v.optional(v.string()),
+    warnings: v.optional(v.array(v.string())),
+    deterministicMentionCount: v.optional(v.float64()),
+    codexMentionCount: v.optional(v.float64()),
+    candidateMentionCount: v.optional(v.float64()),
+  })
+    .index("promptRunId", ["promptRunId"])
+    .index("status_queuedAt", ["status", "queuedAt"]),
+
+  entityPromptGenerationRuns: defineTable({
+    entityId: v.id("trackedEntities"),
+    status: vPromptGenerationStatus,
+    queuedAt: v.float64(),
+    startedAt: v.optional(v.float64()),
+    finishedAt: v.optional(v.float64()),
+    runner: v.optional(v.string()),
+    model: v.optional(v.string()),
+    websiteUrl: v.optional(v.string()),
+    researchSummary: v.optional(v.string()),
+    entitySummary: v.optional(v.string()),
+    competitorNotes: v.optional(v.string()),
+    error: v.optional(v.string()),
+    warnings: v.optional(v.array(v.string())),
+    generatedPromptCount: v.optional(v.float64()),
+    generatedGroupCount: v.optional(v.float64()),
+  })
+    .index("entityId_queuedAt", ["entityId", "queuedAt"])
+    .index("status_queuedAt", ["status", "queuedAt"]),
+
   runEntityMentions: defineTable({
     promptRunId: v.id("promptRuns"),
+    analysisId: v.optional(v.id("runMentionAnalyses")),
     trackedEntityId: v.optional(v.id("trackedEntities")),
     name: v.string(),
     slug: v.string(),
@@ -265,6 +425,19 @@ export default defineSchema({
     citationCount: v.float64(),
     ownedCitationCount: v.float64(),
     matchedTerms: v.array(v.string()),
+    detectionSource: v.optional(
+      v.union(v.literal("deterministic"), v.literal("codex"))
+    ),
+    sentiment: v.optional(
+      v.union(
+        v.literal("positive"),
+        v.literal("neutral"),
+        v.literal("negative"),
+        v.literal("mixed")
+      )
+    ),
+    confidence: v.optional(v.float64()),
+    evidence: v.optional(v.string()),
   })
     .index("promptRunId", ["promptRunId"])
     .index("trackedEntityId", ["trackedEntityId"]),

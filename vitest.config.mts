@@ -9,7 +9,11 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.{test,spec}.{ts,tsx}", "convex/**/*.{test,spec}.ts"],
+    include: [
+      "src/**/*.{test,spec}.{ts,tsx}",
+      "convex/**/*.{test,spec}.ts",
+      "runner/**/*.{test,spec}.mjs",
+    ],
     exclude: ["e2e/**", "node_modules/**", "dist/**"],
     environmentMatchGlobs: [
       ["src/**/*.test.tsx", "jsdom"],

@@ -1,3 +1,5 @@
+import { dismissInterstitials } from "./interstitial-handler.mjs";
+
 /**
  * Default hop sequence before the provider URL: establish a more “natural”
  * browsing path (best-effort; failures never abort the run).
@@ -32,6 +34,7 @@ export async function settleAfterPageLoad(page, opts) {
   const postHop = Math.max(0, Math.floor(opts.postHopSettleMinMs ?? 0));
   const waitAfter = Math.max(0, Math.floor(opts.waitAfterMs ?? 0));
   const idleMax = Math.max(0, Math.floor(opts.hopNetworkIdleMaxMs ?? 0));
+  const skipDismiss = opts.skipDismiss === true;
 
   try {
     await page.waitForLoadState("load", { timeout: loadTimeout });
@@ -43,6 +46,15 @@ export async function settleAfterPageLoad(page, opts) {
       await page.waitForLoadState("networkidle", { timeout: idleMax });
     } catch {
       // long-polling / analytics — never block the run
+    }
+  }
+  if (!skipDismiss) {
+    // Best-effort: dismiss cookie banners / consent dialogs / generic modals
+    // after every page load so subsequent selectors aren't blocked.
+    try {
+      await dismissInterstitials(page);
+    } catch {
+      // never block the hop on interstitial dismissal
     }
   }
   if (postHop > 0) {

@@ -66,10 +66,12 @@ services:
     command: >
       sh -lc "curl -fsS http://frontend:5999/ >/dev/null &&
       curl -sS -o /dev/null -w '%{http_code}' http://backend:3212/ | grep -Eq '^[234][0-9][0-9]$' &&
+      node scripts/run-convex-bootstrap.mjs &&
       pnpm runner:queue:docker"
     environment:
       CAMOUFOX_PYTHON: /usr/bin/python3
       VITE_CONVEX_URL: http://backend:3212
+      CONVEX_AGENT_MODE: anonymous
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -90,11 +92,13 @@ services:
     command: >
       sh -lc "curl -fsS http://frontend:5999/nodriver-fixture.html >/dev/null &&
       curl -sS -o /dev/null -w '%{http_code}' http://backend:3212/ | grep -Eq '^[234][0-9][0-9]$' &&
+      node scripts/run-convex-bootstrap.mjs &&
       pnpm runner:nodriver:fixture:docker"
     environment:
       OPENPEEC_NODRIVER_BROWSER_PATH: /usr/bin/chromium
       OPENPEEC_NODRIVER_PYTHON: /usr/bin/python3
       VITE_CONVEX_URL: http://backend:3212
+      CONVEX_AGENT_MODE: anonymous
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

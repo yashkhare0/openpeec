@@ -27,6 +27,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import {
+  promptGeneratedByOptions,
+  promptIntentCategoryOptions,
+  promptOptionLabel,
+  promptReviewStateOptions,
+  promptSentimentLensOptions,
+  type PromptGeneratedBy,
+  type PromptIntentCategory,
+  type PromptReviewState,
+  type PromptSentimentLens,
+} from "@/lib/prompt-categorisation";
 import { InlineEmpty } from "./components/EmptyState";
 import {
   clickableTableRowClassName,
@@ -86,6 +97,16 @@ export function PromptDetailPage({
           _id: Id<"prompts">;
           excerpt: string;
           promptText: string;
+          entityName?: string;
+          promptGroupName?: string;
+          intentCategory: PromptIntentCategory;
+          sentimentLens: PromptSentimentLens;
+          reviewState: PromptReviewState;
+          generatedBy: PromptGeneratedBy;
+          audience?: string;
+          topic?: string;
+          generationRationale?: string;
+          sourceUrls: string[];
         };
         summary: {
           responseCount: number;
@@ -277,6 +298,86 @@ export function PromptDetailPage({
               />
             </div>
           </section>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle>Prompt Categorisation</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="secondary">
+                  {promptOptionLabel(
+                    promptIntentCategoryOptions,
+                    promptAnalysis.prompt.intentCategory
+                  )}
+                </Badge>
+                <Badge variant="outline">
+                  {promptOptionLabel(
+                    promptSentimentLensOptions,
+                    promptAnalysis.prompt.sentimentLens
+                  )}
+                </Badge>
+                <Badge variant="outline">
+                  {promptOptionLabel(
+                    promptReviewStateOptions,
+                    promptAnalysis.prompt.reviewState
+                  )}
+                </Badge>
+                <Badge variant="outline">
+                  {promptOptionLabel(
+                    promptGeneratedByOptions,
+                    promptAnalysis.prompt.generatedBy
+                  )}
+                </Badge>
+              </div>
+              <div className="grid gap-3 text-sm md:grid-cols-2">
+                <div>
+                  <div className="text-muted-foreground text-xs">Entity</div>
+                  <div>{promptAnalysis.prompt.entityName ?? "-"}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground text-xs">Group</div>
+                  <div>{promptAnalysis.prompt.promptGroupName ?? "-"}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground text-xs">Audience</div>
+                  <div>{promptAnalysis.prompt.audience ?? "-"}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground text-xs">Topic</div>
+                  <div>{promptAnalysis.prompt.topic ?? "-"}</div>
+                </div>
+              </div>
+              {promptAnalysis.prompt.generationRationale ? (
+                <div className="text-sm">
+                  <div className="text-muted-foreground text-xs">
+                    Generation rationale
+                  </div>
+                  <p>{promptAnalysis.prompt.generationRationale}</p>
+                </div>
+              ) : null}
+              {promptAnalysis.prompt.sourceUrls.length ? (
+                <div className="text-sm">
+                  <div className="text-muted-foreground text-xs">
+                    Source URLs
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    {promptAnalysis.prompt.sourceUrls.map((url) => (
+                      <a
+                        key={url}
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary truncate underline-offset-4 hover:underline"
+                      >
+                        {url}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
 
           {hasCharts ? (
             <div

@@ -33,6 +33,7 @@ import {
   DEFAULT_DOMAIN_HOPS,
   runDomainHopSequence,
 } from "./session-warmup.mjs";
+import { dismissInterstitials } from "./interstitial-handler.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -740,38 +741,7 @@ export async function getRunnerPreflight(config) {
 }
 
 async function dismissCookieBanner(page) {
-  const selectors = [
-    "button:has-text('Reject non-essential')",
-    "button:has-text('Reject all')",
-    "button:has-text('Accept all')",
-    "button:has-text('Accept all cookies')",
-    "button:has-text('I agree')",
-    "button[aria-label='Close']",
-    "button[aria-label='Dismiss']",
-  ];
-
-  for (const selector of selectors) {
-    const button = page.locator(selector).first();
-    const exists = await button.count().catch(() => 0);
-    if (!exists) {
-      continue;
-    }
-
-    const visible = await button.isVisible().catch(() => false);
-    if (!visible) {
-      continue;
-    }
-
-    try {
-      await button.click({ timeout: 2500 });
-      await page.waitForTimeout(250);
-      return true;
-    } catch {
-      continue;
-    }
-  }
-
-  return false;
+  return (await dismissInterstitials(page)) > 0;
 }
 
 /**
@@ -1939,6 +1909,7 @@ export async function runMonitor(config, options = {}) {
     } else {
       console.log(`[openpeec-runner] navigating to provider: ${deepLinkUrl}`);
       await page.goto(deepLinkUrl, { waitUntil, timeout: timeoutMs });
+      await dismissInterstitials(page).catch(() => 0);
 
       if (normalizedConfig.assertions.waitForSelector) {
         await page.waitForSelector(normalizedConfig.assertions.waitForSelector, {

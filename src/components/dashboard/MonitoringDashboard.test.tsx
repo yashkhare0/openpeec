@@ -16,6 +16,8 @@ const mutationFns = vi.hoisted(() => ({
   updatePrompt: vi.fn(),
   deletePrompt: vi.fn(),
   triggerSelectedPromptsNow: vi.fn(),
+  triggerPromptGroupNow: vi.fn(),
+  queueEntityPromptGeneration: vi.fn(),
   retryPromptRun: vi.fn(),
   cancelPromptRun: vi.fn(),
   deletePromptRun: vi.fn(),
@@ -36,6 +38,7 @@ vi.mock("../../../convex/_generated/api", () => ({
       listProviders: "listProviders",
       getOverview: "getOverview",
       listPromptResponseAnalytics: "listPromptResponseAnalytics",
+      listPromptGroups: "listPromptGroups",
       getQueueStatus: "getQueueStatus",
       listPromptRuns: "listPromptRuns",
       listRunGroups: "listRunGroups",
@@ -48,6 +51,8 @@ vi.mock("../../../convex/_generated/api", () => ({
       updatePrompt: "updatePrompt",
       deletePrompt: "deletePrompt",
       triggerSelectedPromptsNow: "triggerSelectedPromptsNow",
+      triggerPromptGroupNow: "triggerPromptGroupNow",
+      queueEntityPromptGeneration: "queueEntityPromptGeneration",
       retryPromptRun: "retryPromptRun",
       cancelPromptRun: "cancelPromptRun",
       deletePromptRun: "deletePromptRun",
@@ -217,6 +222,11 @@ const promptRows = [
     responseDrift: 24,
     sourceVariance: 18,
     active: true,
+    intentCategory: "category_discovery",
+    sentimentLens: "neutral",
+    reviewState: "approved",
+    generatedBy: "manual",
+    sourceUrls: [],
   },
 ];
 
@@ -306,6 +316,8 @@ describe("MonitoringDashboard", () => {
           return args === "skip" ? undefined : overview;
         case "listPromptResponseAnalytics":
           return args === "skip" ? undefined : promptRows;
+        case "listPromptGroups":
+          return args === "skip" ? undefined : [];
         case "getQueueStatus":
           return {
             queuedCount: 0,
