@@ -22,6 +22,224 @@ test("createPrompt rejects empty text", async () => {
   ).rejects.toThrow(/required/i);
 });
 
+test("prompt categorisation supports groups, filters, and uncategorized defaults", async () => {
+  const t = convexTest(schema, modules);
+  const entityId = await t.mutation(api.analytics.createTrackedEntity, {
+    name: "OpenPeec",
+    kind: "brand",
+    ownedDomains: ["openpeec.ai"],
+  });
+  const promptGroupId = await t.mutation(api.analytics.createPromptGroup, {
+    entityId,
+    name: "Category discovery",
+    intentCategory: "category_discovery",
+    sentimentLens: "neutral",
+  });
+  const promptId = await t.mutation(api.analytics.createPrompt, {
+    promptText: "What are the best AI visibility tools?",
+    entityId,
+    promptGroupId,
+    intentCategory: "category_discovery",
+    sentimentLens: "neutral",
+    funnelStage: "awareness",
+    audience: "SEO marketers",
+    topic: "AI visibility",
+    priority: "high",
+    reviewState: "approved",
+    generatedBy: "manual",
+    generationRationale: "Tracks unaided category discovery.",
+    sourceUrls: ["https://openpeec.ai"],
+  });
+  await t.mutation(api.analytics.createPrompt, {
+    promptText: "Legacy prompt without categorisation.",
+  });
+
+  const categoryPrompts = await t.query(api.analytics.listPrompts, {
+    intentCategory: "category_discovery",
+  });
+  expect(categoryPrompts).toHaveLength(1);
+  expect(categoryPrompts[0]).toMatchObject({
+    _id: promptId,
+    entityName: "OpenPeec",
+    promptGroupName: "Category discovery",
+    sentimentLens: "neutral",
+    reviewState: "approved",
+    generatedBy: "manual",
+  });
+
+  const uncategorized = await t.query(api.analytics.listPrompts, {
+    intentCategory: "uncategorized",
+  });
+  expect(uncategorized.map((prompt) => prompt.promptText)).toContain(
+    "Legacy prompt without categorisation."
+  );
+
+  await t.mutation(api.analytics.updatePrompt, {
+    id: promptId,
+    sentimentLens: "comparative",
+    reviewState: "draft",
+    promptGroupId: null,
+  });
+  const drafts = await t.query(api.analytics.listPrompts, {
+    reviewState: "draft",
+  });
+  expect(drafts[0]).toMatchObject({
+    _id: promptId,
+    sentimentLens: "comparative",
+  });
+  expect(drafts[0].promptGroupId).toBeUndefined();
+});
+
+test("group and entity scoped runs snapshot prompt categorisation", async () => {
+  const t = convexTest(schema, modules);
+  await t.mutation(api.analytics.ensureProvidersSeeded, {});
+  const entityId = await t.mutation(api.analytics.createTrackedEntity, {
+    name: "OpenPeec",
+    kind: "brand",
+    ownedDomains: ["openpeec.ai"],
+  });
+  const promptGroupId = await t.mutation(api.analytics.createPromptGroup, {
+    entityId,
+    name: "Risk perception",
+    intentCategory: "risk_objection",
+    sentimentLens: "negative",
+  });
+  await t.mutation(api.analytics.createPrompt, {
+    promptText: "What are common complaints about OpenPeec?",
+    promptGroupId,
+    intentCategory: "risk_objection",
+    sentimentLens: "negative",
+    reviewState: "approved",
+  });
+  await t.mutation(api.analytics.createPrompt, {
+    promptText: "Draft prompt should not run by default.",
+    entityId,
+    promptGroupId,
+    intentCategory: "risk_objection",
+    sentimentLens: "negative",
+    reviewState: "draft",
+  });
+
+  const groupResult = await t.mutation(api.analytics.triggerPromptGroupNow, {
+    promptGroupId,
+    label: "risk-test",
+    browserEngine: "playwright",
+    providerSlugs: ["openai"],
+  });
+  expect(groupResult.queuedCount).toBe(1);
+
+  const runs = await t.query(api.analytics.listPromptRuns, { limit: 5 });
+  expect(runs[0]).toMatchObject({
+    entityId,
+    promptGroupId,
+    promptGroupName: "Risk perception",
+    intentCategory: "risk_objection",
+    sentimentLens: "negative",
+    reviewState: "approved",
+  });
+
+  const entityResult = await t.mutation(api.analytics.triggerEntityPromptsNow, {
+    entityId,
+    label: "entity-test",
+    browserEngine: "playwright",
+    providerSlugs: ["openai"],
+  });
+  expect(entityResult.queuedCount).toBe(1);
+});
+
+test("entity prompt generation creates draft groups and deduplicates prompts", async () => {
+  const t = convexTest(schema, modules);
+  const entityId = await t.mutation(api.analytics.createTrackedEntity, {
+    name: "OpenPeec",
+    kind: "brand",
+    aliases: ["Open Peec"],
+    ownedDomains: ["openpeec.ai"],
+  });
+  const generationId = await t.mutation(
+    api.analytics.queueEntityPromptGeneration,
+    {
+      entityId,
+      websiteUrl: "https://openpeec.ai",
+      researchSummary: "OpenPeec tracks AI visibility.",
+    }
+  );
+  const claimed = await t.mutation(
+    api.analytics.claimNextEntityPromptGeneration,
+    {
+      runner: "convex-prompt-generation-test",
+      maxConcurrent: 1,
+    }
+  );
+  expect(claimed?.generationId).toBe(generationId);
+  expect(claimed?.entity.name).toBe("OpenPeec");
+
+  const completed = await t.mutation(
+    api.analytics.completeEntityPromptGeneration,
+    {
+      generationId,
+      status: "success",
+      model: "gpt-5.5:medium",
+      entitySummary: "OpenPeec monitors AI answers.",
+      competitorNotes: "No competitors supplied.",
+      warnings: [],
+      groups: [
+        {
+          name: "Category discovery",
+          slug: "category-discovery",
+          description: "Unaided category prompts.",
+          intentCategory: "category_discovery",
+          sentimentLens: "neutral",
+          sortOrder: 0,
+          prompts: [
+            {
+              promptText: "What are the best AI visibility tools?",
+              intentCategory: "category_discovery",
+              sentimentLens: "neutral",
+              funnelStage: "awareness",
+              audience: "SEO marketers",
+              topic: "AI visibility",
+              priority: "high",
+              rationale: "Tests unaided recommendation visibility.",
+              sourceUrls: ["https://openpeec.ai"],
+            },
+            {
+              promptText: "What are the best AI visibility tools?",
+              intentCategory: "category_discovery",
+              sentimentLens: "neutral",
+              funnelStage: "awareness",
+              audience: "SEO marketers",
+              topic: "AI visibility",
+              priority: "high",
+              rationale: "Duplicate prompt.",
+              sourceUrls: ["https://openpeec.ai"],
+            },
+          ],
+        },
+      ],
+    }
+  );
+  expect(completed.generatedGroupCount).toBe(1);
+  expect(completed.generatedPromptCount).toBe(1);
+
+  const groups = await t.query(api.analytics.listPromptGroups, { entityId });
+  expect(groups[0]).toMatchObject({
+    name: "Category discovery",
+    intentCategory: "category_discovery",
+    promptCount: 1,
+    approvedPromptCount: 0,
+  });
+  const prompts = await t.query(api.analytics.listPrompts, {
+    entityId,
+    generatedBy: "codex",
+  });
+  expect(prompts).toHaveLength(1);
+  expect(prompts[0]).toMatchObject({
+    reviewState: "draft",
+    generationRationale: "Tests unaided recommendation visibility.",
+    sourceUrls: ["https://openpeec.ai"],
+  });
+});
+
 test("queue workflow: enqueue single-provider run, claim group, complete success", async () => {
   const t = convexTest(schema, modules);
   await t.mutation(api.analytics.ensureProvidersSeeded, {});
@@ -87,6 +305,111 @@ test("queue workflow: enqueue single-provider run, claim group, complete success
 
   const queueAfter = await t.query(api.analytics.getQueueStatus, {});
   expect(queueAfter.queuedCount).toBe(0);
+});
+
+test("successful runs queue Codex mention analysis and merge enriched mentions", async () => {
+  const t = convexTest(schema, modules);
+  await t.mutation(api.analytics.ensureProvidersSeeded, {});
+  const entityId = await t.mutation(api.analytics.createTrackedEntity, {
+    name: "OpenPeec",
+    kind: "brand",
+    aliases: ["Open Peec"],
+    ownedDomains: ["openpeec.ai"],
+  });
+  const promptId = await t.mutation(api.analytics.createPrompt, {
+    promptText: "Which AI visibility tools should I compare?",
+  });
+
+  await t.mutation(api.analytics.triggerSelectedPromptsNow, {
+    promptIds: [promptId],
+    label: "mention-analysis-test",
+    browserEngine: "playwright",
+    providerSlugs: ["openai"],
+  });
+  const claimedRun = await t.mutation(
+    api.analytics.claimNextQueuedPromptRunGroup,
+    {
+      browserEngine: "playwright",
+      runner: "convex-test-runner",
+      maxConcurrent: 1,
+    }
+  );
+  expect(claimedRun).not.toBeNull();
+  await t.mutation(api.analytics.completePromptRun, {
+    runId: claimedRun!.runs[0].runId,
+    status: "success",
+    finishedAt: Date.now(),
+    responseText:
+      "OpenPeec is strong for citation monitoring. Acme Rival appears in enterprise comparisons.",
+    responseSummary: "OpenPeec and Acme Rival were mentioned.",
+    citations: [
+      {
+        domain: "openpeec.ai",
+        url: "https://openpeec.ai/",
+        title: "OpenPeec",
+        type: "corporate",
+        position: 1,
+        qualityScore: 0.9,
+      },
+    ],
+    runner: "convex-test-runner",
+    browserEngine: "playwright",
+  });
+
+  const claimedAnalysis = await t.mutation(
+    api.analytics.claimNextRunMentionAnalysis,
+    {
+      runner: "convex-mention-worker",
+      maxConcurrent: 1,
+    }
+  );
+  expect(claimedAnalysis).not.toBeNull();
+  expect(claimedAnalysis!.deterministicMentions[0]?.name).toBe("OpenPeec");
+
+  const result = await t.mutation(api.analytics.completeRunMentionAnalysis, {
+    analysisId: claimedAnalysis!.analysisId,
+    status: "success",
+    model: "gpt-5.5:medium",
+    mentions: [
+      {
+        trackedEntityId: entityId,
+        name: "OpenPeec",
+        mentionCount: 1,
+        sentiment: "positive",
+        confidence: 0.95,
+        evidence: "OpenPeec is strong for citation monitoring.",
+        matchedTerms: ["OpenPeec"],
+      },
+      {
+        name: "Acme Rival",
+        slug: "acme-rival",
+        kind: "competitor",
+        mentionCount: 1,
+        sentiment: "neutral",
+        confidence: 0.86,
+        evidence: "Acme Rival appears in enterprise comparisons.",
+        matchedTerms: ["Acme Rival"],
+      },
+    ],
+    warnings: [],
+  });
+  expect(result.codexMentionCount).toBe(2);
+  expect(result.candidateMentionCount).toBe(1);
+
+  const runDetail = await t.query(api.analytics.getPromptRun, {
+    id: claimedRun!.runs[0].runId,
+  });
+  const openPeecMention = runDetail!.mentions.find(
+    (mention) => mention.name === "OpenPeec"
+  );
+  expect(openPeecMention?.detectionSource).toBe("deterministic");
+  expect(openPeecMention?.sentiment).toBe("positive");
+  expect(openPeecMention?.confidence).toBe(0.95);
+  const candidateMention = runDetail!.mentions.find(
+    (mention) => mention.name === "Acme Rival"
+  );
+  expect(candidateMention?.detectionSource).toBe("codex");
+  expect(candidateMention?.entityId).toBeUndefined();
 });
 
 test("queued prompt runs can be cancelled or deleted", async () => {

@@ -39,9 +39,22 @@ import { Textarea } from "@/components/ui/textarea";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import {
+  PromptCategorisationFields,
+  parseSourceUrls,
+  type PromptCategorisationValue,
+} from "./components/PromptCategorisationFields";
+import {
   ListFilterDropdown,
   type ListFilterOption,
 } from "./components/ListFilterDropdown";
+import type {
+  PromptFunnelStage,
+  PromptGeneratedBy,
+  PromptIntentCategory,
+  PromptPriority,
+  PromptReviewState,
+  PromptSentimentLens,
+} from "@/lib/prompt-categorisation";
 import { StatusBanner } from "./components/StatusBanner";
 import { OverviewPage } from "./OverviewPage";
 import { PromptDetailPage } from "./PromptDetailPage";
@@ -114,6 +127,19 @@ type PromptActionPrompt = {
   _id: Id<"prompts">;
   excerpt: string;
   promptText: string;
+  entityId?: Id<"trackedEntities">;
+  promptGroupId?: Id<"promptGroups">;
+  intentCategory: PromptIntentCategory;
+  sentimentLens: PromptSentimentLens;
+  funnelStage?: PromptFunnelStage;
+  audience?: string;
+  topic?: string;
+  priority?: PromptPriority;
+  reviewState: PromptReviewState;
+  generatedBy: PromptGeneratedBy;
+  generationRationale?: string;
+  sourceUrls: string[];
+  active: boolean;
 };
 
 function errorMessage(error: unknown): string {
@@ -123,6 +149,26 @@ function errorMessage(error: unknown): string {
 
 function promptActionLabel(prompt: PromptActionPrompt) {
   return prompt.excerpt.trim() || prompt.promptText.trim() || "Prompt";
+}
+
+function promptEditFormFor(
+  prompt: PromptActionPrompt
+): PromptCategorisationValue {
+  return {
+    entityId: prompt.entityId,
+    promptGroupId: prompt.promptGroupId,
+    intentCategory: prompt.intentCategory,
+    sentimentLens: prompt.sentimentLens,
+    funnelStage: prompt.funnelStage,
+    audience: prompt.audience ?? "",
+    topic: prompt.topic ?? "",
+    priority: prompt.priority,
+    reviewState: prompt.reviewState,
+    generatedBy: prompt.generatedBy,
+    generationRationale: prompt.generationRationale ?? "",
+    sourceUrlsText: prompt.sourceUrls.join("\n"),
+    active: prompt.active,
+  };
 }
 
 function PromptDetailHeaderActions({
@@ -429,6 +475,18 @@ export function MonitoringDashboard() {
   const [promptEditOpen, setPromptEditOpen] = useState(false);
   const [trackedEntitiesOpen, setTrackedEntitiesOpen] = useState(false);
   const [promptEditText, setPromptEditText] = useState("");
+  const [promptEditForm, setPromptEditForm] =
+    useState<PromptCategorisationValue>(() => ({
+      intentCategory: "uncategorized",
+      sentimentLens: "neutral",
+      audience: "",
+      topic: "",
+      reviewState: "approved",
+      generatedBy: "manual",
+      generationRationale: "",
+      sourceUrlsText: "",
+      active: true,
+    }));
   const [selectedPromptId, setSelectedPromptId] =
     useState<Id<"prompts"> | null>(initialUrlState.selectedPromptId);
   const [selectedRunId, setSelectedRunId] = useState<Id<"promptRuns"> | null>(
@@ -501,6 +559,12 @@ export function MonitoringDashboard() {
   const triggerSelectedPromptsNow = useMutation(
     api.analytics.triggerSelectedPromptsNow
   );
+  const triggerPromptGroupNow = useMutation(
+    api.analytics.triggerPromptGroupNow
+  );
+  const queueEntityPromptGeneration = useMutation(
+    api.analytics.queueEntityPromptGeneration
+  );
   const retryPromptRun = useMutation(api.analytics.retryPromptRun);
   const cancelPromptRun = useMutation(api.analytics.cancelPromptRun);
   const deletePromptRun = useMutation(api.analytics.deletePromptRun);
@@ -522,6 +586,10 @@ export function MonitoringDashboard() {
   const promptAnalytics = useQuery(
     api.analytics.listPromptResponseAnalytics,
     shouldLoadPromptAnalytics ? {} : "skip"
+  );
+  const promptGroups = useQuery(
+    api.analytics.listPromptGroups,
+    isPromptsPage ? { active: true } : "skip"
   );
   const queueStatus = useQuery(api.analytics.getQueueStatus, {});
   const runs = useQuery(
@@ -557,7 +625,7 @@ export function MonitoringDashboard() {
   );
   const entities = useQuery(
     api.analytics.listTrackedEntities,
-    showingSourcesList ? {} : "skip"
+    showingSourcesList || isPromptsPage ? {} : "skip"
   );
   const runDetail = useQuery(
     api.analytics.getPromptRun,
@@ -572,7 +640,11 @@ export function MonitoringDashboard() {
     isOverviewPage &&
     (overview === undefined || sources === undefined || runs === undefined);
   const promptsPageLoading =
-    isPromptsPage && promptView === "list" && promptAnalytics === undefined;
+    isPromptsPage &&
+    promptView === "list" &&
+    (promptAnalytics === undefined ||
+      promptGroups === undefined ||
+      entities === undefined);
   const providersPageLoading = isProvidersPage && providers === undefined;
   const runsPageLoading =
     isRunsPage &&
@@ -620,7 +692,7 @@ export function MonitoringDashboard() {
           return true;
         }
 
-        return `${row.excerpt} ${row.latestResponseSummary ?? ""} ${(row.topEntities ?? []).join(" ")} ${(row.topSources ?? []).join(" ")}`
+        return `${row.excerpt} ${row.promptGroupName ?? ""} ${row.entityName ?? ""} ${row.intentCategory} ${row.sentimentLens} ${row.reviewState} ${row.generatedBy} ${row.latestResponseSummary ?? ""} ${(row.topEntities ?? []).join(" ")} ${(row.topSources ?? []).join(" ")}`
           .toLowerCase()
           .includes(search);
       }),
@@ -1046,6 +1118,7 @@ export function MonitoringDashboard() {
       return;
     }
     setPromptEditText(promptActionPrompt.promptText);
+    setPromptEditForm(promptEditFormFor(promptActionPrompt));
     setPromptEditOpen(true);
   };
 
@@ -1061,7 +1134,23 @@ export function MonitoringDashboard() {
     }
 
     try {
-      await updatePrompt({ id: promptActionPrompt._id, promptText });
+      await updatePrompt({
+        id: promptActionPrompt._id,
+        promptText,
+        entityId: promptEditForm.entityId ?? null,
+        promptGroupId: promptEditForm.promptGroupId ?? null,
+        intentCategory: promptEditForm.intentCategory,
+        sentimentLens: promptEditForm.sentimentLens,
+        funnelStage: promptEditForm.funnelStage ?? null,
+        audience: promptEditForm.audience.trim() || null,
+        topic: promptEditForm.topic.trim() || null,
+        priority: promptEditForm.priority ?? null,
+        reviewState: promptEditForm.reviewState,
+        generatedBy: promptEditForm.generatedBy,
+        generationRationale: promptEditForm.generationRationale.trim() || null,
+        sourceUrls: parseSourceUrls(promptEditForm.sourceUrlsText),
+        active: promptEditForm.active,
+      });
       setPromptEditOpen(false);
       toast.success("Prompt updated.");
     } catch (error) {
@@ -1373,20 +1462,30 @@ export function MonitoringDashboard() {
 
           {promptActionPrompt ? (
             <Dialog open={promptEditOpen} onOpenChange={setPromptEditOpen}>
-              <DialogContent>
+              <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
                 <DialogHeader>
                   <DialogTitle>Edit prompt</DialogTitle>
                   <DialogDescription>
-                    Update the question used for future runs.
+                    Update the question and categorisation used for future runs.
                   </DialogDescription>
                 </DialogHeader>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="prompt-edit-text">Prompt text</Label>
-                  <Textarea
-                    id="prompt-edit-text"
-                    value={promptEditText}
-                    onChange={(event) => setPromptEditText(event.target.value)}
-                    rows={8}
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="prompt-edit-text">Prompt text</Label>
+                    <Textarea
+                      id="prompt-edit-text"
+                      value={promptEditText}
+                      onChange={(event) =>
+                        setPromptEditText(event.target.value)
+                      }
+                      rows={6}
+                    />
+                  </div>
+                  <PromptCategorisationFields
+                    value={promptEditForm}
+                    entities={entities ?? []}
+                    promptGroups={promptGroups ?? []}
+                    onChange={setPromptEditForm}
                   />
                 </div>
                 <DialogFooter>
@@ -1456,14 +1555,19 @@ export function MonitoringDashboard() {
                   <PromptsPage
                     loading={promptsPageLoading}
                     rows={promptRows}
+                    promptGroups={promptGroups ?? []}
+                    entities={entities ?? []}
                     providers={providers ?? []}
                     selectedPromptId={selectedPromptId}
                     onSelectPrompt={openPrompt}
                     createOpen={promptCreateOpen}
                     onCreateOpenChange={setPromptCreateOpen}
                     onCreatePrompt={createPrompt}
+                    onUpdatePrompt={updatePrompt}
                     onDeletePrompt={deletePrompt}
                     onTriggerSelectedNow={triggerSelectedPromptsNow}
+                    onTriggerPromptGroupNow={triggerPromptGroupNow}
+                    onQueueEntityPromptGeneration={queueEntityPromptGeneration}
                   />
                 ) : null}
                 {promptView === "prompt" ? (

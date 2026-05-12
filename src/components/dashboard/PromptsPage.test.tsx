@@ -57,7 +57,37 @@ const promptRow = {
   responseDrift: 24,
   sourceVariance: 18,
   active: true,
+  entityId: "entity_1" as Id<"trackedEntities">,
+  entityName: "OpenPeec",
+  promptGroupId: "group_1" as Id<"promptGroups">,
+  promptGroupName: "Category discovery",
+  intentCategory: "category_discovery" as const,
+  sentimentLens: "neutral" as const,
+  reviewState: "approved" as const,
+  generatedBy: "manual" as const,
+  sourceUrls: [],
 };
+
+const promptGroupRows = [
+  {
+    _id: "group_1" as Id<"promptGroups">,
+    name: "Category discovery",
+    entityId: "entity_1" as Id<"trackedEntities">,
+    active: true,
+    intentCategory: "category_discovery" as const,
+    sentimentLens: "neutral" as const,
+    promptCount: 1,
+    approvedPromptCount: 1,
+  },
+];
+
+const entityRows = [
+  {
+    _id: "entity_1" as Id<"trackedEntities">,
+    name: "OpenPeec",
+    active: true,
+  },
+];
 
 const providerRows = [
   {
@@ -72,6 +102,23 @@ const providerRows = [
   },
 ];
 
+function defaultProps() {
+  return {
+    rows: [promptRow],
+    promptGroups: promptGroupRows,
+    entities: entityRows,
+    providers: providerRows,
+    selectedPromptId: null,
+    onSelectPrompt: vi.fn(),
+    onCreatePrompt: vi.fn().mockResolvedValue("prompt_2"),
+    onUpdatePrompt: vi.fn().mockResolvedValue("prompt_1"),
+    onDeletePrompt: vi.fn().mockResolvedValue("prompt_1"),
+    onTriggerSelectedNow: vi.fn().mockResolvedValue({ queuedCount: 1 }),
+    onTriggerPromptGroupNow: vi.fn().mockResolvedValue({ queuedCount: 1 }),
+    onQueueEntityPromptGeneration: vi.fn().mockResolvedValue("generation_1"),
+  };
+}
+
 describe("PromptsPage", () => {
   beforeEach(() => {
     toast.success.mockReset();
@@ -85,12 +132,8 @@ describe("PromptsPage", () => {
 
     renderWithTooltipProvider(
       <PromptsPage
-        rows={[promptRow]}
-        providers={providerRows}
-        selectedPromptId={null}
+        {...defaultProps()}
         onSelectPrompt={onSelectPrompt}
-        onCreatePrompt={vi.fn().mockResolvedValue("prompt_2")}
-        onDeletePrompt={vi.fn().mockResolvedValue("prompt_1")}
         onTriggerSelectedNow={onTriggerSelectedNow}
       />
     );
@@ -123,12 +166,7 @@ describe("PromptsPage", () => {
 
     renderWithTooltipProvider(
       <PromptsPage
-        rows={[promptRow]}
-        providers={providerRows}
-        selectedPromptId={null}
-        onSelectPrompt={vi.fn()}
-        onCreatePrompt={vi.fn().mockResolvedValue("prompt_2")}
-        onDeletePrompt={vi.fn().mockResolvedValue("prompt_1")}
+        {...defaultProps()}
         onTriggerSelectedNow={onTriggerSelectedNow}
       />
     );
@@ -166,15 +204,7 @@ describe("PromptsPage", () => {
     const onSelectPrompt = vi.fn();
 
     renderWithTooltipProvider(
-      <PromptsPage
-        rows={[promptRow]}
-        providers={providerRows}
-        selectedPromptId={null}
-        onSelectPrompt={onSelectPrompt}
-        onCreatePrompt={vi.fn().mockResolvedValue("prompt_2")}
-        onDeletePrompt={vi.fn().mockResolvedValue("prompt_1")}
-        onTriggerSelectedNow={vi.fn().mockResolvedValue({ queuedCount: 1 })}
-      />
+      <PromptsPage {...defaultProps()} onSelectPrompt={onSelectPrompt} />
     );
 
     const row = screen.getByRole("row", {
@@ -195,22 +225,14 @@ describe("PromptsPage", () => {
   });
 
   it("renders prompts as atomic data-table rows without provider or latest-run details", () => {
-    renderWithTooltipProvider(
-      <PromptsPage
-        rows={[promptRow]}
-        providers={providerRows}
-        selectedPromptId={null}
-        onSelectPrompt={vi.fn()}
-        onCreatePrompt={vi.fn().mockResolvedValue("prompt_2")}
-        onDeletePrompt={vi.fn().mockResolvedValue("prompt_1")}
-        onTriggerSelectedNow={vi.fn().mockResolvedValue({ queuedCount: 1 })}
-      />
-    );
+    renderWithTooltipProvider(<PromptsPage {...defaultProps()} />);
 
     expect(screen.getByRole("columnheader", { name: /runs/i })).toBeTruthy();
     expect(screen.getByText("Best AI visibility tools")).toBeTruthy();
     expect(screen.getByRole("cell", { name: "2" })).toBeTruthy();
-    expect(screen.getByText("Active")).toBeTruthy();
+    expect(screen.getByText("Approved")).toBeTruthy();
+    expect(screen.getAllByText("Category discovery").length).toBeGreaterThan(0);
+    expect(screen.getByText("Neutral")).toBeTruthy();
 
     expect(
       screen.queryByRole("columnheader", { name: "Providers" })
@@ -228,14 +250,10 @@ describe("PromptsPage", () => {
 
     renderWithTooltipProvider(
       <PromptsPage
+        {...defaultProps()}
         rows={[]}
-        providers={providerRows}
-        selectedPromptId={null}
-        onSelectPrompt={vi.fn()}
         createOpen
         onCreatePrompt={onCreatePrompt}
-        onDeletePrompt={vi.fn().mockResolvedValue("prompt_1")}
-        onTriggerSelectedNow={vi.fn().mockResolvedValue({ queuedCount: 1 })}
       />
     );
 
@@ -248,9 +266,44 @@ describe("PromptsPage", () => {
     await user.click(screen.getByRole("button", { name: /^create prompt$/i }));
 
     await waitFor(() => {
-      expect(onCreatePrompt).toHaveBeenCalledWith({
-        promptText: "How visible is OpenPeec in AI search?",
+      expect(onCreatePrompt).toHaveBeenCalledWith(
+        expect.objectContaining({
+          promptText: "How visible is OpenPeec in AI search?",
+          intentCategory: "uncategorized",
+          sentimentLens: "neutral",
+          reviewState: "approved",
+          generatedBy: "manual",
+          active: true,
+        })
+      );
+    });
+  });
+
+  it("runs a prompt group from grouped view", async () => {
+    const user = userEvent.setup();
+    const onTriggerPromptGroupNow = vi.fn().mockResolvedValue({
+      queuedCount: 2,
+    });
+
+    renderWithTooltipProvider(
+      <PromptsPage
+        {...defaultProps()}
+        onTriggerPromptGroupNow={onTriggerPromptGroupNow}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: /^groups$/i }));
+    await user.click(
+      screen.getByRole("button", { name: /run category discovery/i })
+    );
+
+    await waitFor(() => {
+      expect(onTriggerPromptGroupNow).toHaveBeenCalledWith({
+        promptGroupId: "group_1",
+        label: "Category discovery",
+        browserEngine: "camoufox",
       });
     });
+    expect(toast.success).toHaveBeenCalledWith("Queued 2 runs.");
   });
 });
