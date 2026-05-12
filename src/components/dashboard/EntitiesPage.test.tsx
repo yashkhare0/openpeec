@@ -43,7 +43,6 @@ const entity = {
   ownedDomains: ["openpeec.ai"],
   active: true,
   promptCount: 8,
-  approvedPromptCount: 5,
   draftPromptCount: 3,
   promptGroupCount: 2,
   runCount: 4,

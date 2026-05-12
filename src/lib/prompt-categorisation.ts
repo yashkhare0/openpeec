@@ -27,7 +27,7 @@ export type PromptFunnelStage =
   | "retention";
 
 export type PromptPriority = "high" | "medium" | "low";
-export type PromptReviewState = "draft" | "approved" | "archived";
+export type PromptReviewState = "draft" | "archived";
 export type PromptGeneratedBy = "manual" | "codex" | "import";
 
 export const promptIntentCategoryOptions: Array<{
@@ -77,15 +77,6 @@ export const promptPriorityOptions: Array<{
   { value: "high", label: "High" },
   { value: "medium", label: "Medium" },
   { value: "low", label: "Low" },
-];
-
-export const promptReviewStateOptions: Array<{
-  value: PromptReviewState;
-  label: string;
-}> = [
-  { value: "draft", label: "Draft" },
-  { value: "approved", label: "Approved" },
-  { value: "archived", label: "Archived" },
 ];
 
 export const promptGeneratedByOptions: Array<{

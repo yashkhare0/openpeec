@@ -18,13 +18,11 @@ import {
   promptGeneratedByOptions,
   promptIntentCategoryOptions,
   promptPriorityOptions,
-  promptReviewStateOptions,
   promptSentimentLensOptions,
   type PromptFunnelStage,
   type PromptGeneratedBy,
   type PromptIntentCategory,
   type PromptPriority,
-  type PromptReviewState,
   type PromptSentimentLens,
 } from "@/lib/prompt-categorisation";
 
@@ -52,7 +50,6 @@ export type PromptCategorisationValue = {
   audience: string;
   topic: string;
   priority?: PromptPriority;
-  reviewState: PromptReviewState;
   generatedBy: PromptGeneratedBy;
   generationRationale: string;
   sourceUrlsText: string;
@@ -240,24 +237,6 @@ export function PromptCategorisationFields({
         </SelectField>
 
         <SelectField
-          id="prompt-review-state"
-          label="Review state"
-          value={value.reviewState}
-          onValueChange={(nextValue) =>
-            onChange({
-              ...value,
-              reviewState: nextValue as PromptReviewState,
-            })
-          }
-        >
-          {promptReviewStateOptions.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectField>
-
-        <SelectField
           id="prompt-generated-by"
           label="Source"
           value={value.generatedBy}
@@ -305,7 +284,7 @@ export function PromptCategorisationFields({
         <div className="flex min-w-0 flex-col gap-1">
           <Label htmlFor="prompt-active">Active</Label>
           <p className="text-muted-foreground text-sm">
-            Active approved prompts are eligible for group and entity runs.
+            Active prompts are eligible for group and entity runs.
           </p>
         </div>
         <Switch

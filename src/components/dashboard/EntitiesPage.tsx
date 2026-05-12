@@ -31,7 +31,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -66,7 +65,6 @@ type EntityRow = {
   ownedDomains: string[];
   active: boolean;
   promptCount: number;
-  approvedPromptCount: number;
   draftPromptCount: number;
   promptGroupCount: number;
   runCount: number;
@@ -232,11 +230,6 @@ function generationTone(generation: EntityRow["latestGeneration"]) {
   if (generation.status === "success") return "default" as const;
   if (generation.status === "failed") return "destructive" as const;
   return "secondary" as const;
-}
-
-function approvalPercent(entity: EntityRow): number {
-  if (!entity.promptCount) return 0;
-  return Math.round((entity.approvedPromptCount / entity.promptCount) * 100);
 }
 
 function CreateEntityDialog({
@@ -789,16 +782,6 @@ function EntityPromptSummary({ entity }: { entity: EntityRow }) {
         <span className="font-medium">{entity.promptGroupCount}</span> groups /{" "}
         <span className="font-medium">{entity.promptCount}</span> prompts
       </div>
-      <div className="flex items-center gap-2">
-        <Progress
-          value={approvalPercent(entity)}
-          className="max-w-28"
-          aria-label={`${entity.name} prompt approval coverage`}
-        />
-        <span className="text-muted-foreground text-xs tabular-nums">
-          {entity.approvedPromptCount} approved
-        </span>
-      </div>
       {entity.draftPromptCount > 0 ? (
         <Badge variant="secondary" className="w-fit">
           {entity.draftPromptCount} drafts
@@ -871,7 +854,7 @@ function EntityActions({
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={onRun}>
             <Play />
-            Run approved prompts
+            Run prompts
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />

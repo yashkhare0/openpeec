@@ -63,7 +63,6 @@ const promptRow = {
   promptGroupName: "Category discovery",
   intentCategory: "category_discovery" as const,
   sentimentLens: "neutral" as const,
-  reviewState: "approved" as const,
   generatedBy: "manual" as const,
   sourceUrls: [],
 };
@@ -77,7 +76,7 @@ const promptGroupRows = [
     intentCategory: "category_discovery" as const,
     sentimentLens: "neutral" as const,
     promptCount: 1,
-    approvedPromptCount: 1,
+    activePromptCount: 1,
   },
 ];
 
@@ -230,7 +229,7 @@ describe("PromptsPage", () => {
     expect(screen.getByRole("columnheader", { name: /runs/i })).toBeTruthy();
     expect(screen.getByText("Best AI visibility tools")).toBeTruthy();
     expect(screen.getByRole("cell", { name: "2" })).toBeTruthy();
-    expect(screen.getByText("Approved")).toBeTruthy();
+    expect(screen.getByText("Active")).toBeTruthy();
     expect(screen.getAllByText("Category discovery").length).toBeGreaterThan(0);
     expect(screen.getByText("Neutral")).toBeTruthy();
 
@@ -271,7 +270,6 @@ describe("PromptsPage", () => {
           promptText: "How visible is OpenPeec in AI search?",
           intentCategory: "uncategorized",
           sentimentLens: "neutral",
-          reviewState: "approved",
           generatedBy: "manual",
           active: true,
         })

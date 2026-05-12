@@ -52,7 +52,6 @@ import type {
   PromptGeneratedBy,
   PromptIntentCategory,
   PromptPriority,
-  PromptReviewState,
   PromptSentimentLens,
 } from "@/lib/prompt-categorisation";
 import { StatusBanner } from "./components/StatusBanner";
@@ -138,7 +137,6 @@ type PromptActionPrompt = {
   audience?: string;
   topic?: string;
   priority?: PromptPriority;
-  reviewState: PromptReviewState;
   generatedBy: PromptGeneratedBy;
   generationRationale?: string;
   sourceUrls: string[];
@@ -166,7 +164,6 @@ function promptEditFormFor(
     audience: prompt.audience ?? "",
     topic: prompt.topic ?? "",
     priority: prompt.priority,
-    reviewState: prompt.reviewState,
     generatedBy: prompt.generatedBy,
     generationRationale: prompt.generationRationale ?? "",
     sourceUrlsText: prompt.sourceUrls.join("\n"),
@@ -484,7 +481,6 @@ export function MonitoringDashboard() {
       sentimentLens: "neutral",
       audience: "",
       topic: "",
-      reviewState: "approved",
       generatedBy: "manual",
       generationRationale: "",
       sourceUrlsText: "",
@@ -709,7 +705,7 @@ export function MonitoringDashboard() {
           return true;
         }
 
-        return `${row.excerpt} ${row.promptGroupName ?? ""} ${row.entityName ?? ""} ${row.intentCategory} ${row.sentimentLens} ${row.reviewState} ${row.generatedBy} ${row.latestResponseSummary ?? ""} ${(row.topEntities ?? []).join(" ")} ${(row.topSources ?? []).join(" ")}`
+        return `${row.excerpt} ${row.promptGroupName ?? ""} ${row.entityName ?? ""} ${row.intentCategory} ${row.sentimentLens} ${row.generatedBy} ${row.latestResponseSummary ?? ""} ${(row.topEntities ?? []).join(" ")} ${(row.topSources ?? []).join(" ")}`
           .toLowerCase()
           .includes(search);
       }),
@@ -1189,7 +1185,6 @@ export function MonitoringDashboard() {
         audience: promptEditForm.audience.trim() || null,
         topic: promptEditForm.topic.trim() || null,
         priority: promptEditForm.priority ?? null,
-        reviewState: promptEditForm.reviewState,
         generatedBy: promptEditForm.generatedBy,
         generationRationale: promptEditForm.generationRationale.trim() || null,
         sourceUrls: parseSourceUrls(promptEditForm.sourceUrlsText),

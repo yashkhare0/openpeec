@@ -94,11 +94,7 @@ const vPromptPriority = v.union(
   v.literal("low")
 );
 
-const vPromptReviewState = v.union(
-  v.literal("draft"),
-  v.literal("approved"),
-  v.literal("archived")
-);
+const vPromptReviewState = v.union(v.literal("draft"), v.literal("archived"));
 
 const vPromptGeneratedBy = v.union(
   v.literal("manual"),
@@ -205,7 +201,6 @@ const DEFAULT_PROVIDER_DEFINITIONS = [
 
 const DEFAULT_PROMPT_INTENT_CATEGORY: PromptIntentCategory = "uncategorized";
 const DEFAULT_PROMPT_SENTIMENT_LENS: PromptSentimentLens = "neutral";
-const DEFAULT_PROMPT_REVIEW_STATE: PromptReviewState = "approved";
 const DEFAULT_PROMPT_GENERATED_BY: PromptGeneratedBy = "manual";
 
 function compactPatch<T extends PatchObject>(patch: T): PatchObject {
@@ -270,8 +265,14 @@ function promptSentimentLensFor(prompt: PromptDoc): PromptSentimentLens {
   return prompt.sentimentLens ?? DEFAULT_PROMPT_SENTIMENT_LENS;
 }
 
-function promptReviewStateFor(prompt: PromptDoc): PromptReviewState {
-  return prompt.reviewState ?? DEFAULT_PROMPT_REVIEW_STATE;
+function promptReviewStateFor(
+  prompt: PromptDoc
+): PromptReviewState | undefined {
+  const reviewState = prompt.reviewState as string | undefined;
+  if (reviewState === "draft" || reviewState === "archived") {
+    return reviewState;
+  }
+  return undefined;
 }
 
 function promptGeneratedByFor(prompt: PromptDoc): PromptGeneratedBy {
@@ -1539,26 +1540,29 @@ export const createPrompt = mutation({
     );
     const now = Date.now();
 
-    return await ctx.db.insert("prompts", {
-      promptText,
-      entityId: scope.entityId,
-      promptGroupId: args.promptGroupId,
-      intentCategory: args.intentCategory ?? DEFAULT_PROMPT_INTENT_CATEGORY,
-      sentimentLens: args.sentimentLens ?? DEFAULT_PROMPT_SENTIMENT_LENS,
-      funnelStage: args.funnelStage,
-      audience: normalizeOptionalString(args.audience) ?? undefined,
-      topic: normalizeOptionalString(args.topic) ?? undefined,
-      priority: args.priority,
-      reviewState: args.reviewState ?? DEFAULT_PROMPT_REVIEW_STATE,
-      generatedBy: args.generatedBy ?? DEFAULT_PROMPT_GENERATED_BY,
-      generationRationale:
-        normalizeOptionalString(args.generationRationale) ?? undefined,
-      sourceUrls: normalizeSourceUrls(args.sourceUrls) ?? undefined,
-      sourceGenerationId: args.sourceGenerationId,
-      createdAt: now,
-      updatedAt: now,
-      active: args.active ?? true,
-    });
+    return await ctx.db.insert(
+      "prompts",
+      compactPatch({
+        promptText,
+        entityId: scope.entityId,
+        promptGroupId: args.promptGroupId,
+        intentCategory: args.intentCategory ?? DEFAULT_PROMPT_INTENT_CATEGORY,
+        sentimentLens: args.sentimentLens ?? DEFAULT_PROMPT_SENTIMENT_LENS,
+        funnelStage: args.funnelStage,
+        audience: normalizeOptionalString(args.audience) ?? undefined,
+        topic: normalizeOptionalString(args.topic) ?? undefined,
+        priority: args.priority,
+        reviewState: args.reviewState,
+        generatedBy: args.generatedBy ?? DEFAULT_PROMPT_GENERATED_BY,
+        generationRationale:
+          normalizeOptionalString(args.generationRationale) ?? undefined,
+        sourceUrls: normalizeSourceUrls(args.sourceUrls) ?? undefined,
+        sourceGenerationId: args.sourceGenerationId,
+        createdAt: now,
+        updatedAt: now,
+        active: args.active ?? true,
+      }) as Omit<PromptDoc, "_id" | "_creationTime">
+    );
   },
 });
 
@@ -1759,9 +1763,9 @@ export const listPromptGroups = query({
           entityName: entity?.name,
           entitySlug: entity?.slug,
           promptCount: groupPrompts.length,
-          approvedPromptCount: groupPrompts.filter(
+          activePromptCount: groupPrompts.filter(
             (prompt) =>
-              prompt.active && promptReviewStateFor(prompt) === "approved"
+              prompt.active && promptReviewStateFor(prompt) !== "archived"
           ).length,
           latestRunAt: latestRun?.startedAt,
           latestRunGroupId: latestRun ? runGroupKey(latestRun) : undefined,
@@ -2459,13 +2463,10 @@ export const triggerPromptGroupNow = mutation({
         )
         .collect()
     ).filter(
-      (prompt) =>
-        prompt.active &&
-        promptReviewStateFor(prompt) !== "archived" &&
-        (args.includeDrafts || promptReviewStateFor(prompt) === "approved")
+      (prompt) => prompt.active && promptReviewStateFor(prompt) !== "archived"
     );
     if (!prompts.length) {
-      throw new Error("Prompt group has no approved active prompts");
+      throw new Error("Prompt group has no active prompts");
     }
     const queuedCount = await enqueuePromptRunDocs(
       ctx,
@@ -2496,13 +2497,10 @@ export const triggerEntityPromptsNow = mutation({
         .withIndex("entityId", (q) => q.eq("entityId", args.entityId))
         .collect()
     ).filter(
-      (prompt) =>
-        prompt.active &&
-        promptReviewStateFor(prompt) !== "archived" &&
-        (args.includeDrafts || promptReviewStateFor(prompt) === "approved")
+      (prompt) => prompt.active && promptReviewStateFor(prompt) !== "archived"
     );
     if (!prompts.length) {
-      throw new Error("Entity has no approved active prompts");
+      throw new Error("Entity has no active prompts");
     }
     const queuedCount = await enqueuePromptRunDocs(
       ctx,
@@ -3638,7 +3636,6 @@ export const listEntityVisibility = query({
       Id<"trackedEntities">,
       {
         promptCount: number;
-        approvedPromptCount: number;
         draftPromptCount: number;
         promptGroupCount: number;
         runGroupIds: Set<string>;
@@ -3656,7 +3653,6 @@ export const listEntityVisibility = query({
     for (const entity of entities) {
       stats.set(entity._id, {
         promptCount: 0,
-        approvedPromptCount: 0,
         draftPromptCount: 0,
         promptGroupCount: 0,
         runGroupIds: new Set(),
@@ -3676,9 +3672,7 @@ export const listEntityVisibility = query({
       if (!stat) continue;
       stat.promptCount += 1;
       const reviewState = promptReviewStateFor(prompt);
-      if (reviewState === "approved") {
-        stat.approvedPromptCount += 1;
-      } else if (reviewState === "draft") {
+      if (reviewState === "draft") {
         stat.draftPromptCount += 1;
       }
     }
@@ -3785,7 +3779,6 @@ export const listEntityVisibility = query({
           color: entity.color,
           active: entity.active,
           promptCount: stat?.promptCount ?? 0,
-          approvedPromptCount: stat?.approvedPromptCount ?? 0,
           draftPromptCount: stat?.draftPromptCount ?? 0,
           promptGroupCount: stat?.promptGroupCount ?? 0,
           runCount: stat?.runGroupIds.size ?? 0,

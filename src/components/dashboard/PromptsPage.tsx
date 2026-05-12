@@ -62,7 +62,6 @@ import {
   promptIntentCategoryOptions,
   parseSourceUrls,
   promptOptionLabel,
-  promptReviewStateOptions,
   promptSentimentLensOptions,
   type PromptGeneratedBy,
   type PromptIntentCategory,
@@ -93,7 +92,7 @@ type PromptRow = {
   audience?: string;
   topic?: string;
   priority?: PromptCategorisationValue["priority"];
-  reviewState: PromptReviewState;
+  reviewState?: PromptReviewState;
   generatedBy: PromptGeneratedBy;
   generationRationale?: string;
   sourceUrls: string[];
@@ -104,7 +103,7 @@ type PromptGroupRow = PromptGroupOption & {
   intentCategory: PromptIntentCategory;
   sentimentLens: PromptSentimentLens;
   promptCount: number;
-  approvedPromptCount: number;
+  activePromptCount: number;
   latestRunAt?: number;
 };
 
@@ -130,7 +129,6 @@ function defaultPromptCategorisation(): PromptCategorisationValue {
     sentimentLens: "neutral",
     audience: "",
     topic: "",
-    reviewState: "approved",
     generatedBy: "manual",
     generationRationale: "",
     sourceUrlsText: "",
@@ -152,7 +150,6 @@ function promptArgsFromForm(
     audience: form.audience.trim() || undefined,
     topic: form.topic.trim() || undefined,
     priority: form.priority,
-    reviewState: form.reviewState,
     generatedBy: form.generatedBy,
     generationRationale: form.generationRationale.trim() || undefined,
     sourceUrls: parseSourceUrls(form.sourceUrlsText),
@@ -229,7 +226,7 @@ function PromptStateBadge({ row }: { row: PromptRow }) {
   if (row.reviewState === "draft") {
     return <Badge variant="secondary">Draft</Badge>;
   }
-  return <Badge variant="secondary">Approved</Badge>;
+  return <Badge variant="secondary">Active</Badge>;
 }
 
 function PromptActions({
@@ -646,7 +643,7 @@ function PromptGroupTable({
             <TableHead className="w-[160px]">Intent</TableHead>
             <TableHead className="w-[120px]">Lens</TableHead>
             <TableHead className="w-[110px] text-right">Prompts</TableHead>
-            <TableHead className="w-[110px] text-right">Approved</TableHead>
+            <TableHead className="w-[110px] text-right">Active</TableHead>
             <TableHead className="w-[120px]">Last run</TableHead>
             <TableHead className="w-10" />
           </TableRow>
@@ -673,7 +670,7 @@ function PromptGroupTable({
                 {group.promptCount}
               </TableCell>
               <TableCell className="text-right tabular-nums">
-                {group.approvedPromptCount}
+                {group.activePromptCount}
               </TableCell>
               <TableCell>{formatFreshness(group.latestRunAt)}</TableCell>
               <TableCell className="text-right">
@@ -763,7 +760,6 @@ export function PromptsPage({
   const [groupFilter, setGroupFilter] = useState(ALL_VALUE);
   const [intentFilter, setIntentFilter] = useState(ALL_VALUE);
   const [lensFilter, setLensFilter] = useState(ALL_VALUE);
-  const [reviewFilter, setReviewFilter] = useState(ALL_VALUE);
   const [sourceFilter, setSourceFilter] = useState(ALL_VALUE);
   const [selectedPromptIds, setSelectedPromptIds] = useState<Id<"prompts">[]>(
     []
@@ -792,23 +788,12 @@ export function PromptsPage({
         if (lensFilter !== ALL_VALUE && row.sentimentLens !== lensFilter) {
           return false;
         }
-        if (reviewFilter !== ALL_VALUE && row.reviewState !== reviewFilter) {
-          return false;
-        }
         if (sourceFilter !== ALL_VALUE && row.generatedBy !== sourceFilter) {
           return false;
         }
         return true;
       }),
-    [
-      entityFilter,
-      groupFilter,
-      intentFilter,
-      lensFilter,
-      reviewFilter,
-      rows,
-      sourceFilter,
-    ]
+    [entityFilter, groupFilter, intentFilter, lensFilter, rows, sourceFilter]
   );
 
   const filteredGroups = useMemo(
@@ -927,19 +912,6 @@ export function PromptsPage({
         browserEngine: defaultBrowserEngine,
       });
       toast.success(`Queued ${result.queuedCount} runs.`);
-    } catch (error) {
-      toast.error(errorMessage(error));
-    }
-  };
-
-  const bulkApprove = async () => {
-    try {
-      await Promise.all(
-        selectedPromptIds.map((id) =>
-          onUpdatePrompt({ id, reviewState: "approved", active: true })
-        )
-      );
-      toast.success(`Approved ${selectedPromptIds.length} prompts.`);
     } catch (error) {
       toast.error(errorMessage(error));
     }
@@ -1125,18 +1097,6 @@ export function PromptsPage({
                   ))}
                 </SelectFilter>
                 <SelectFilter
-                  label="Review"
-                  value={reviewFilter}
-                  onValueChange={setReviewFilter}
-                >
-                  <SelectItem value={ALL_VALUE}>All states</SelectItem>
-                  {promptReviewStateOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectFilter>
-                <SelectFilter
                   label="Source"
                   value={sourceFilter}
                   onValueChange={setSourceFilter}
@@ -1162,14 +1122,6 @@ export function PromptsPage({
                   >
                     <Play data-icon="inline-start" />
                     Run selected
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void bulkApprove()}
-                  >
-                    Approve
                   </Button>
                   <Button
                     type="button"

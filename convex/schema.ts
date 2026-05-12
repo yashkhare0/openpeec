@@ -38,11 +38,7 @@ const vPromptPriority = v.union(
   v.literal("low")
 );
 
-const vPromptReviewState = v.union(
-  v.literal("draft"),
-  v.literal("approved"),
-  v.literal("archived")
-);
+const vPromptReviewState = v.union(v.literal("draft"), v.literal("archived"));
 
 const vPromptGeneratedBy = v.union(
   v.literal("manual"),

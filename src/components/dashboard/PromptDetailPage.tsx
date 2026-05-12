@@ -31,11 +31,9 @@ import {
   promptGeneratedByOptions,
   promptIntentCategoryOptions,
   promptOptionLabel,
-  promptReviewStateOptions,
   promptSentimentLensOptions,
   type PromptGeneratedBy,
   type PromptIntentCategory,
-  type PromptReviewState,
   type PromptSentimentLens,
 } from "@/lib/prompt-categorisation";
 import { InlineEmpty } from "./components/EmptyState";
@@ -101,7 +99,6 @@ export function PromptDetailPage({
           promptGroupName?: string;
           intentCategory: PromptIntentCategory;
           sentimentLens: PromptSentimentLens;
-          reviewState: PromptReviewState;
           generatedBy: PromptGeneratedBy;
           audience?: string;
           topic?: string;
@@ -315,12 +312,6 @@ export function PromptDetailPage({
                   {promptOptionLabel(
                     promptSentimentLensOptions,
                     promptAnalysis.prompt.sentimentLens
-                  )}
-                </Badge>
-                <Badge variant="outline">
-                  {promptOptionLabel(
-                    promptReviewStateOptions,
-                    promptAnalysis.prompt.reviewState
                   )}
                 </Badge>
                 <Badge variant="outline">

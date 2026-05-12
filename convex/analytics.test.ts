@@ -45,7 +45,7 @@ test("prompt categorisation supports groups, filters, and uncategorized defaults
     audience: "SEO marketers",
     topic: "AI visibility",
     priority: "high",
-    reviewState: "approved",
+    reviewState: "draft",
     generatedBy: "manual",
     generationRationale: "Tracks unaided category discovery.",
     sourceUrls: ["https://openpeec.ai"],
@@ -63,7 +63,7 @@ test("prompt categorisation supports groups, filters, and uncategorized defaults
     entityName: "OpenPeec",
     promptGroupName: "Category discovery",
     sentimentLens: "neutral",
-    reviewState: "approved",
+    reviewState: "draft",
     generatedBy: "manual",
   });
 
@@ -109,15 +109,16 @@ test("group and entity scoped runs snapshot prompt categorisation", async () => 
     promptGroupId,
     intentCategory: "risk_objection",
     sentimentLens: "negative",
-    reviewState: "approved",
+    reviewState: "draft",
   });
   await t.mutation(api.analytics.createPrompt, {
-    promptText: "Draft prompt should not run by default.",
+    promptText: "Archived prompt should not run.",
     entityId,
     promptGroupId,
     intentCategory: "risk_objection",
     sentimentLens: "negative",
-    reviewState: "draft",
+    reviewState: "archived",
+    active: false,
   });
 
   const groupResult = await t.mutation(api.analytics.triggerPromptGroupNow, {
@@ -135,7 +136,7 @@ test("group and entity scoped runs snapshot prompt categorisation", async () => 
     promptGroupName: "Risk perception",
     intentCategory: "risk_objection",
     sentimentLens: "negative",
-    reviewState: "approved",
+    reviewState: "draft",
   });
 
   const entityResult = await t.mutation(api.analytics.triggerEntityPromptsNow, {
@@ -226,7 +227,7 @@ test("entity prompt generation creates draft groups and deduplicates prompts", a
     name: "Category discovery",
     intentCategory: "category_discovery",
     promptCount: 1,
-    approvedPromptCount: 0,
+    activePromptCount: 1,
   });
   const prompts = await t.query(api.analytics.listPrompts, {
     entityId,
@@ -257,7 +258,7 @@ test("entity visibility rolls up prompt curation, runs, mentions, and citations"
   const promptId = await t.mutation(api.analytics.createPrompt, {
     promptText: "What is OpenPeec best for?",
     entityId: created.entityId,
-    reviewState: "approved",
+    reviewState: "draft",
   });
 
   await t.mutation(api.analytics.triggerEntityPromptsNow, {
@@ -304,7 +305,6 @@ test("entity visibility rolls up prompt curation, runs, mentions, and citations"
   expect(visibility.entities[0]).toMatchObject({
     _id: created.entityId,
     promptCount: 1,
-    approvedPromptCount: 1,
     responseCount: 1,
     mentionCount: 2,
     citationCount: 1,
