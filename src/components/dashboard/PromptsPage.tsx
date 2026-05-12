@@ -52,7 +52,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent } from "@/components/ui/tooltip";
 import {
   PromptCategorisationFields,
-  parseSourceUrls,
   type PromptCategorisationValue,
   type PromptEntityOption,
   type PromptGroupOption,
@@ -61,6 +60,7 @@ import { cn } from "@/lib/utils";
 import {
   promptGeneratedByOptions,
   promptIntentCategoryOptions,
+  parseSourceUrls,
   promptOptionLabel,
   promptReviewStateOptions,
   promptSentimentLensOptions,
@@ -1155,7 +1155,11 @@ export function PromptsPage({
                   <div className="text-muted-foreground flex h-8 items-center text-sm">
                     {selectedPromptIds.length} selected
                   </div>
-                  <Button type="button" size="sm" onClick={bulkRunSelected}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => void bulkRunSelected()}
+                  >
                     <Play data-icon="inline-start" />
                     Run selected
                   </Button>
@@ -1163,7 +1167,7 @@ export function PromptsPage({
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={bulkApprove}
+                    onClick={() => void bulkApprove()}
                   >
                     Approve
                   </Button>
@@ -1171,7 +1175,7 @@ export function PromptsPage({
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={bulkArchive}
+                    onClick={() => void bulkArchive()}
                   >
                     Archive
                   </Button>
@@ -1194,7 +1198,7 @@ export function PromptsPage({
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={bulkMove}
+                    onClick={() => void bulkMove()}
                   >
                     Move
                   </Button>

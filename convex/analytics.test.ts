@@ -482,13 +482,13 @@ test("successful runs queue Codex mention analysis and merge enriched mentions",
   const runDetail = await t.query(api.analytics.getPromptRun, {
     id: claimedRun!.runs[0].runId,
   });
-  const openPeecMention = runDetail!.mentions.find(
+  const openPeecMention = runDetail.mentions.find(
     (mention) => mention.name === "OpenPeec"
   );
   expect(openPeecMention?.detectionSource).toBe("deterministic");
   expect(openPeecMention?.sentiment).toBe("positive");
   expect(openPeecMention?.confidence).toBe(0.95);
-  const candidateMention = runDetail!.mentions.find(
+  const candidateMention = runDetail.mentions.find(
     (mention) => mention.name === "Acme Rival"
   );
   expect(candidateMention?.detectionSource).toBe("codex");

@@ -40,9 +40,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 import {
   PromptCategorisationFields,
-  parseSourceUrls,
   type PromptCategorisationValue,
 } from "./components/PromptCategorisationFields";
+import { parseSourceUrls } from "@/lib/prompt-categorisation";
 import {
   ListFilterDropdown,
   type ListFilterOption,

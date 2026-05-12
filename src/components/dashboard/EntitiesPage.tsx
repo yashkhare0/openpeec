@@ -253,6 +253,7 @@ function CreateEntityDialog({
   const [website, setWebsite] = useState("");
   const [aliases, setAliases] = useState("");
   const [researchSummary, setResearchSummary] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const reset = () => {
     setName("");
@@ -263,6 +264,7 @@ function CreateEntityDialog({
   };
 
   const createEntity = async () => {
+    if (creating) return;
     const trimmedName = name.trim();
     if (!trimmedName) {
       toast.error("Entity name is required.");
@@ -272,6 +274,7 @@ function CreateEntityDialog({
     const ownedDomains = parseCommaList(website);
     const websiteUrl = ownedDomains[0] ?? website.trim();
     try {
+      setCreating(true);
       const result = await onCreateEntity({
         name: trimmedName,
         kind,
@@ -287,11 +290,19 @@ function CreateEntityDialog({
       onOpenChange(false);
     } catch (error) {
       toast.error(errorMessage(error));
+    } finally {
+      setCreating(false);
     }
   };
 
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (creating) return;
+    if (!nextOpen) reset();
+    onOpenChange(nextOpen);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>New tracked entity</DialogTitle>
@@ -307,7 +318,7 @@ function CreateEntityDialog({
               id="entity-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="OpenPeec"
+              placeholder="e.g. OpenPeec"
             />
           </div>
           <div className="grid gap-2">
@@ -334,7 +345,7 @@ function CreateEntityDialog({
               id="entity-website"
               value={website}
               onChange={(event) => setWebsite(event.target.value)}
-              placeholder="https://openpeec.ai"
+              placeholder="e.g. https://openpeec.ai"
             />
           </div>
           <div className="grid gap-2">
@@ -343,7 +354,7 @@ function CreateEntityDialog({
               id="entity-aliases"
               value={aliases}
               onChange={(event) => setAliases(event.target.value)}
-              placeholder="Open Peec, OpenPeec AI"
+              placeholder="e.g. Open Peec, OpenPeec AI"
             />
           </div>
           <div className="grid gap-2">
@@ -353,7 +364,7 @@ function CreateEntityDialog({
               value={researchSummary}
               onChange={(event) => setResearchSummary(event.target.value)}
               rows={4}
-              placeholder="Positioning, target audience, important products, competitor notes"
+              placeholder="Add positioning, audience, product, or competitor notes for Codex."
             />
           </div>
         </div>
@@ -361,13 +372,24 @@ function CreateEntityDialog({
           <Button
             type="button"
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            className="h-10 sm:h-8"
+            disabled={creating}
+            onClick={() => handleOpenChange(false)}
           >
             Cancel
           </Button>
-          <Button type="button" onClick={() => void createEntity()}>
-            <Bot data-icon="inline-start" />
-            Create and curate
+          <Button
+            type="button"
+            className="h-10 sm:h-8"
+            disabled={creating}
+            onClick={() => void createEntity()}
+          >
+            {creating ? (
+              <RefreshCw data-icon="inline-start" className="animate-spin" />
+            ) : (
+              <Bot data-icon="inline-start" />
+            )}
+            {creating ? "Creating..." : "Create and curate"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -388,31 +410,27 @@ export function EntitiesPage({
   onOpenRun,
 }: EntitiesPageProps) {
   const [createOpen, setCreateOpen] = useState(false);
-  const entities = data?.entities ?? [];
-  const recentMentions = data?.recentMentions ?? [];
   const needle = searchValue.trim().toLowerCase();
 
-  const filteredEntities = useMemo(
-    () =>
-      entities.filter((entity) => {
-        if (!needle) return true;
-        return `${entity.name} ${entity.slug} ${entity.kind} ${entity.aliases.join(" ")} ${entity.ownedDomains.join(" ")} ${generationLabel(entity.latestGeneration)}`
-          .toLowerCase()
-          .includes(needle);
-      }),
-    [entities, needle]
-  );
+  const filteredEntities = useMemo(() => {
+    const entities = data?.entities ?? [];
+    return entities.filter((entity) => {
+      if (!needle) return true;
+      return `${entity.name} ${entity.slug} ${entity.kind} ${entity.aliases.join(" ")} ${entity.ownedDomains.join(" ")} ${generationLabel(entity.latestGeneration)}`
+        .toLowerCase()
+        .includes(needle);
+    });
+  }, [data?.entities, needle]);
 
-  const filteredMentions = useMemo(
-    () =>
-      recentMentions.filter((mention) => {
-        if (!needle) return true;
-        return `${mention.name} ${mention.kind} ${mention.promptExcerpt} ${mention.providerName} ${mention.sentiment ?? ""} ${mention.evidence ?? ""}`
-          .toLowerCase()
-          .includes(needle);
-      }),
-    [needle, recentMentions]
-  );
+  const filteredMentions = useMemo(() => {
+    const recentMentions = data?.recentMentions ?? [];
+    return recentMentions.filter((mention) => {
+      if (!needle) return true;
+      return `${mention.name} ${mention.kind} ${mention.promptExcerpt} ${mention.providerName} ${mention.sentiment ?? ""} ${mention.evidence ?? ""}`
+        .toLowerCase()
+        .includes(needle);
+    });
+  }, [data?.recentMentions, needle]);
 
   const createGeneration = async (entity: EntityRow) => {
     try {
@@ -492,7 +510,11 @@ export function EntitiesPage({
               prompt coverage.
             </p>
           </div>
-          <Button type="button" onClick={() => setCreateOpen(true)}>
+          <Button
+            type="button"
+            className="h-10 sm:h-8"
+            onClick={() => setCreateOpen(true)}
+          >
             <Plus data-icon="inline-start" />
             New entity
           </Button>
@@ -534,7 +556,7 @@ export function EntitiesPage({
               {filteredEntities.length === 0 ? (
                 <InlineEmpty text="No tracked entities match the current search." />
               ) : (
-                <Table>
+                <Table className="min-w-[920px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Entity</TableHead>
@@ -592,6 +614,7 @@ export function EntitiesPage({
                               <Progress
                                 value={approvalPercent(entity)}
                                 className="max-w-28"
+                                aria-label={`${entity.name} prompt approval coverage`}
                               />
                               <span className="text-muted-foreground text-xs tabular-nums">
                                 {entity.approvedPromptCount} approved
@@ -675,7 +698,7 @@ export function EntitiesPage({
             {filteredMentions.length === 0 ? (
               <InlineEmpty text="No entity mentions captured yet." />
             ) : (
-              <Table>
+              <Table className="min-w-[840px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Entity</TableHead>
@@ -769,8 +792,10 @@ function MetricCard({
   return (
     <Card size="sm">
       <CardContent>
-        <div className="text-muted-foreground text-xs font-medium">{label}</div>
-        <div className="mt-2 text-2xl font-semibold tabular-nums">{value}</div>
+        <div className="text-muted-foreground text-[11px] font-medium tracking-[0.18em] uppercase">
+          {label}
+        </div>
+        <div className="mt-3 text-2xl font-semibold tabular-nums">{value}</div>
         <div className="text-muted-foreground mt-1 text-xs">{detail}</div>
       </CardContent>
     </Card>

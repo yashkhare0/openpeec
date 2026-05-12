@@ -1716,7 +1716,7 @@ export const listPromptGroups = query({
     let groups = args.entityId
       ? await ctx.db
           .query("promptGroups")
-          .withIndex("entityId", (q) => q.eq("entityId", args.entityId!))
+          .withIndex("entityId", (q) => q.eq("entityId", args.entityId))
           .collect()
       : await ctx.db.query("promptGroups").collect();
     if (args.active !== undefined) {
@@ -4116,7 +4116,7 @@ export const listPromptRuns = query({
       runs = await ctx.db
         .query("promptRuns")
         .withIndex("providerSlug_startedAt", (q) =>
-          q.eq("providerSlug", args.provider!)
+          q.eq("providerSlug", args.provider)
         )
         .order("desc")
         .collect();
@@ -4213,7 +4213,7 @@ export const listRunGroups = query({
       seedRuns = await ctx.db
         .query("promptRuns")
         .withIndex("providerSlug_startedAt", (q) =>
-          q.eq("providerSlug", args.provider!)
+          q.eq("providerSlug", args.provider)
         )
         .order("desc")
         .collect();

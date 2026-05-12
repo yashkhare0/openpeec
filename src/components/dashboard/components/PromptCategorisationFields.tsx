@@ -89,17 +89,6 @@ function SelectField({
   );
 }
 
-export function parseSourceUrls(text: string) {
-  return [
-    ...new Set(
-      text
-        .split(/\r?\n|,/)
-        .map((url) => url.trim())
-        .filter(Boolean)
-    ),
-  ];
-}
-
 export function PromptCategorisationFields({
   value,
   entities,

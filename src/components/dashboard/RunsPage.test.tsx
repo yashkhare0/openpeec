@@ -96,7 +96,7 @@ describe("RunsPage", () => {
     const detailLists = await screen.findAllByRole("list", {
       name: "Provider run details",
     });
-    const details = detailLists[0]!;
+    const details = detailLists[0];
 
     expect(details).toBeTruthy();
     expect(within(details).getAllByRole("listitem")).toHaveLength(2);

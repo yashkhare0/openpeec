@@ -103,3 +103,14 @@ export function promptOptionLabel<T extends string>(
 ) {
   return options.find((option) => option.value === value)?.label ?? "-";
 }
+
+export function parseSourceUrls(text: string) {
+  return [
+    ...new Set(
+      text
+        .split(/\r?\n|,/)
+        .map((url) => url.trim())
+        .filter(Boolean)
+    ),
+  ];
+}
