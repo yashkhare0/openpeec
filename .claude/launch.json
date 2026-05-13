@@ -2,6 +2,16 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "frontend-preview",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["exec", "vite", "--port", "5998", "--host", "127.0.0.1", "--mode", "development"],
+      "port": 5998,
+      "autoPort": false,
+      "env": {
+        "VITE_CONVEX_URL": "http://127.0.0.1:3212"
+      }
+    },
+    {
       "name": "frontend",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["dev:frontend"],

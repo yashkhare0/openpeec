@@ -9,7 +9,6 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Id } from "../../../convex/_generated/dataModel";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -17,7 +16,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { clickableTableRowClassName } from "./components/InfoTooltip";
 import { InlineEmpty } from "./components/EmptyState";
 import {
   DashboardCardSkeleton,
@@ -104,21 +102,26 @@ function artifactUrlFromPath(
   return `/runner-artifacts/${encoded}`;
 }
 
-function statusTone(status: string): string {
+// GEO-system status pill — same palette as OverviewPage / RunsPage so an
+// operator's eye reads the same color story everywhere.
+function statusPillClass(status: string): string {
   const normalized = status.toLowerCase();
   if (normalized === "success") {
-    return "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+    return "border-positive/40 text-positive bg-positive/10";
   }
   if (normalized === "blocked") {
-    return "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+    return "border-negative/40 text-negative bg-negative/10";
   }
   if (normalized === "failed") {
-    return "border-rose-500/20 bg-rose-500/10 text-rose-700 dark:text-rose-300";
+    return "border-negative/40 text-negative bg-negative/10";
   }
   if (normalized === "running") {
-    return "border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300";
+    return "border-primary/40 text-primary bg-primary/10";
   }
-  return "";
+  if (normalized === "queued") {
+    return "border-highlight/50 text-highlight-foreground bg-highlight/15";
+  }
+  return "border-border/60 text-muted-foreground bg-muted/30";
 }
 
 function formatSessionMode(value: "guest" | "stored" | undefined): string {
@@ -340,223 +343,141 @@ export function ResponseDetailPage({
         ? "This run failed before a valid response could be analyzed, so no citations were recorded."
         : "No citations were captured for this response.";
 
+  // Surface "did MY domain get cited?" prominently: count owned citations so
+  // the masthead can highlight the GEO-relevant signal up top.
+  const ownedCitationCount = runDetail.citations.filter(
+    (citation) => citation.isOwned
+  ).length;
+
   return (
     <div className="py-4 md:py-6">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 lg:px-6">
-        <header className="flex flex-col gap-4 border-b pb-5 md:flex-row md:items-start md:justify-between">
-          <div className="min-w-0 space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className={statusTone(runStatus)}>
-                {titleCase(runDetail.run.status)}
-              </Badge>
-              <span className="text-muted-foreground text-sm">
-                {runDetail.run.providerName}
-                {runDetail.run.channelName
-                  ? ` - ${runDetail.run.channelName}`
-                  : ""}
-              </span>
-            </div>
-            <div>
-              <h1 className="text-2xl leading-tight font-semibold tracking-normal">
-                {displayTitle}
-              </h1>
-              <p className="text-muted-foreground mt-2 text-sm">
-                {formatFreshness(runDetail.run.startedAt)} -{" "}
-                {formatSessionMode(runDetail.run.sessionMode)}
-              </p>
-            </div>
+        <DetailHeader
+          runStatus={runStatus}
+          isRetryable={isRetryable}
+          isQueuedRun={isQueuedRun}
+          isCancelable={isCancelable}
+          hasRunActions={hasRunActions}
+          displayTitle={displayTitle}
+          run={runDetail.run}
+          onOpenPrompt={onOpenPrompt}
+          onRetryRun={onRetryRun}
+          onCancelRun={onCancelRun}
+          onDeleteRun={onDeleteRun}
+        />
+
+        <DetailMetrics
+          sourceCount={runDetail.run.sourceCount ?? 0}
+          citationCount={runDetail.citations.length}
+          ownedCount={ownedCitationCount}
+          qualityScore={runDetail.run.citationQualityScore}
+          runtime={formatDuration(
+            runDetail.run.startedAt,
+            runDetail.run.finishedAt,
+            runDetail.run.latencyMs
+          )}
+        />
+
+        {/*
+          Side-by-side response + sources is the GEO X-ray view: text on the
+          left, who got cited on the right, so the operator can cross-reference
+          claims to citations without scrolling. Stacks below xl for narrow
+          screens.
+        */}
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+          <div className="flex flex-col gap-6">
+            {responseText ? (
+              <article className="rounded-xl border border-border/70 bg-card/60 p-5">
+                <SectionLabel>{runSummaryLabel}</SectionLabel>
+                <MarkdownContent content={responseText} />
+              </article>
+            ) : null}
+
+            {showPromptText ? (
+              <article className="rounded-xl border border-border/70 bg-card/40 p-5">
+                <SectionLabel>Prompt</SectionLabel>
+                <p className="mt-2 text-sm leading-6 text-foreground/90">
+                  {promptText}
+                </p>
+              </article>
+            ) : null}
           </div>
 
-          {hasRunActions ? (
-            <div className="flex shrink-0 flex-wrap gap-2">
-              {onOpenPrompt ? (
-                <Button variant="outline" size="sm" onClick={onOpenPrompt}>
-                  <ArrowUpRightIcon data-icon="inline-start" />
-                  Open prompt
-                </Button>
-              ) : null}
-              {isRetryable && onRetryRun ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    void onRetryRun(runDetail.run._id);
-                  }}
-                >
-                  <RefreshCcwIcon data-icon="inline-start" />
-                  Retry run
-                </Button>
-              ) : null}
-              {isCancelable && onCancelRun ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    void onCancelRun(runDetail.run._id);
-                  }}
-                >
-                  <XCircleIcon data-icon="inline-start" />
-                  {isQueuedRun ? "Cancel queued run" : "Cancel run"}
-                </Button>
-              ) : null}
-              {isQueuedRun && onDeleteRun ? (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => {
-                    void onDeleteRun(runDetail.run._id);
-                  }}
-                >
-                  <Trash2Icon data-icon="inline-start" />
-                  Delete run
-                </Button>
-              ) : null}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-end justify-between gap-3">
+              <SectionLabel>Sources</SectionLabel>
+              <p className="font-mono text-[10px] tracking-[0.2em] text-muted-foreground uppercase">
+                {ownedCitationCount} owned · {runDetail.citations.length} total
+              </p>
             </div>
-          ) : null}
-        </header>
-
-        <dl className="grid gap-x-6 gap-y-3 border-y py-4 sm:grid-cols-4">
-          <Metric label="Sources" value={runDetail.run.sourceCount ?? 0} />
-          <Metric label="Citations" value={runDetail.citations.length} />
-          <Metric
-            label="Citation score"
-            value={formatScore(runDetail.run.citationQualityScore)}
-          />
-          <Metric
-            label="Runtime"
-            value={formatDuration(
-              runDetail.run.startedAt,
-              runDetail.run.finishedAt,
-              runDetail.run.latencyMs
+            {runDetail.citations.length > 0 ? (
+              <ol className="flex flex-col divide-y divide-border/40 rounded-xl border border-border/70 bg-card/60">
+                {runDetail.citations.map((citation, index) => (
+                  <CitationRow
+                    key={`${citation.url}-${index}`}
+                    citation={citation}
+                  />
+                ))}
+              </ol>
+            ) : isSuccessfulRun ? (
+              <p className="rounded-xl border border-border/60 bg-card/40 p-4 text-sm text-muted-foreground">
+                {noCitationMessage}
+              </p>
+            ) : (
+              <p className="rounded-xl border border-border/60 bg-card/40 p-4 text-sm text-muted-foreground">
+                {noCitationMessage}
+              </p>
             )}
-          />
-        </dl>
-
-        {showPromptText ? (
-          <section className="rounded-lg border p-4">
-            <SectionLabel>Prompt</SectionLabel>
-            <p className="mt-2 text-sm leading-6">{promptText}</p>
-          </section>
-        ) : null}
-
-        {responseText ? (
-          <section className="rounded-lg border p-4">
-            <SectionLabel>{runSummaryLabel}</SectionLabel>
-            <MarkdownContent content={responseText} />
-          </section>
-        ) : null}
-
-        {runDetail.citations.length > 0 ? (
-          <section className="flex flex-col gap-3">
-            <h2 className="text-base font-semibold">Sources</h2>
-            <div className="divide-border divide-y rounded-lg border">
-              {runDetail.citations.map((citation, index) => (
-                <Tooltip key={`${citation.url}-${index}`}>
-                  <TooltipTrigger asChild>
-                    <a
-                      href={citation.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label={`Open source ${citation.title || citation.domain} from ${
-                        domainFromUrl(citation.url) || citation.domain
-                      }`}
-                      className={cn(
-                        "flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between",
-                        clickableTableRowClassName
-                      )}
-                    >
-                      <span className="flex min-w-0 flex-col gap-2">
-                        <span className="flex min-w-0 items-center gap-2">
-                          <Badge variant="outline">#{citation.position}</Badge>
-                          <span className="truncate text-sm font-medium">
-                            {citation.title || citation.domain}
-                          </span>
-                        </span>
-                        <span className="text-muted-foreground block truncate text-xs">
-                          {domainFromUrl(citation.url) || citation.domain}
-                        </span>
-                        <span className="flex flex-wrap gap-1.5">
-                          <Badge variant="secondary">
-                            {titleCase(citation.type)}
-                          </Badge>
-                          {citation.qualityScore !== undefined ? (
-                            <Badge variant="outline">
-                              Quality {formatScore(citation.qualityScore)}
-                            </Badge>
-                          ) : null}
-                          {citation.isOwned ? (
-                            <Badge variant="outline">Owned</Badge>
-                          ) : null}
-                          {citation.trackedEntity ? (
-                            <Badge variant="outline">
-                              {citation.trackedEntity.name}
-                            </Badge>
-                          ) : null}
-                        </span>
-                        {citation.snippet ? (
-                          <span className="text-muted-foreground block text-sm leading-6">
-                            {citation.snippet}
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className="text-muted-foreground inline-flex shrink-0 items-center gap-1 text-xs font-medium">
-                        Open
-                        <ArrowUpRightIcon className="size-3.5" />
-                      </span>
-                    </a>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-sm">
-                    <CitationTooltipContent citation={citation} />
-                  </TooltipContent>
-                </Tooltip>
-              ))}
-            </div>
-          </section>
-        ) : isSuccessfulRun ? (
-          <p className="text-muted-foreground text-sm">{noCitationMessage}</p>
-        ) : null}
+          </div>
+        </div>
 
         {runDetail.mentions?.length ? (
-          <section className="flex flex-col gap-3">
-            <h2 className="text-base font-semibold">Entity Mentions</h2>
-            <div className="divide-border divide-y rounded-lg border">
+          <section className="space-y-3">
+            <SectionLabel>Entity mentions</SectionLabel>
+            <ul className="grid gap-2 sm:grid-cols-2">
               {runDetail.mentions.map((mention) => (
-                <div
+                <li
                   key={String(mention.entityId ?? mention.slug)}
-                  className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
+                  className={cn(
+                    "flex items-start justify-between gap-3 rounded-xl border border-border/70 bg-card/60 px-4 py-3",
+                    mention.ownedCitationCount > 0 &&
+                      "border-highlight/40 bg-highlight/[0.06]"
+                  )}
                 >
-                  <div>
-                    <p className="font-medium">{mention.name}</p>
-                    <p className="text-muted-foreground text-xs">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-sm text-foreground">
+                      {mention.name}
+                    </p>
+                    <p className="font-mono text-[10px] tracking-[0.2em] text-muted-foreground uppercase mt-0.5">
                       {titleCase(mention.kind)}
                     </p>
                     {mention.matchedTerms.length ? (
-                      <p className="text-muted-foreground mt-2 text-xs">
+                      <p className="text-muted-foreground mt-1.5 text-xs">
                         Terms: {mention.matchedTerms.join(", ")}
                       </p>
                     ) : null}
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    <Badge variant="outline">
-                      {mention.mentionCount} mentions
-                    </Badge>
-                    <Badge variant="outline">
-                      {mention.citationCount} citations
-                    </Badge>
+                  <div className="flex shrink-0 flex-col items-end gap-0.5 font-mono text-[10px] tabular-nums tracking-wider text-muted-foreground uppercase">
+                    <span>{mention.mentionCount} mention{mention.mentionCount === 1 ? "" : "s"}</span>
+                    <span>{mention.citationCount} citation{mention.citationCount === 1 ? "" : "s"}</span>
+                    {mention.ownedCitationCount > 0 ? (
+                      <span className="text-highlight-foreground/90">
+                        {mention.ownedCitationCount} owned
+                      </span>
+                    ) : null}
                   </div>
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           </section>
         ) : null}
 
-        <section className="flex flex-col gap-3">
-          <h2 className="text-base font-semibold">Evidence</h2>
-
+        <section className="space-y-3">
+          <SectionLabel>Evidence</SectionLabel>
           <RunImageDetail images={evidenceImages} />
 
-          <details className="rounded-lg border p-3 text-xs">
-            <summary className="text-muted-foreground cursor-pointer font-medium">
+          <details className="rounded-xl border border-border/70 bg-card/40 px-4 py-3 text-xs">
+            <summary className="cursor-pointer font-mono text-[10px] tracking-[0.24em] text-muted-foreground uppercase">
               Technical artifacts
             </summary>
             <div className="text-muted-foreground mt-3 flex flex-col gap-2">
@@ -625,15 +546,15 @@ export function ResponseDetailPage({
           </details>
 
           {runDetail.run.warnings?.length ? (
-            <details className="rounded-lg border p-3 text-xs">
-              <summary className="text-muted-foreground cursor-pointer font-medium">
-                Runner notes
+            <details className="rounded-xl border border-negative/30 bg-negative/[0.04] px-4 py-3 text-xs">
+              <summary className="cursor-pointer font-mono text-[10px] tracking-[0.24em] text-negative uppercase">
+                Runner notes · {runDetail.run.warnings.length}
               </summary>
-              <div className="text-muted-foreground mt-2 flex flex-col gap-2">
+              <ul className="text-foreground/80 mt-3 flex flex-col gap-2 leading-5">
                 {runDetail.run.warnings.map((warning, index) => (
-                  <p key={`${warning}-${index}`}>{warning}</p>
+                  <li key={`${warning}-${index}`}>{warning}</li>
                 ))}
-              </div>
+              </ul>
             </details>
           ) : null}
         </section>
@@ -642,22 +563,269 @@ export function ResponseDetailPage({
   );
 }
 
-function SectionLabel({ children }: { children: string }) {
+// -----------------------------------------------------------------------------
+// Detail-page subcomponents — header, metric strip, citation rows
+// -----------------------------------------------------------------------------
+
+function DetailHeader({
+  runStatus,
+  isRetryable,
+  isQueuedRun,
+  isCancelable,
+  hasRunActions,
+  displayTitle,
+  run,
+  onOpenPrompt,
+  onRetryRun,
+  onCancelRun,
+  onDeleteRun,
+}: {
+  runStatus: string;
+  isRetryable: boolean;
+  isQueuedRun: boolean;
+  isCancelable: boolean;
+  hasRunActions: boolean;
+  displayTitle: string;
+  run: {
+    _id: Id<"promptRuns">;
+    providerName: string;
+    channelName?: string;
+    sessionMode?: "guest" | "stored";
+    startedAt: number;
+    status: string;
+  };
+  onOpenPrompt?: () => void;
+  onRetryRun?: (runId: Id<"promptRuns">) => void | Promise<void>;
+  onCancelRun?: (runId: Id<"promptRuns">) => void | Promise<void>;
+  onDeleteRun?: (runId: Id<"promptRuns">) => void | Promise<void>;
+}) {
   return (
-    <p className="text-muted-foreground text-[11px] font-medium tracking-[0.16em] uppercase">
-      {children}
-    </p>
+    <header className="flex flex-col gap-4 border-b border-border/60 pb-5 md:flex-row md:items-end md:justify-between">
+      <div className="min-w-0 space-y-2.5">
+        <p className="font-mono text-[10px] tracking-[0.32em] text-muted-foreground uppercase">
+          GEO Pulse / Run · {run.providerName}
+          {run.channelName ? ` · ${run.channelName}` : ""}
+        </p>
+        <h1 className="font-display text-3xl font-extrabold leading-[1.05] tracking-[-0.022em] text-foreground sm:text-[2.25rem]">
+          {displayTitle}
+        </h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em]",
+              statusPillClass(runStatus)
+            )}
+          >
+            {titleCase(run.status)}
+          </span>
+          <span className="font-mono text-[10px] tracking-[0.2em] text-muted-foreground uppercase">
+            {formatFreshness(run.startedAt)} · {formatSessionMode(run.sessionMode)}
+          </span>
+        </div>
+      </div>
+      {hasRunActions ? (
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {onOpenPrompt ? (
+            <Button variant="outline" size="sm" onClick={onOpenPrompt}>
+              <ArrowUpRightIcon data-icon="inline-start" />
+              Open prompt
+            </Button>
+          ) : null}
+          {isRetryable && onRetryRun ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                void onRetryRun(run._id);
+              }}
+            >
+              <RefreshCcwIcon data-icon="inline-start" />
+              Retry run
+            </Button>
+          ) : null}
+          {isCancelable && onCancelRun ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                void onCancelRun(run._id);
+              }}
+            >
+              <XCircleIcon data-icon="inline-start" />
+              {isQueuedRun ? "Cancel queued run" : "Cancel run"}
+            </Button>
+          ) : null}
+          {isQueuedRun && onDeleteRun ? (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                void onDeleteRun(run._id);
+              }}
+            >
+              <Trash2Icon data-icon="inline-start" />
+              Delete run
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </header>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string | number }) {
+function DetailMetrics({
+  sourceCount,
+  citationCount,
+  ownedCount,
+  qualityScore,
+  runtime,
+}: {
+  sourceCount: number;
+  citationCount: number;
+  ownedCount: number;
+  qualityScore: number | undefined;
+  runtime: string;
+}) {
   return (
-    <div className="min-w-0">
-      <dt className="text-muted-foreground text-xs">{label}</dt>
-      <dd className="mt-1 truncate text-sm font-medium tabular-nums">
+    <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <DetailMetric label="Sources" value={sourceCount.toString()} />
+      <DetailMetric label="Citations" value={citationCount.toString()} />
+      <DetailMetric
+        label="Owned"
+        value={ownedCount.toString()}
+        tone={ownedCount > 0 ? "highlight" : "neutral"}
+      />
+      <DetailMetric
+        label="Quality"
+        value={formatScore(qualityScore)}
+      />
+      <DetailMetric label="Runtime" value={runtime} />
+    </dl>
+  );
+}
+
+function DetailMetric({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  tone?: "neutral" | "highlight";
+}) {
+  return (
+    <div
+      className={cn(
+        "flex flex-col gap-1 rounded-xl border bg-card/60 px-4 py-3",
+        tone === "highlight"
+          ? "border-highlight/40 bg-highlight/[0.06]"
+          : "border-border/70"
+      )}
+    >
+      <p className="font-mono text-[10px] tracking-[0.28em] text-muted-foreground uppercase">
+        {label}
+      </p>
+      <p
+        className={cn(
+          "font-display text-2xl font-extrabold tabular-nums tracking-tight",
+          tone === "highlight" ? "text-highlight-foreground" : "text-foreground"
+        )}
+      >
         {value}
-      </dd>
+      </p>
     </div>
+  );
+}
+
+function CitationRow({
+  citation,
+}: {
+  citation: {
+    domain: string;
+    url: string;
+    title?: string;
+    snippet?: string;
+    type: string;
+    position: number;
+    qualityScore?: number;
+    isOwned?: boolean;
+    trackedEntity?: {
+      name: string;
+      slug: string;
+    } | null;
+  };
+}) {
+  const domain = domainFromUrl(citation.url) || citation.domain;
+  return (
+    <li className={cn(citation.isOwned && "bg-highlight/[0.08]")}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <a
+            href={citation.url}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`Open source ${citation.title || domain} from ${domain}`}
+            className="group flex items-start gap-3 px-4 py-3 transition-colors hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span
+              className={cn(
+                "font-mono text-[11px] tabular-nums tracking-wider mt-0.5 shrink-0 w-6",
+                citation.isOwned
+                  ? "text-highlight-foreground"
+                  : "text-muted-foreground"
+              )}
+            >
+              {String(citation.position).padStart(2, "0")}
+            </span>
+            <span className="min-w-0 flex-1 space-y-1">
+              <span className="block truncate text-sm font-semibold text-foreground">
+                {citation.title || domain}
+              </span>
+              <span className="block truncate font-mono text-[10px] tracking-[0.16em] text-muted-foreground uppercase">
+                {domain}
+                <span className="mx-1.5 text-muted-foreground/40">·</span>
+                {citation.type}
+                {citation.qualityScore !== undefined ? (
+                  <>
+                    <span className="mx-1.5 text-muted-foreground/40">·</span>
+                    Q {formatScore(citation.qualityScore)}
+                  </>
+                ) : null}
+                {citation.isOwned ? (
+                  <>
+                    <span className="mx-1.5 text-highlight/60">·</span>
+                    <span className="text-highlight-foreground">Owned</span>
+                  </>
+                ) : null}
+                {citation.trackedEntity ? (
+                  <>
+                    <span className="mx-1.5 text-muted-foreground/40">·</span>
+                    {citation.trackedEntity.name}
+                  </>
+                ) : null}
+              </span>
+              {citation.snippet ? (
+                <span className="line-clamp-2 text-xs text-muted-foreground leading-5">
+                  {citation.snippet}
+                </span>
+              ) : null}
+            </span>
+            <ArrowUpRightIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground" />
+          </a>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-sm">
+          <CitationTooltipContent citation={citation} />
+        </TooltipContent>
+      </Tooltip>
+    </li>
+  );
+}
+
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <h2 className="font-mono text-[11px] tracking-[0.32em] text-muted-foreground uppercase">
+      {children}
+    </h2>
   );
 }
 
@@ -752,18 +920,17 @@ function RunImageDetail({ images }: { images: EvidenceImage[] }) {
           href={image.url}
           target="_blank"
           rel="noreferrer"
-          className={cn(
-            "overflow-hidden rounded-lg border text-sm",
-            clickableTableRowClassName
-          )}
+          className="group overflow-hidden rounded-xl border border-border/70 bg-card/60 text-sm transition-colors hover:border-foreground/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <span className="flex items-start justify-between gap-3 p-3">
+          <span className="flex items-start justify-between gap-3 px-4 py-2.5">
             <span className="min-w-0">
-              <span className="block font-medium">{image.label}</span>
+              <span className="block font-mono text-[10px] tracking-[0.24em] text-muted-foreground uppercase">
+                {image.label}
+              </span>
             </span>
-            <ArrowUpRightIcon className="text-muted-foreground mt-0.5 size-3.5 shrink-0" />
+            <ArrowUpRightIcon className="text-muted-foreground mt-0.5 size-3.5 shrink-0 transition-colors group-hover:text-foreground" />
           </span>
-          <span className="bg-muted/20 block border-t p-2">
+          <span className="bg-muted/20 block border-t border-border/40 p-2">
             <img
               src={image.url}
               alt={image.label}

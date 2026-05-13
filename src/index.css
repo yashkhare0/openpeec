@@ -1,6 +1,14 @@
+/*
+ * Single product face: Plus Jakarta Sans (variable, 200..800).
+ * Weight + tracking + scale do the hierarchy work — no display serif, no
+ * monospace family. The design tokens `--font-display` / `--font-mono` /
+ * `--font-sans` all resolve to Plus Jakarta so existing utilities like
+ * `font-display`, `font-mono`, `font-sans` keep working without churn in
+ * components; visual differentiation comes from weight + letter-spacing.
+ */
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@200..800&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "@fontsource-variable/geist";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -42,8 +50,18 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --font-sans:
-    "Geist Variable", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
-    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-display:
+    "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:
+    "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --color-highlight: var(--highlight);
+  --color-highlight-foreground: var(--highlight-foreground);
+  --color-positive: var(--positive);
+  --color-positive-foreground: var(--positive-foreground);
+  --color-negative: var(--negative);
+  --color-negative-foreground: var(--negative-foreground);
 }
 
 :root {
@@ -80,6 +98,14 @@
   --sidebar-accent-foreground: oklch(0.285 0.072 286);
   --sidebar-border: oklch(0.845 0.047 292);
   --sidebar-ring: oklch(0.66 0.16 276);
+  /* GEO editorial accents — warm cream highlight for tracked-domain rows
+     and sharp signal greens/reds for delta indicators that read at a glance. */
+  --highlight: oklch(0.92 0.12 95);
+  --highlight-foreground: oklch(0.32 0.085 80);
+  --positive: oklch(0.62 0.16 152);
+  --positive-foreground: oklch(0.99 0.012 152);
+  --negative: oklch(0.6 0.21 24);
+  --negative-foreground: oklch(0.99 0.01 24);
 }
 
 .dark {
@@ -115,6 +141,14 @@
   --sidebar-accent-foreground: oklch(0.95 0.024 316);
   --sidebar-border: oklch(0.45 0.068 303 / 62%);
   --sidebar-ring: oklch(0.78 0.13 286);
+  /* Dark-theme GEO accents — cooler highlight cream that doesn't blow out
+     against the violet background, plus tuned positive/negative signals. */
+  --highlight: oklch(0.84 0.13 88);
+  --highlight-foreground: oklch(0.22 0.06 60);
+  --positive: oklch(0.78 0.16 152);
+  --positive-foreground: oklch(0.16 0.05 303);
+  --negative: oklch(0.74 0.18 22);
+  --negative-foreground: oklch(0.16 0.05 303);
 }
 
 @layer base {
@@ -123,6 +157,10 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Plus Jakarta is the only face — body sits at medium (500) so the whole
+       product reads bold-leaning by default. Display elements upgrade to 700
+       and big metrics to 800 via explicit `font-bold` / `font-extrabold`. */
+    font-weight: 500;
     background: linear-gradient(
         135deg,
         color-mix(in oklch, var(--background), var(--primary) 7%) 0%,
@@ -149,7 +187,7 @@
 
 /* driver.js tour popover theme */
 .openpeec-tour {
-  --djs-font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --djs-font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   background-color: var(--popover) !important;
   color: var(--popover-foreground) !important;
   border: 1px solid var(--border) !important;
