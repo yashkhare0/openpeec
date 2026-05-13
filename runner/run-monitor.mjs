@@ -34,6 +34,7 @@ import {
   runDomainHopSequence,
 } from "./session-warmup.mjs";
 import { dismissInterstitials } from "./interstitial-handler.mjs";
+import { solveGoogleSorryCaptcha } from "./captcha-handler.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -744,77 +745,9 @@ async function dismissCookieBanner(page) {
   return (await dismissInterstitials(page)) > 0;
 }
 
-/**
- * If the page is on Google's /sorry/index reCAPTCHA interstitial, click the
- * "I'm not a robot" checkbox to trigger the Buster Camoufox addon (which
- * solves audio reCAPTCHA v2 challenges automatically), then wait for the
- * page to navigate back to a real search/result URL. Returns
- * { handled, solved, reason } so the caller can continue or fail clearly.
- *
- * The Buster addon is loaded via runner/addons/buster (see
- * browser.camoufox.addons in the monitor config). It listens for clicks on
- * the reCAPTCHA checkbox and then handles the audio challenge transparently.
- *
- * @param {import("playwright").Page} page
- * @param {{ timeoutMs?: number }} [options]
- */
-async function solveGoogleSorryCaptcha(page, options = {}) {
-  const url = page.url();
-  if (!/\/sorry\//i.test(url)) {
-    return { handled: false, solved: false, reason: "not on /sorry/" };
-  }
-
-  const totalTimeoutMs = clamp(
-    Math.floor(options.timeoutMs ?? 90_000),
-    10_000,
-    300_000
-  );
-  const startedAt = Date.now();
-
-  // Find the reCAPTCHA iframe ("I'm not a robot" anchor frame).
-  const anchorFrame = page
-    .frames()
-    .find((frame) => /\/recaptcha\/api2\/anchor/i.test(frame.url()));
-  if (!anchorFrame) {
-    return {
-      handled: true,
-      solved: false,
-      reason: "no reCAPTCHA anchor iframe found on /sorry page",
-    };
-  }
-
-  try {
-    const checkbox = anchorFrame
-      .locator("#recaptcha-anchor, .recaptcha-checkbox")
-      .first();
-    await checkbox.waitFor({ state: "visible", timeout: 10_000 });
-    await checkbox.click({ timeout: 10_000 });
-  } catch (error) {
-    return {
-      handled: true,
-      solved: false,
-      reason: `failed to click reCAPTCHA checkbox: ${
-        error instanceof Error ? error.message.split("\n")[0] : "unknown"
-      }`,
-    };
-  }
-
-  // Buster needs time to fetch the audio challenge and submit the answer.
-  // Wait for the page to navigate AWAY from /sorry/ as the success signal.
-  while (Date.now() - startedAt < totalTimeoutMs) {
-    await page.waitForTimeout(1_500);
-    const current = page.url();
-    if (!/\/sorry\//i.test(current)) {
-      return { handled: true, solved: true, reason: null, finalUrl: current };
-    }
-  }
-
-  return {
-    handled: true,
-    solved: false,
-    reason: `Buster did not resolve reCAPTCHA within ${totalTimeoutMs}ms`,
-  };
-}
+// solveGoogleSorryCaptcha lives in captcha-handler.mjs (extracted so the
+// google-ai-mode provider can import it without forming a cycle through
+// providers/index.mjs ← run-monitor.mjs ← google-ai-mode.mjs).
 
 /**
  * Drive an organic search-engine flow: navigate to the base URL, type the

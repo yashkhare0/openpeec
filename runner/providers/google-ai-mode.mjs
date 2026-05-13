@@ -1,4 +1,5 @@
 import { dismissInterstitials } from "../interstitial-handler.mjs";
+import { solveGoogleSorryCaptcha } from "../captcha-handler.mjs";
 
 export const GOOGLE_AI_MODE_PROVIDER = "google-ai-mode";
 
@@ -134,7 +135,12 @@ export async function waitForGoogleAiModeResponse({ page, config }) {
   const deadline = Date.now() + timeoutMs;
   let lastState = null;
   let cookieDismissAttempts = 0;
+  let captchaAttempts = 0;
   const MAX_COOKIE_DISMISS_ATTEMPTS = 2;
+  const MAX_CAPTCHA_ATTEMPTS = 1;
+  // Buster needs up to ~90s to fetch + solve the audio challenge; cap at
+  // whatever remains of our overall timeout so we don't overrun the run.
+  const captchaTimeoutMs = Math.max(15_000, timeoutMs - 10_000);
 
   while (Date.now() < deadline) {
     lastState = await snapshotGoogleAiModeState(page, config);
@@ -144,8 +150,9 @@ export async function waitForGoogleAiModeResponse({ page, config }) {
       { html: lastState.html, url: lastState.url }
     );
     if (blockerReason) {
+      const reasonLower = blockerReason.toLowerCase();
       const looksLikeCookieConsent =
-        blockerReason.toLowerCase().includes("cookie") &&
+        reasonLower.includes("cookie") &&
         cookieDismissAttempts < MAX_COOKIE_DISMISS_ATTEMPTS;
       if (looksLikeCookieConsent) {
         cookieDismissAttempts += 1;
@@ -160,6 +167,40 @@ export async function waitForGoogleAiModeResponse({ page, config }) {
           continue;
         }
         // Fall through to "blocked" if we couldn't find a button to click.
+      }
+      // "Google blocked" reason covers both the /sorry/ reCAPTCHA and the
+      // inline "unusual traffic" wall. Try Buster once; if it solves, keep
+      // polling — otherwise fail through to the blocked return below.
+      const looksLikeBotWall =
+        reasonLower.includes("blocked") &&
+        captchaAttempts < MAX_CAPTCHA_ATTEMPTS;
+      if (looksLikeBotWall) {
+        captchaAttempts += 1;
+        const result = await solveGoogleSorryCaptcha(page, {
+          timeoutMs: captchaTimeoutMs,
+        }).catch((error) => ({
+          handled: true,
+          solved: false,
+          reason:
+            error instanceof Error ? error.message : "captcha solver threw",
+        }));
+        if (result.solved) {
+          await page
+            .waitForLoadState("domcontentloaded", { timeout: 10_000 })
+            .catch(() => {});
+          await page.waitForTimeout(750);
+          continue;
+        }
+        // Fall through to blocked with the original reason; surface why the
+        // solver couldn't help so the user can debug (missing Buster addon,
+        // no anchor frame, IP-flagged, etc.).
+        return {
+          status: "blocked",
+          summary: `${blockerReason} (captcha solver: ${result.reason ?? "no progress"})`,
+          fallbackUsed: true,
+          promptSubmitted: false,
+          responseStarted: false,
+        };
       }
       return {
         status: "blocked",
