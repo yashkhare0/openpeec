@@ -2451,7 +2451,6 @@ export const triggerPromptGroupNow = mutation({
     label: v.optional(v.string()),
     browserEngine: v.optional(vBrowserEngine),
     providerSlugs: v.optional(v.array(v.string())),
-    includeDrafts: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const promptGroup = await assertPromptGroup(ctx, args.promptGroupId);
@@ -2487,7 +2486,6 @@ export const triggerEntityPromptsNow = mutation({
     label: v.optional(v.string()),
     browserEngine: v.optional(vBrowserEngine),
     providerSlugs: v.optional(v.array(v.string())),
-    includeDrafts: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const entity = await assertTrackedEntity(ctx, args.entityId);
