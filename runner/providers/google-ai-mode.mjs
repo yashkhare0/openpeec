@@ -23,6 +23,20 @@ function resolveResponseStartTimeoutMs(config) {
   );
 }
 
+// "Before you continue to Google" heading on the EU consent page, in each
+// locale we want to recognize. Lower-cased to match the haystack.
+const CONSENT_PAGE_HEADINGS = [
+  "before you continue to google",
+  "bevor sie zu google weitergehen", // de
+  "avant de continuer sur google", // fr
+  "antes de continuar en google", // es
+  "prima di continuare su google", // it
+  "voordat u doorgaat naar google", // nl
+  "förekommer du fortsätter till google", // sv (approx)
+  "google'a devam etmeden önce", // tr
+];
+const CONSENT_COOKIE_KEYWORDS = ["cookies", "cookie"];
+
 export function getGoogleAiModeAccessBlockerReason(
   title,
   bodyText,
@@ -37,42 +51,82 @@ export function getGoogleAiModeAccessBlockerReason(
   ) {
     return "Google blocked the AI Mode page before the answer could be read.";
   }
-  if (
-    haystack.includes("before you continue to google") &&
-    haystack.includes("cookies")
-  ) {
+  const hasConsentHeading = CONSENT_PAGE_HEADINGS.some((heading) =>
+    haystack.includes(heading)
+  );
+  const hasCookieMention = CONSENT_COOKIE_KEYWORDS.some((kw) =>
+    haystack.includes(kw)
+  );
+  if (hasConsentHeading && hasCookieMention) {
     return "Google is showing a cookie consent page before the AI Mode answer.";
   }
   return null;
 }
 
-async function snapshotGoogleAiModeState(page, config) {
-  return await page.evaluate((promptText) => {
-    const main = document.querySelector("main") ?? document.body;
-    const bodyText =
-      document.body?.innerText ?? document.body?.textContent ?? "";
-    const mainText = main?.innerText ?? main?.textContent ?? bodyText;
-    const normalizedBody = bodyText.replace(/\s+/g, " ").trim();
-    const normalizedMain = mainText.replace(/\s+/g, " ").trim();
-    const prompt = String(promptText ?? "")
-      .replace(/\s+/g, " ")
-      .trim();
-    const hasPromptHeading = prompt ? normalizedMain.includes(prompt) : true;
-    const ready =
-      normalizedBody.includes("AI Mode response is ready") ||
-      (normalizedMain.includes("AI can make mistakes") &&
-        !normalizedMain.includes("Searching") &&
-        hasPromptHeading);
+// Localized strings Google AI Mode uses for the "answer ready" disclaimer
+// (≈"AI can make mistakes") and the "in flight" indicator (≈"Searching…").
+// Detection is locale-bound, so we have to match each language we run in.
+const AI_MODE_READY_MARKERS = [
+  "AI Mode response is ready",
+  "Antwort im KI-Modus ist bereit", // de
+  "Réponse du mode IA prête", // fr
+  "Modo IA listo", // es
+  "Risposta della modalità IA pronta", // it
+];
+const AI_MODE_DONE_MARKERS = [
+  "AI can make mistakes",
+  "KI kann Fehler machen", // de
+  "L'IA peut faire des erreurs", // fr
+  "La IA puede cometer errores", // es
+  "L'IA può commettere errori", // it
+  "AI のレスポンスにはミス", // ja approx
+];
+const AI_MODE_SEARCHING_MARKERS = [
+  "Searching",
+  "Sucht", // de
+  "Recherche en cours", // fr
+  "Buscando", // es
+  "Ricerca", // it
+];
 
-    return {
-      url: window.location.href,
-      title: document.title,
-      bodyText,
-      html: document.documentElement?.outerHTML ?? "",
-      ready,
-      searching: normalizedMain.includes("Searching"),
-    };
-  }, config.prompt.text);
+async function snapshotGoogleAiModeState(page, config) {
+  return await page.evaluate(
+    ({ promptText, readyMarkers, doneMarkers, searchingMarkers }) => {
+      const main = document.querySelector("main") ?? document.body;
+      const bodyText =
+        document.body?.innerText ?? document.body?.textContent ?? "";
+      const mainText = main?.innerText ?? main?.textContent ?? bodyText;
+      const normalizedBody = bodyText.replace(/\s+/g, " ").trim();
+      const normalizedMain = mainText.replace(/\s+/g, " ").trim();
+      const prompt = String(promptText ?? "")
+        .replace(/\s+/g, " ")
+        .trim();
+      const hasPromptHeading = prompt ? normalizedMain.includes(prompt) : true;
+      const matchAny = (haystack, needles) =>
+        needles.some((needle) => haystack.includes(needle));
+      const explicitReady = matchAny(normalizedBody, readyMarkers);
+      const searching = matchAny(normalizedMain, searchingMarkers);
+      const finishedDisclaimer = matchAny(normalizedMain, doneMarkers);
+      const ready =
+        explicitReady ||
+        (finishedDisclaimer && !searching && hasPromptHeading);
+
+      return {
+        url: window.location.href,
+        title: document.title,
+        bodyText,
+        html: document.documentElement?.outerHTML ?? "",
+        ready,
+        searching,
+      };
+    },
+    {
+      promptText: config.prompt.text,
+      readyMarkers: AI_MODE_READY_MARKERS,
+      doneMarkers: AI_MODE_DONE_MARKERS,
+      searchingMarkers: AI_MODE_SEARCHING_MARKERS,
+    }
+  );
 }
 
 export async function waitForGoogleAiModeResponse({ page, config }) {

@@ -48,42 +48,113 @@ async function clickFirstVisible(frame, selectors, options = {}) {
  * accidentally close a chat thread or warning modal that happens to be
  * sitting under a banner).
  */
+// Multilingual reject / accept labels used by Google's EU consent dialog.
+// Order matters: prefer "reject" labels so we don't accidentally grant
+// non-essential consent in regions where we have a choice.
+const CONSENT_REJECT_LABELS = [
+  "Reject all",
+  "Reject All",
+  "Alle ablehnen", // de
+  "Tout refuser", // fr
+  "Rechazar todo", // es
+  "Rifiuta tutto", // it
+  "Rejeitar tudo", // pt
+  "Afwijzen", // nl
+  "Avvis alle", // no
+  "Avvisa alla", // sv
+  "Hylkää kaikki", // fi
+  "Odrzuć wszystko", // pl
+  "Odmítnout vše", // cs
+  "Reddet alle", // da
+  "Tümünü reddet", // tr
+  "全部拒否", // ja
+  "全部拒绝", // zh-CN
+  "모두 거부", // ko
+];
+const CONSENT_ACCEPT_LABELS = [
+  "Accept all",
+  "Accept All",
+  "Alle akzeptieren",
+  "Tout accepter",
+  "Aceptar todo",
+  "Accetta tutto",
+  "Aceitar tudo",
+  "Alles accepteren",
+  "Godta alle",
+  "Godkänn alla",
+  "Hyväksy kaikki",
+  "Zaakceptuj wszystkie",
+  "Přijmout vše",
+  "Accepter alle",
+  "Tümünü kabul et",
+  "全部に同意",
+  "全部接受",
+  "모두 수락",
+];
+
+function buttonMatchersFor(labels) {
+  return labels.flatMap((label) => [
+    `button:has-text("${label}")`,
+    `[role='button']:has-text("${label}")`,
+  ]);
+}
+
+/**
+ * Selectors covering the common shapes of consent / cookie / "continue
+ * without signing in" / generic dismiss controls we've seen across providers.
+ *
+ * Order matters: prefer "reject"-style buttons before "accept", and explicit
+ * cookie-consent buttons before generic close-X buttons (so we don't
+ * accidentally close a chat thread or warning modal that happens to be
+ * sitting under a banner).
+ */
 const INTERSTITIAL_SELECTOR_GROUPS = [
-  // Google EU consent (consent.google.com + inline banners)
+  // Google EU consent (consent.google.com + inline banners). The button IDs
+  // (#W0wltc reject, #L2AGLb accept) are stable across locales when Google
+  // serves the legacy consent UI — try them first since they avoid having to
+  // probe every language string.
   {
-    name: "google-consent",
+    name: "google-consent-reject",
     selectors: [
-      "button[aria-label='Reject all']",
-      "form[action*='consent'] button:has-text('Reject all')",
-      "form[action*='consent'] button:has-text('Accept all')",
-      "button:has-text('Reject all')",
-      "button:has-text('Accept all')",
-      "[role='dialog'] button:has-text('Reject all')",
-      "[role='dialog'] button:has-text('Accept all')",
+      "button#W0wltc",
+      "form[action*='consent'] button#W0wltc",
+      ...buttonMatchersFor(CONSENT_REJECT_LABELS),
+      ...CONSENT_REJECT_LABELS.map(
+        (label) => `form[action*='consent'] button:has-text("${label}")`
+      ),
     ],
   },
-  // Generic GDPR / cookie banners
+  {
+    name: "google-consent-accept",
+    selectors: [
+      "button#L2AGLb",
+      "form[action*='consent'] button#L2AGLb",
+      ...buttonMatchersFor(CONSENT_ACCEPT_LABELS),
+      ...CONSENT_ACCEPT_LABELS.map(
+        (label) => `form[action*='consent'] button:has-text("${label}")`
+      ),
+    ],
+  },
+  // Generic GDPR / cookie banners (OneTrust + class/id heuristics).
   {
     name: "cookie-banner",
     selectors: [
       "button:has-text('Reject non-essential')",
       "button:has-text('Reject non-essential cookies')",
-      "button:has-text('Reject All')",
       "button:has-text('Accept all cookies')",
-      "button:has-text('Accept All')",
       "button:has-text('Accept cookies')",
       "button:has-text('I agree')",
       "button:has-text('Got it')",
       "button:has-text('OK')",
       "#onetrust-reject-all-handler",
       "#onetrust-accept-btn-handler",
-      "[id*='cookie'] button:has-text('Reject')",
-      "[id*='cookie'] button:has-text('Accept')",
-      "[class*='cookie'] button:has-text('Reject')",
-      "[class*='cookie'] button:has-text('Accept')",
+      "[id*='cookie' i] button:has-text('Reject')",
+      "[id*='cookie' i] button:has-text('Accept')",
+      "[class*='cookie' i] button:has-text('Reject')",
+      "[class*='cookie' i] button:has-text('Accept')",
     ],
   },
-  // Generic close / dismiss controls on modal dialogs
+  // Generic close / dismiss controls on modal dialogs.
   {
     name: "generic-dismiss",
     selectors: [
