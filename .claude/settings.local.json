@@ -3,7 +3,13 @@
     "allow": [
       "Bash(docker volume *)",
       "Bash(docker exec *)",
-      "Bash(docker compose *)"
+      "Bash(docker compose *)",
+      "Bash(cd /b/projects/opensource/openpeec && docker compose restart runner-camoufox 2>&1 | tail -3)",
+      "Bash(pnpm runner:install-buster)",
+      "Bash(node --check runner/captcha-handler.mjs)",
+      "Bash(node --check runner/run-monitor.mjs)",
+      "Bash(node --check runner/providers/google-ai-mode.mjs)",
+      "Bash(node --check runner/interstitial-handler.mjs)"
     ]
   }
 }
