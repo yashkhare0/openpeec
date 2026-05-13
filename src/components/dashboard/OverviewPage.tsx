@@ -13,6 +13,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { statusTone, type StatusTone } from "@/lib/statusTone";
+import { Eyebrow } from "@/components/ui/eyebrow";
 import { KpiCards } from "./components/KpiCards";
 import { EmptyState, InlineEmpty } from "./components/EmptyState";
 import {
@@ -161,9 +163,7 @@ export function OverviewPage({
               <CardContent className="space-y-5">
                 <section className="space-y-3">
                   <div className="flex items-center gap-2">
-                    <p className="text-muted-foreground text-[11px] font-medium tracking-[0.18em] uppercase">
-                      Top domains
-                    </p>
+                    <Eyebrow>Top domains</Eyebrow>
                     <InfoTooltip label="About top domains">
                       Percent of selected-range citations from each domain.
                     </InfoTooltip>
@@ -196,9 +196,7 @@ export function OverviewPage({
 
                 <section className="space-y-3">
                   <div className="flex items-center gap-2">
-                    <p className="text-muted-foreground text-[11px] font-medium tracking-[0.18em] uppercase">
-                      Prompt variance
-                    </p>
+                    <Eyebrow>Prompt variance</Eyebrow>
                     <InfoTooltip label="About prompt variance">
                       Response drift across successful runs for each prompt.
                     </InfoTooltip>
@@ -400,20 +398,17 @@ function formatRuntime(
   return `${minutes}m ${remainder}s`;
 }
 
+const RUN_STATUS_TO_TONE: Record<string, StatusTone> = {
+  success: "success",
+  failed: "danger",
+  running: "info",
+  queued: "warning",
+};
+
 function statusClassName(status: string) {
-  if (status === "success") {
-    return "text-sm font-medium text-emerald-700 dark:text-emerald-300";
-  }
-  if (status === "failed") {
-    return "text-sm font-medium text-rose-700 dark:text-rose-300";
-  }
-  if (status === "running") {
-    return "text-sm font-medium text-blue-700 dark:text-blue-300";
-  }
-  if (status === "queued") {
-    return "text-sm font-medium text-amber-700 dark:text-amber-300";
-  }
-  return "text-sm font-medium";
+  const tone = RUN_STATUS_TO_TONE[status];
+  if (!tone) return "text-sm font-medium";
+  return cn("text-sm font-medium", statusTone(tone, "text"));
 }
 
 function titleCase(value: string) {

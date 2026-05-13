@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { statusTone } from "@/lib/statusTone";
 import { InlineEmpty } from "./EmptyState";
 
 type ProviderRow = {
@@ -129,9 +130,7 @@ function DeltaIndicator({ value }: { value: number | undefined }) {
     <span
       className={cn(
         "inline-flex items-center gap-0.5 text-xs font-medium",
-        isPositive
-          ? "text-emerald-600 dark:text-emerald-300"
-          : "text-rose-600 dark:text-rose-300"
+        statusTone(isPositive ? "success" : "danger", "text")
       )}
     >
       {isPositive ? (

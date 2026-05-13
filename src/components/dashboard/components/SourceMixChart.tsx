@@ -6,6 +6,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { sourceTypeToneClass } from "@/lib/statusTone";
 import { InlineEmpty } from "./EmptyState";
 
 type MixItem = { type: string; share: number };
@@ -16,14 +17,6 @@ function titleCase(value: string): string {
     .map((item) => item.charAt(0).toUpperCase() + item.slice(1).toLowerCase())
     .join(" ");
 }
-
-const typeColors: Record<string, string> = {
-  ugc: "bg-amber-500",
-  editorial: "bg-blue-500",
-  corporate: "bg-violet-500",
-  docs: "bg-emerald-500",
-  news: "bg-rose-500",
-};
 
 export function SourceMixChart({ sourceMix }: { sourceMix: MixItem[] }) {
   return (
@@ -44,7 +37,7 @@ export function SourceMixChart({ sourceMix }: { sourceMix: MixItem[] }) {
               {sourceMix.map((item) => (
                 <div
                   key={item.type}
-                  className={`h-full transition-all ${typeColors[item.type.toLowerCase()] ?? "bg-primary"}`}
+                  className={`h-full transition-all ${sourceTypeToneClass(item.type, "fill")}`}
                   style={{
                     width: `${Math.max(item.share, 1)}%`,
                   }}
@@ -59,7 +52,7 @@ export function SourceMixChart({ sourceMix }: { sourceMix: MixItem[] }) {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div
-                        className={`size-2.5 rounded-full ${typeColors[item.type.toLowerCase()] ?? "bg-primary"}`}
+                        className={`size-2.5 rounded-full ${sourceTypeToneClass(item.type, "fill")}`}
                       />
                       <span className="text-muted-foreground text-sm">
                         {titleCase(item.type)}

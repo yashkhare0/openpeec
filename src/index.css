@@ -21,6 +21,15 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-subtle: var(--info-subtle);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -41,6 +50,10 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --height-chart-sm: 16rem;
+  --height-chart-md: 18rem;
+  --tracking-eyebrow: 0.18em;
+  --font-size-eyebrow: 0.6875rem;
   --font-sans:
     "Geist Variable", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
     "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
@@ -63,6 +76,15 @@
   --accent-foreground: oklch(0.27 0.078 175);
   --destructive: oklch(0.6 0.19 20);
   --destructive-foreground: oklch(0.99 0.01 318);
+  --success: oklch(0.62 0.16 162);
+  --success-foreground: oklch(0.99 0.008 286);
+  --success-subtle: oklch(0.94 0.06 165);
+  --warning: oklch(0.74 0.16 70);
+  --warning-foreground: oklch(0.28 0.05 70);
+  --warning-subtle: oklch(0.95 0.07 80);
+  --info: oklch(0.66 0.14 246);
+  --info-foreground: oklch(0.99 0.008 286);
+  --info-subtle: oklch(0.94 0.06 246);
   --border: oklch(0.88 0.03 286);
   --input: oklch(0.886 0.028 286);
   --ring: oklch(0.66 0.16 276);
@@ -99,6 +121,15 @@
   --accent-foreground: oklch(0.905 0.07 170);
   --destructive: oklch(0.72 0.16 22);
   --destructive-foreground: oklch(0.18 0.052 303);
+  --success: oklch(0.78 0.13 165);
+  --success-foreground: oklch(0.18 0.052 303);
+  --success-subtle: oklch(0.32 0.07 170);
+  --warning: oklch(0.82 0.14 78);
+  --warning-foreground: oklch(0.22 0.04 70);
+  --warning-subtle: oklch(0.34 0.07 78);
+  --info: oklch(0.78 0.13 246);
+  --info-foreground: oklch(0.18 0.052 303);
+  --info-subtle: oklch(0.32 0.07 246);
   --border: oklch(0.43 0.06 303 / 58%);
   --input: oklch(0.43 0.06 303 / 70%);
   --ring: oklch(0.78 0.13 286);
@@ -115,6 +146,21 @@
   --sidebar-accent-foreground: oklch(0.95 0.024 316);
   --sidebar-border: oklch(0.45 0.068 303 / 62%);
   --sidebar-ring: oklch(0.78 0.13 286);
+}
+
+@layer components {
+  /* Eyebrow / overline label: small, all-caps, wide tracking. Used above
+     section headers and KPI values throughout the dashboard. Centralized
+     here so the type scale stays consistent and tracking doesn't drift
+     between 0.16em and 0.18em across files. */
+  .text-eyebrow {
+    font-size: var(--font-size-eyebrow);
+    line-height: 1;
+    font-weight: 500;
+    letter-spacing: var(--tracking-eyebrow);
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
 }
 
 @layer base {

@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { sourceTypeToneClass } from "@/lib/statusTone";
 import { InlineEmpty } from "./EmptyState";
 
 type SourceRow = {
@@ -35,15 +36,6 @@ function formatPercent(value: number | undefined): string {
   if (value === undefined) return "-";
   return `${Math.round(value)}%`;
 }
-
-const typeColors: Record<string, string> = {
-  ugc: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300",
-  editorial: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
-  corporate:
-    "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-300",
-  docs: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300",
-  news: "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-300",
-};
 
 export function DomainTable({ sources }: { sources: SourceRow[] }) {
   return (
@@ -91,7 +83,7 @@ export function DomainTable({ sources }: { sources: SourceRow[] }) {
                   <TableCell>
                     <Badge
                       variant="secondary"
-                      className={typeColors[source.type.toLowerCase()] ?? ""}
+                      className={sourceTypeToneClass(source.type)}
                     >
                       {titleCase(source.type)}
                     </Badge>

@@ -1,9 +1,17 @@
 import { Card, CardContent } from "@/components/ui/card";
+import { Eyebrow } from "@/components/ui/eyebrow";
 import { cn } from "@/lib/utils";
+import { statusTone, type StatusTone } from "@/lib/statusTone";
 import { InfoTooltip } from "./InfoTooltip";
 import { DashboardMetricCardsSkeleton } from "./LoadingState";
 
 type Tone = "positive" | "negative" | "neutral";
+
+const TONE_TO_STATUS: Record<Tone, StatusTone> = {
+  positive: "success",
+  negative: "danger",
+  neutral: "neutral",
+};
 
 export function KpiCards({
   kpis,
@@ -22,9 +30,7 @@ export function KpiCards({
         <Card key={kpi.label} className="shadow-none">
           <CardContent className="p-4">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-muted-foreground text-[11px] font-medium tracking-[0.18em] uppercase">
-                {kpi.label}
-              </p>
+              <Eyebrow>{kpi.label}</Eyebrow>
               <InfoTooltip label={`About ${kpi.label}`}>
                 {kpiDefinition(kpi.label)}
               </InfoTooltip>
@@ -34,10 +40,7 @@ export function KpiCards({
               <p
                 className={cn(
                   "text-sm",
-                  kpi.tone === "positive" &&
-                    "text-emerald-700 dark:text-emerald-300",
-                  kpi.tone === "negative" && "text-rose-700 dark:text-rose-300",
-                  kpi.tone === "neutral" && "text-muted-foreground"
+                  statusTone(TONE_TO_STATUS[kpi.tone], "text")
                 )}
               >
                 {kpi.delta}
