@@ -3,7 +3,7 @@ import { statusTone, type StatusTone } from "@/lib/statusTone";
 
 type Variant = "default" | "warning" | "success" | "error";
 
-const VARIANT_TO_TONE: Record<Variant, StatusTone | "neutral"> = {
+const VARIANT_TO_TONE: Record<Variant, StatusTone> = {
   default: "neutral",
   warning: "warning",
   success: "success",
@@ -22,7 +22,7 @@ export function StatusBanner({
     <div
       className={cn(
         "rounded-lg border px-4 py-2.5 text-sm",
-        statusTone(tone as StatusTone, "subtle")
+        statusTone(tone, "subtle")
       )}
     >
       {text}
