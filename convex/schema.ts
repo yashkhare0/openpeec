@@ -38,8 +38,6 @@ const vPromptPriority = v.union(
   v.literal("low")
 );
 
-const vPromptReviewState = v.union(v.literal("draft"), v.literal("archived"));
-
 const vPromptGeneratedBy = v.union(
   v.literal("manual"),
   v.literal("codex"),
@@ -190,7 +188,6 @@ export default defineSchema({
     audience: v.optional(v.string()),
     topic: v.optional(v.string()),
     priority: v.optional(vPromptPriority),
-    reviewState: v.optional(vPromptReviewState),
     generatedBy: v.optional(vPromptGeneratedBy),
     generationRationale: v.optional(v.string()),
     sourceUrls: v.optional(v.array(v.string())),
@@ -202,7 +199,6 @@ export default defineSchema({
     .index("active", ["active"])
     .index("entityId", ["entityId"])
     .index("promptGroupId", ["promptGroupId"])
-    .index("reviewState", ["reviewState"])
     .index("entityId_promptGroupId", ["entityId", "promptGroupId"]),
 
   promptGroups: defineTable({
@@ -267,7 +263,6 @@ export default defineSchema({
     audience: v.optional(v.string()),
     topic: v.optional(v.string()),
     priority: v.optional(vPromptPriority),
-    reviewState: v.optional(vPromptReviewState),
     /** Optional for legacy runs ingested before provider snapshot fields existed */
     providerId: v.optional(v.id("providers")),
     providerSlug: v.optional(v.string()),

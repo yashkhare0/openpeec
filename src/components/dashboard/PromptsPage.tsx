@@ -65,7 +65,6 @@ import {
   promptSentimentLensOptions,
   type PromptGeneratedBy,
   type PromptIntentCategory,
-  type PromptReviewState,
   type PromptSentimentLens,
 } from "@/lib/prompt-categorisation";
 import { InlineEmpty } from "./components/EmptyState";
@@ -92,7 +91,6 @@ type PromptRow = {
   audience?: string;
   topic?: string;
   priority?: PromptCategorisationValue["priority"];
-  reviewState?: PromptReviewState;
   generatedBy: PromptGeneratedBy;
   generationRationale?: string;
   sourceUrls: string[];
@@ -217,14 +215,8 @@ function SelectFilter({
 }
 
 function PromptStateBadge({ row }: { row: PromptRow }) {
-  if (row.reviewState === "archived") {
-    return <Badge variant="outline">Archived</Badge>;
-  }
   if (!row.active) {
     return <Badge variant="outline">Inactive</Badge>;
-  }
-  if (row.reviewState === "draft") {
-    return <Badge variant="secondary">Draft</Badge>;
   }
   return <Badge variant="secondary">Active</Badge>;
 }
@@ -729,7 +721,6 @@ export function PromptsPage({
   onUpdatePrompt: (args: {
     id: Id<"prompts">;
     promptGroupId?: Id<"promptGroups"> | null;
-    reviewState?: PromptReviewState;
     active?: boolean;
   }) => Promise<Id<"prompts">>;
   onDeletePrompt: (args: { id: Id<"prompts"> }) => Promise<Id<"prompts">>;
@@ -920,9 +911,7 @@ export function PromptsPage({
   const bulkArchive = async () => {
     try {
       await Promise.all(
-        selectedPromptIds.map((id) =>
-          onUpdatePrompt({ id, reviewState: "archived", active: false })
-        )
+        selectedPromptIds.map((id) => onUpdatePrompt({ id, active: false }))
       );
       toast.success(`Archived ${selectedPromptIds.length} prompts.`);
     } catch (error) {

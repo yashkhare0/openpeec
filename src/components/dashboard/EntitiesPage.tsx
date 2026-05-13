@@ -65,7 +65,6 @@ type EntityRow = {
   ownedDomains: string[];
   active: boolean;
   promptCount: number;
-  draftPromptCount: number;
   promptGroupCount: number;
   runCount: number;
   responseCount: number;
@@ -117,7 +116,6 @@ type EntityVisibilityData = {
     activeEntityCount: number;
     competitorCount: number;
     promptCount: number;
-    draftPromptCount: number;
     mentionCount: number;
     citationCount: number;
   };
@@ -782,11 +780,6 @@ function EntityPromptSummary({ entity }: { entity: EntityRow }) {
         <span className="font-medium">{entity.promptGroupCount}</span> groups /{" "}
         <span className="font-medium">{entity.promptCount}</span> prompts
       </div>
-      {entity.draftPromptCount > 0 ? (
-        <Badge variant="secondary" className="w-fit">
-          {entity.draftPromptCount} drafts
-        </Badge>
-      ) : null}
     </div>
   );
 }

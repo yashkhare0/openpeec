@@ -27,7 +27,6 @@ export type PromptFunnelStage =
   | "retention";
 
 export type PromptPriority = "high" | "medium" | "low";
-export type PromptReviewState = "draft" | "archived";
 export type PromptGeneratedBy = "manual" | "codex" | "import";
 
 export const promptIntentCategoryOptions: Array<{

@@ -325,7 +325,7 @@ function promptCategorisationGuidance() {
       "Use priority=high for prompts that directly affect buyer discovery, competitor displacement, citation authority, or reputation risk.",
       "Write generation rationale as a concise GEO/AEO reason explaining what visibility, citation, sentiment, or competitor risk the prompt monitors.",
       "Attach sourceUrls when the website, research summary, competitor context, or owned domains justify the prompt.",
-      "Generated prompts are editable drafts; make them specific enough for marketers to use or revise without rethinking the category strategy.",
+      "Generated prompts are editable; make them specific enough for marketers to use or revise without rethinking the category strategy.",
     ],
     requiredGroupCoverage: [
       "Category discovery",

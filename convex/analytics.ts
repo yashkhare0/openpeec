@@ -94,8 +94,6 @@ const vPromptPriority = v.union(
   v.literal("low")
 );
 
-const vPromptReviewState = v.union(v.literal("draft"), v.literal("archived"));
-
 const vPromptGeneratedBy = v.union(
   v.literal("manual"),
   v.literal("codex"),
@@ -121,7 +119,6 @@ type PatchObject = Record<string, unknown>;
 type BrowserEngine = "playwright" | "camoufox" | "nodriver";
 type PromptIntentCategory = NonNullable<PromptDoc["intentCategory"]>;
 type PromptSentimentLens = NonNullable<PromptDoc["sentimentLens"]>;
-type PromptReviewState = NonNullable<PromptDoc["reviewState"]>;
 type PromptGeneratedBy = NonNullable<PromptDoc["generatedBy"]>;
 
 const crons = new Crons(components.crons);
@@ -265,16 +262,6 @@ function promptSentimentLensFor(prompt: PromptDoc): PromptSentimentLens {
   return prompt.sentimentLens ?? DEFAULT_PROMPT_SENTIMENT_LENS;
 }
 
-function promptReviewStateFor(
-  prompt: PromptDoc
-): PromptReviewState | undefined {
-  const reviewState = prompt.reviewState as string | undefined;
-  if (reviewState === "draft" || reviewState === "archived") {
-    return reviewState;
-  }
-  return undefined;
-}
-
 function promptGeneratedByFor(prompt: PromptDoc): PromptGeneratedBy {
   return prompt.generatedBy ?? DEFAULT_PROMPT_GENERATED_BY;
 }
@@ -297,7 +284,6 @@ function promptMetadataFor(
     audience: prompt.audience,
     topic: prompt.topic,
     priority: prompt.priority,
-    reviewState: promptReviewStateFor(prompt),
     generatedBy: promptGeneratedByFor(prompt),
     generationRationale: prompt.generationRationale,
     sourceUrls: prompt.sourceUrls ?? [],
@@ -318,7 +304,6 @@ function promptRunSnapshotFor(
     audience: prompt.audience,
     topic: prompt.topic,
     priority: prompt.priority,
-    reviewState: promptReviewStateFor(prompt),
   };
 }
 
@@ -340,7 +325,6 @@ function promptReplacementWithPatch(prompt: PromptDoc, patch: PatchObject) {
     "audience",
     "topic",
     "priority",
-    "reviewState",
     "generatedBy",
     "generationRationale",
     "sourceUrls",
@@ -1521,7 +1505,6 @@ export const createPrompt = mutation({
     audience: v.optional(v.string()),
     topic: v.optional(v.string()),
     priority: v.optional(vPromptPriority),
-    reviewState: v.optional(vPromptReviewState),
     generatedBy: v.optional(vPromptGeneratedBy),
     generationRationale: v.optional(v.string()),
     sourceUrls: v.optional(v.array(v.string())),
@@ -1552,7 +1535,6 @@ export const createPrompt = mutation({
         audience: normalizeOptionalString(args.audience) ?? undefined,
         topic: normalizeOptionalString(args.topic) ?? undefined,
         priority: args.priority,
-        reviewState: args.reviewState,
         generatedBy: args.generatedBy ?? DEFAULT_PROMPT_GENERATED_BY,
         generationRationale:
           normalizeOptionalString(args.generationRationale) ?? undefined,
@@ -1763,10 +1745,8 @@ export const listPromptGroups = query({
           entityName: entity?.name,
           entitySlug: entity?.slug,
           promptCount: groupPrompts.length,
-          activePromptCount: groupPrompts.filter(
-            (prompt) =>
-              prompt.active && promptReviewStateFor(prompt) !== "archived"
-          ).length,
+          activePromptCount: groupPrompts.filter((prompt) => prompt.active)
+            .length,
           latestRunAt: latestRun?.startedAt,
           latestRunGroupId: latestRun ? runGroupKey(latestRun) : undefined,
         };
@@ -1897,7 +1877,6 @@ export const claimNextEntityPromptGeneration = mutation({
         promptGroupId: prompt.promptGroupId,
         intentCategory: promptIntentCategoryFor(prompt),
         sentimentLens: promptSentimentLensFor(prompt),
-        reviewState: promptReviewStateFor(prompt),
       })),
     };
   },
@@ -2049,9 +2028,6 @@ export const completeEntityPromptGeneration = mutation({
         }
 
         if (existingPrompt) {
-          if (existingPrompt.reviewState === undefined) {
-            patch.reviewState = "draft";
-          }
           if (existingPrompt.generatedBy === undefined) {
             patch.generatedBy = "codex";
           }
@@ -2063,7 +2039,6 @@ export const completeEntityPromptGeneration = mutation({
           promptText,
           ...patch,
           active: true,
-          reviewState: "draft",
           generatedBy: "codex",
           createdAt: now,
         });
@@ -2080,7 +2055,6 @@ export const completeEntityPromptGeneration = mutation({
           audience: normalizeOptionalString(rawPrompt.audience) ?? undefined,
           topic: normalizeOptionalString(rawPrompt.topic) ?? undefined,
           priority: rawPrompt.priority,
-          reviewState: "draft",
           generatedBy: "codex",
           generationRationale:
             normalizeOptionalString(rawPrompt.rationale) ?? undefined,
@@ -2119,7 +2093,6 @@ export const listPrompts = query({
     promptGroupId: v.optional(v.id("promptGroups")),
     intentCategory: v.optional(vPromptIntentCategory),
     sentimentLens: v.optional(vPromptSentimentLens),
-    reviewState: v.optional(vPromptReviewState),
     generatedBy: v.optional(vPromptGeneratedBy),
   },
   handler: async (ctx, args) => {
@@ -2144,11 +2117,6 @@ export const listPrompts = query({
     if (args.sentimentLens) {
       prompts = prompts.filter(
         (prompt) => promptSentimentLensFor(prompt) === args.sentimentLens
-      );
-    }
-    if (args.reviewState) {
-      prompts = prompts.filter(
-        (prompt) => promptReviewStateFor(prompt) === args.reviewState
       );
     }
     if (args.generatedBy) {
@@ -2200,7 +2168,6 @@ export const updatePrompt = mutation({
     audience: v.optional(v.union(v.string(), v.null())),
     topic: v.optional(v.union(v.string(), v.null())),
     priority: v.optional(v.union(vPromptPriority, v.null())),
-    reviewState: v.optional(vPromptReviewState),
     generatedBy: v.optional(vPromptGeneratedBy),
     generationRationale: v.optional(v.union(v.string(), v.null())),
     sourceUrls: v.optional(v.union(v.array(v.string()), v.null())),
@@ -2253,7 +2220,6 @@ export const updatePrompt = mutation({
     );
     setOptionalPatchValue(patch, "topic", normalizeOptionalString(args.topic));
     setOptionalPatchValue(patch, "priority", args.priority);
-    setOptionalPatchValue(patch, "reviewState", args.reviewState);
     setOptionalPatchValue(patch, "generatedBy", args.generatedBy);
     setOptionalPatchValue(
       patch,
@@ -2461,9 +2427,7 @@ export const triggerPromptGroupNow = mutation({
           q.eq("promptGroupId", args.promptGroupId)
         )
         .collect()
-    ).filter(
-      (prompt) => prompt.active && promptReviewStateFor(prompt) !== "archived"
-    );
+    ).filter((prompt) => prompt.active);
     if (!prompts.length) {
       throw new Error("Prompt group has no active prompts");
     }
@@ -2494,9 +2458,7 @@ export const triggerEntityPromptsNow = mutation({
         .query("prompts")
         .withIndex("entityId", (q) => q.eq("entityId", args.entityId))
         .collect()
-    ).filter(
-      (prompt) => prompt.active && promptReviewStateFor(prompt) !== "archived"
-    );
+    ).filter((prompt) => prompt.active);
     if (!prompts.length) {
       throw new Error("Entity has no active prompts");
     }
@@ -2541,7 +2503,6 @@ export const retryPromptRun = mutation({
       audience: run.audience,
       topic: run.topic,
       priority: run.priority,
-      reviewState: run.reviewState,
       providerId: run.providerId,
       providerSlug: run.providerSlug,
       providerName: run.providerName,
@@ -3634,7 +3595,6 @@ export const listEntityVisibility = query({
       Id<"trackedEntities">,
       {
         promptCount: number;
-        draftPromptCount: number;
         promptGroupCount: number;
         runGroupIds: Set<string>;
         responseCount: number;
@@ -3651,7 +3611,6 @@ export const listEntityVisibility = query({
     for (const entity of entities) {
       stats.set(entity._id, {
         promptCount: 0,
-        draftPromptCount: 0,
         promptGroupCount: 0,
         runGroupIds: new Set(),
         responseCount: 0,
@@ -3669,10 +3628,6 @@ export const listEntityVisibility = query({
       const stat = stats.get(prompt.entityId);
       if (!stat) continue;
       stat.promptCount += 1;
-      const reviewState = promptReviewStateFor(prompt);
-      if (reviewState === "draft") {
-        stat.draftPromptCount += 1;
-      }
     }
 
     for (const group of promptGroups) {
@@ -3777,7 +3732,6 @@ export const listEntityVisibility = query({
           color: entity.color,
           active: entity.active,
           promptCount: stat?.promptCount ?? 0,
-          draftPromptCount: stat?.draftPromptCount ?? 0,
           promptGroupCount: stat?.promptGroupCount ?? 0,
           runCount: stat?.runGroupIds.size ?? 0,
           responseCount: stat?.responseCount ?? 0,
@@ -3819,10 +3773,6 @@ export const listEntityVisibility = query({
         competitorCount: rows.filter((entity) => entity.kind === "competitor")
           .length,
         promptCount: rows.reduce((sum, entity) => sum + entity.promptCount, 0),
-        draftPromptCount: rows.reduce(
-          (sum, entity) => sum + entity.draftPromptCount,
-          0
-        ),
         mentionCount: rows.reduce(
           (sum, entity) => sum + entity.mentionCount,
           0
@@ -4158,7 +4108,6 @@ export const listPromptRuns = query({
       audience: run.audience,
       topic: run.topic,
       priority: run.priority,
-      reviewState: run.reviewState,
       providerSlug: providerSlugForRun(run),
       providerName: providerNameForRun(run),
       providerUrl: providerUrlForRun(run),
@@ -4278,7 +4227,6 @@ export const listRunGroups = query({
           promptGroupName: latestRun.promptGroupName,
           intentCategory: latestRun.intentCategory,
           sentimentLens: latestRun.sentimentLens,
-          reviewState: latestRun.reviewState,
           runLabel: latestRun.runLabel,
           queuedAt: runQueuedAt(latestRun),
           startedAt: latestRunStartedAt(sortedRuns),
@@ -4372,7 +4320,6 @@ export const getRunGroup = query({
         promptGroupName: latestRun.promptGroupName,
         intentCategory: latestRun.intentCategory,
         sentimentLens: latestRun.sentimentLens,
-        reviewState: latestRun.reviewState,
         runLabel: latestRun.runLabel,
         queuedAt: runQueuedAt(latestRun),
         startedAt: latestRunStartedAt(runs),
@@ -4430,7 +4377,6 @@ export const listPromptResponseAnalytics = query({
     promptGroupId: v.optional(v.id("promptGroups")),
     intentCategory: v.optional(vPromptIntentCategory),
     sentimentLens: v.optional(vPromptSentimentLens),
-    reviewState: v.optional(vPromptReviewState),
     generatedBy: v.optional(vPromptGeneratedBy),
   },
   handler: async (ctx, args) => {
@@ -4455,11 +4401,6 @@ export const listPromptResponseAnalytics = query({
     if (args.sentimentLens) {
       prompts = prompts.filter(
         (prompt) => promptSentimentLensFor(prompt) === args.sentimentLens
-      );
-    }
-    if (args.reviewState) {
-      prompts = prompts.filter(
-        (prompt) => promptReviewStateFor(prompt) === args.reviewState
       );
     }
     if (args.generatedBy) {
