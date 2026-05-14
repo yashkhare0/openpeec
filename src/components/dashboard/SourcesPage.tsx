@@ -37,6 +37,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { statusTone } from "@/lib/statusTone";
 import { InlineEmpty } from "./components/EmptyState";
 import {
   clickableTableRowClassName,
@@ -281,9 +282,7 @@ export function TrackedEntitiesSheet({
                         <Badge
                           variant={entity.active ? "default" : "secondary"}
                           className={cn(
-                            entity.active
-                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300"
-                              : ""
+                            entity.active && statusTone("success", "subtle")
                           )}
                         >
                           {entity.active ? "Active" : "Paused"}

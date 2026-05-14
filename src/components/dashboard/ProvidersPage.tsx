@@ -15,12 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+import { TooltipFocusable } from "@/components/ui/tooltip-focusable";
 import { InlineEmpty } from "./components/EmptyState";
 import { InfoTooltip } from "./components/InfoTooltip";
 import { DashboardTableCardSkeleton } from "./components/LoadingState";
@@ -115,26 +110,17 @@ function TooltipLabel({
   tooltip?: string;
   className?: string;
 }) {
-  const label = <span className={className}>{children}</span>;
-
-  if (!tooltip) return label;
+  if (!tooltip) return <span className={className}>{children}</span>;
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label={`${children}: ${tooltip}`}
-          className={cn(
-            "focus-visible:border-ring focus-visible:ring-ring/50 inline-flex w-fit cursor-help rounded-sm border-0 bg-transparent p-0 text-left outline-none focus-visible:ring-3",
-            className
-          )}
-        >
-          {children}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>{tooltip}</TooltipContent>
-    </Tooltip>
+    <TooltipFocusable
+      label={`${children}: ${tooltip}`}
+      tooltip={tooltip}
+      variant="help"
+      className={className}
+    >
+      {children}
+    </TooltipFocusable>
   );
 }
 
@@ -405,20 +391,16 @@ export function ProvidersPage({
                       </TableCell>
                       <TableCell className="whitespace-normal">
                         <div className="flex">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                aria-label={`${readiness.label}: ${readiness.detail}`}
-                                className="focus-visible:border-ring focus-visible:ring-ring/50 inline-flex cursor-help rounded-4xl border-0 bg-transparent p-0 outline-none focus-visible:ring-3"
-                              >
-                                <Badge variant={readiness.variant}>
-                                  {readiness.label}
-                                </Badge>
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent>{readiness.detail}</TooltipContent>
-                          </Tooltip>
+                          <TooltipFocusable
+                            label={`${readiness.label}: ${readiness.detail}`}
+                            tooltip={readiness.detail}
+                            variant="help"
+                            className="rounded-4xl"
+                          >
+                            <Badge variant={readiness.variant}>
+                              {readiness.label}
+                            </Badge>
+                          </TooltipFocusable>
                         </div>
                       </TableCell>
                       <TableCell className="text-right">

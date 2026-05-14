@@ -51,7 +51,7 @@ export function TrendChart({
           <div className="bg-muted/60 h-4 w-28 animate-pulse rounded-full" />
           <div className="bg-muted/60 h-4 w-24 animate-pulse rounded-full" />
         </div>
-        <div className="bg-muted/50 h-[250px] w-full animate-pulse rounded-xl border" />
+        <div className="bg-muted/50 h-chart-sm w-full animate-pulse rounded-xl border" />
       </DashboardCardSkeleton>
     );
   }
@@ -96,7 +96,7 @@ export function TrendChart({
       <CardContent className="px-2 pt-0 sm:px-6">
         <ChartContainer
           config={chartConfig}
-          className="aspect-auto h-[250px] w-full"
+          className="aspect-auto h-chart-sm w-full"
         >
           <LineChart data={trend} margin={{ left: 0, right: 12, top: 12 }}>
             <CartesianGrid vertical={false} strokeDasharray="3 3" />

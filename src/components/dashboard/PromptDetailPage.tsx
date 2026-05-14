@@ -27,6 +27,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { statusTone } from "@/lib/statusTone";
+import { Eyebrow } from "@/components/ui/eyebrow";
 import {
   promptGeneratedByOptions,
   promptIntentCategoryOptions,
@@ -180,14 +182,14 @@ export function PromptDetailPage({
                 descriptionWidth="w-64"
                 contentClassName="space-y-3"
               >
-                <div className="bg-muted/40 h-[280px] rounded-xl" />
+                <div className="bg-muted/40 h-chart-md rounded-xl" />
               </DashboardCardSkeleton>
               <DashboardCardSkeleton
                 titleWidth="w-32"
                 descriptionWidth="w-56"
                 contentClassName="space-y-3"
               >
-                <div className="bg-muted/40 h-[280px] rounded-xl" />
+                <div className="bg-muted/40 h-chart-md rounded-xl" />
               </DashboardCardSkeleton>
             </div>
 
@@ -387,7 +389,7 @@ export function PromptDetailPage({
                   <CardContent>
                     <ChartContainer
                       config={responseChartConfig}
-                      className="h-[280px] w-full"
+                      className="h-chart-md w-full"
                     >
                       <LineChart
                         data={responseSeries}
@@ -431,7 +433,7 @@ export function PromptDetailPage({
                   <CardContent>
                     <ChartContainer
                       config={sourceChartConfig}
-                      className="h-[280px] w-full"
+                      className="h-chart-md w-full"
                     >
                       <BarChart
                         data={sourceSeries}
@@ -543,7 +545,7 @@ export function PromptDetailPage({
                               {response.warnings.length > 0 ? (
                                 <Badge
                                   variant="outline"
-                                  className="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                                  className={statusTone("warning", "subtle")}
                                 >
                                   {response.warnings.length} warning
                                   {response.warnings.length === 1 ? "" : "s"}
@@ -705,12 +707,12 @@ function MetricTile({
 }) {
   return (
     <div className="bg-muted/20 rounded-lg p-3">
-      <div className="text-muted-foreground flex items-center gap-1 text-[11px] font-medium tracking-[0.16em] uppercase">
+      <Eyebrow as="div" className="flex items-center gap-1">
         <span>{label}</span>
         {tooltip ? (
           <InfoTooltip label={`${label} definition`}>{tooltip}</InfoTooltip>
         ) : null}
-      </div>
+      </Eyebrow>
       <p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p>
       <p className="text-muted-foreground mt-1 text-xs">{detail}</p>
     </div>

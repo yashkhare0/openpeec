@@ -2,6 +2,11 @@
 @import "tw-animate-css";
 @import "@fontsource-variable/geist";
 
+@source not "../.claude";
+@source not "../.convex";
+@source not "../node_modules";
+@source not "../runner/artifacts";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -50,8 +55,8 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --height-chart-sm: 16rem;
-  --height-chart-md: 18rem;
+  --height-chart-sm: 15.625rem; /* 250px - compact trend strip */
+  --height-chart-md: 17.5rem;   /* 280px - prompt/response detail panels */
   --tracking-eyebrow: 0.18em;
   --font-size-eyebrow: 0.6875rem;
   --font-sans:
@@ -193,65 +198,75 @@
   }
 }
 
-/* driver.js tour popover theme */
-.openpeec-tour {
-  --djs-font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
-  background-color: var(--popover) !important;
-  color: var(--popover-foreground) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: var(--radius) !important;
+/* ============================================================
+   driver.js tour popover theme
+   ------------------------------------------------------------
+   driver.css ships single-class selectors (e.g. `.driver-popover`)
+   that conflict with our token-based theme. We bump specificity by
+   chaining `body` (specificity 0,1,1) rather than peppering every
+   property with `!important` (the previous approach). All colors
+   bind to design tokens so light/dark mode switch follows the rest
+   of the dashboard.
+   ============================================================ */
+body .openpeec-tour {
+  --djs-font-family:
+    "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   box-shadow: 0 18px 48px
-    color-mix(in oklch, var(--foreground), transparent 88%) !important;
-  font-family: var(--djs-font-family) !important;
+    color-mix(in oklch, var(--foreground), transparent 88%);
+  font-family: var(--djs-font-family);
 }
 
-.openpeec-tour .driver-popover-title {
-  font-size: 0.9375rem !important;
-  font-weight: 600 !important;
-  font-family: var(--djs-font-family) !important;
+body .openpeec-tour .driver-popover-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  font-family: var(--djs-font-family);
 }
 
-.openpeec-tour .driver-popover-description {
-  font-size: 0.8125rem !important;
-  line-height: 1.5 !important;
-  color: var(--muted-foreground) !important;
-  font-family: var(--djs-font-family) !important;
+body .openpeec-tour .driver-popover-description {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+  font-family: var(--djs-font-family);
 }
 
-.openpeec-tour .driver-popover-progress-text {
-  font-size: 0.6875rem !important;
-  color: var(--muted-foreground) !important;
-  font-family: var(--djs-font-family) !important;
+body .openpeec-tour .driver-popover-progress-text {
+  font-size: var(--font-size-eyebrow);
+  color: var(--muted-foreground);
+  font-family: var(--djs-font-family);
 }
 
-.openpeec-tour .driver-popover-prev-btn {
-  border: 1px solid var(--border) !important;
-  background: transparent !important;
-  color: var(--foreground) !important;
-  border-radius: calc(var(--radius) - 2px) !important;
-  font-size: 0.8125rem !important;
-  font-family: var(--djs-font-family) !important;
-  text-shadow: none !important;
+body .openpeec-tour .driver-popover-prev-btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--foreground);
+  border-radius: calc(var(--radius) - 2px);
+  font-size: 0.8125rem;
+  font-family: var(--djs-font-family);
+  text-shadow: none;
 }
 
-.openpeec-tour .driver-popover-next-btn,
-.openpeec-tour .driver-popover-close-btn-text {
-  background: var(--primary) !important;
-  color: var(--primary-foreground) !important;
-  border: none !important;
-  border-radius: calc(var(--radius) - 2px) !important;
-  font-size: 0.8125rem !important;
-  font-family: var(--djs-font-family) !important;
-  text-shadow: none !important;
+body .openpeec-tour .driver-popover-next-btn,
+body .openpeec-tour .driver-popover-close-btn-text {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: none;
+  border-radius: calc(var(--radius) - 2px);
+  font-size: 0.8125rem;
+  font-family: var(--djs-font-family);
+  text-shadow: none;
 }
 
-.openpeec-tour .driver-popover-arrow-side-left,
-.openpeec-tour .driver-popover-arrow-side-right,
-.openpeec-tour .driver-popover-arrow-side-top,
-.openpeec-tour .driver-popover-arrow-side-bottom {
-  border-color: var(--border) !important;
+body .openpeec-tour .driver-popover-arrow-side-left,
+body .openpeec-tour .driver-popover-arrow-side-right,
+body .openpeec-tour .driver-popover-arrow-side-top,
+body .openpeec-tour .driver-popover-arrow-side-bottom {
+  border-color: var(--border);
 }
 
-.openpeec-tour .driver-popover-close-btn {
-  color: var(--muted-foreground) !important;
+body .openpeec-tour .driver-popover-close-btn {
+  color: var(--muted-foreground);
 }

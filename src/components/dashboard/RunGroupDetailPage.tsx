@@ -32,6 +32,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import {
+  statusTone as toneClass,
+  type StatusTone,
+} from "@/lib/statusTone";
 import { clickableTableRowClassName } from "./components/InfoTooltip";
 import { InlineEmpty } from "./components/EmptyState";
 import { DashboardCardSkeleton } from "./components/LoadingState";
@@ -508,8 +512,7 @@ function ResponseTextPanel({ run }: { run: ProviderRun }) {
         <Alert
           variant={run.status === "failed" ? "destructive" : "default"}
           className={cn(
-            run.status === "blocked" &&
-              "border-amber-500/20 bg-amber-500/10 text-amber-900 dark:text-amber-100"
+            run.status === "blocked" && toneClass("warning", "subtle")
           )}
         >
           <AlertTriangleIcon />
@@ -890,21 +893,16 @@ function getCitationDomain(citation: { domain: string; url: string }) {
   }
 }
 
+const RUN_STATUS_TO_TONE: Record<string, StatusTone> = {
+  success: "success",
+  blocked: "warning",
+  failed: "danger",
+  running: "info",
+};
+
 function statusTone(status: string): string {
-  const normalized = status.toLowerCase();
-  if (normalized === "success") {
-    return "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
-  }
-  if (normalized === "blocked") {
-    return "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300";
-  }
-  if (normalized === "failed") {
-    return "border-rose-500/20 bg-rose-500/10 text-rose-700 dark:text-rose-300";
-  }
-  if (normalized === "running") {
-    return "border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300";
-  }
-  return "";
+  const tone = RUN_STATUS_TO_TONE[status.toLowerCase()];
+  return tone ? toneClass(tone, "subtle") : "";
 }
 
 function getRuntimeMs(run: {

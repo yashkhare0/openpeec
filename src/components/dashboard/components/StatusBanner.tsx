@@ -17,12 +17,11 @@ export function StatusBanner({
   text: string;
   variant?: Variant;
 }) {
-  const tone = VARIANT_TO_TONE[variant];
   return (
     <div
       className={cn(
         "rounded-lg border px-4 py-2.5 text-sm",
-        statusTone(tone, "subtle")
+        statusTone(VARIANT_TO_TONE[variant], "subtle")
       )}
     >
       {text}

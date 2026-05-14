@@ -48,6 +48,8 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { statusTone } from "@/lib/statusTone";
+import { Eyebrow } from "@/components/ui/eyebrow";
 import { InlineEmpty } from "./components/EmptyState";
 import { clickableTableRowClassName } from "./components/InfoTooltip";
 import { DashboardTableCardSkeleton } from "./components/LoadingState";
@@ -569,15 +571,11 @@ export function EntitiesPage({
                         </div>
                         <div className="mt-4 grid gap-4 min-[420px]:grid-cols-2">
                           <div className="min-w-0 space-y-2">
-                            <p className="text-muted-foreground text-[11px] font-medium tracking-[0.18em] uppercase">
-                              Prompts
-                            </p>
+                            <Eyebrow>Prompts</Eyebrow>
                             <EntityPromptSummary entity={entity} />
                           </div>
                           <div className="min-w-0 space-y-2">
-                            <p className="text-muted-foreground text-[11px] font-medium tracking-[0.18em] uppercase">
-                              Curation
-                            </p>
+                            <Eyebrow>Curation</Eyebrow>
                             <EntityCurationSummary entity={entity} />
                           </div>
                         </div>
@@ -792,7 +790,7 @@ function EntityCurationSummary({ entity }: { entity: EntityRow }) {
         className={cn(
           "w-fit",
           entity.latestGeneration?.status === "success" &&
-            "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300"
+            statusTone("success", "subtle")
         )}
       >
         {generationLabel(entity.latestGeneration)}
