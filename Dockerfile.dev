@@ -52,3 +52,6 @@ WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
+
+# Compose services run without a TTY; keep pnpm's runtime install checks non-interactive.
+ENV CI=true

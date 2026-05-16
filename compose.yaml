@@ -19,7 +19,7 @@ services:
       test:
         ["CMD", "curl", "-fsS", "http://localhost:5999/nodriver-fixture.html"]
       interval: 5s
-      timeout: 5s
+      timeout: 15s
       start_period: 10m
       retries: 24
 
@@ -44,6 +44,11 @@ services:
     volumes:
       - .:/app
       - node_modules:/app/node_modules
+      - type: volume
+        source: convex_state
+        target: /app/.convex/local
+        volume:
+          nocopy: true
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "3212:3212"
@@ -112,3 +117,4 @@ services:
 
 volumes:
   node_modules:
+  convex_state:
